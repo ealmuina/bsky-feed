@@ -3,16 +3,10 @@ package subscription
 import (
 	"bsky/pkg/models"
 	"bsky/pkg/utils"
-	"bytes"
 	"context"
-	"encoding/json"
-	"errors"
 	"fmt"
-	comatproto "github.com/bluesky-social/indigo/api/atproto"
 	appbsky "github.com/bluesky-social/indigo/api/bsky"
 	"github.com/bluesky-social/indigo/events"
-	lexutil "github.com/bluesky-social/indigo/lex/util"
-	"github.com/bluesky-social/indigo/repo"
 	"github.com/bluesky-social/indigo/repomgr"
 	"github.com/gorilla/websocket"
 	"github.com/ipfs/go-cid"
@@ -43,46 +37,9 @@ func New(service string, db *gorm.DB, url url.URL) *FirehoseSubscription {
 	}
 }
 
-func (s FirehoseSubscription) getHandle() events.LiteStreamHandleFunc {
-	mu := sync.Mutex{}
-	i := 0 // counter for updating cursor every 20 events
-
-	return func(op repomgr.EventKind, seq int64, path string, did string, rcid *cid.Cid, rec any) error {
-		mu.Lock()
-		i++
-		if i%20 == 0 {
-			go s.updateCursor(i)
-		}
-		mu.Unlock()
-
-		if !strings.HasPrefix(path, "app.bsky.feed.post") {
-			return nil
-		}
-		post := rec.(appbsky.FeedPost)
-		uri := fmt.Sprintf("at://%v/%v", did, path)
-
-		switch op {
-		case repomgr.EvtKindCreateRecord:
-			{
-				s.processCommit(&post, uri, rcid.String())
-			}
-		case repomgr.EvtKindDeleteRecord:
-			{
-				s.deleteCommit(uri)
-			}
-		}
-		return nil
-	}
-}
-
 func (s FirehoseSubscription) Run() {
 	defer s.close()
 	err := events.ConsumeRepoStreamLite(context.Background(), s.connection, s.getHandle())
-	//err := events.HandleRepoStream(context.Background(), s.connection, &events.RepoStreamCallbacks{
-	//	RepoCommit: s.getHandleCommit(),
-	//	RepoInfo:   s.getHandleInfo(),
-	//	Error:      s.getHandleError(),
-	//})
 	if err != nil {
 		log.Error(err)
 	}
@@ -105,11 +62,11 @@ func (s FirehoseSubscription) getCursor() int {
 	return subState.Cursor
 }
 
-func (s FirehoseSubscription) getHandleCommit() func(*comatproto.SyncSubscribeRepos_Commit) error {
+func (s FirehoseSubscription) getHandle() events.LiteStreamHandleFunc {
 	mu := sync.Mutex{}
 	i := 0 // counter for updating cursor every 20 events
 
-	return func(evt *comatproto.SyncSubscribeRepos_Commit) error {
+	return func(op repomgr.EventKind, seq int64, path string, did string, rcid *cid.Cid, rec any) error {
 		mu.Lock()
 		i++
 		if i%20 == 0 {
@@ -117,72 +74,22 @@ func (s FirehoseSubscription) getHandleCommit() func(*comatproto.SyncSubscribeRe
 		}
 		mu.Unlock()
 
-		ctx := context.Background()
-		rr, err := repo.ReadRepoFromCar(ctx, bytes.NewReader(evt.Blocks))
-		if err != nil {
-			return err
+		if rec == nil || !strings.HasPrefix(path, "app.bsky.feed.post") {
+			return nil
 		}
+		post := rec.(*appbsky.FeedPost)
+		uri := fmt.Sprintf("at://%v/%v", did, path)
 
-		for _, op := range evt.Ops {
-			if !strings.HasPrefix(op.Path, "app.bsky.feed.post") {
-				continue
+		switch op {
+		case repomgr.EvtKindCreateRecord:
+			{
+				s.processCommit(post, uri, rcid.String())
 			}
-
-			ek := repomgr.EventKind(op.Action)
-			switch ek {
-			case repomgr.EvtKindCreateRecord, repomgr.EvtKindUpdateRecord:
-				{
-					// Grab the record from the merkel tree
-					rc, rec, err := rr.GetRecord(ctx, op.Path)
-					if err != nil {
-						return err
-					}
-
-					// Verify that the record cid matches the cid in the event
-					if lexutil.LexLink(rc) != *op.Cid {
-						return errors.New(fmt.Sprintf("mismatch in record and op cid: %s != %s", rc, *op.Cid))
-					}
-
-					recordAsCAR := lexutil.LexiconTypeDecoder{
-						Val: rec,
-					}
-
-					// Attempt to Unpack the CAR Blocks into JSON Byte Array
-					b, err := recordAsCAR.MarshalJSON()
-					if err != nil {
-						return err
-					}
-
-					// Unmarshal the JSON Byte Array into a FeedPost
-					var pst = appbsky.FeedPost{}
-					err = json.Unmarshal(b, &pst)
-					s.processCommit(op, &pst)
-
-					if err != nil {
-						return err
-					}
-				}
-			case repomgr.EvtKindDeleteRecord:
-				{
-					s.deleteCommit(op)
-				}
+		case repomgr.EvtKindDeleteRecord:
+			{
+				s.deleteCommit(uri)
 			}
 		}
-
-		return nil
-	}
-}
-
-func (s FirehoseSubscription) getHandleError() func(*events.ErrorFrame) error {
-	return func(evt *events.ErrorFrame) error {
-		log.Warn(fmt.Sprintf("%v: %v", evt.Error, evt.Message))
-		return nil
-	}
-}
-
-func (s FirehoseSubscription) getHandleInfo() func(*comatproto.SyncSubscribeRepos_Info) error {
-	return func(evt *comatproto.SyncSubscribeRepos_Info) error {
-		fmt.Printf("%+v\n", evt)
 		return nil
 	}
 }
