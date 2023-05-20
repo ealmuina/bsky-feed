@@ -2,7 +2,6 @@ package subscription
 
 import (
 	"bsky/pkg/models"
-	"bsky/pkg/utils"
 	"context"
 	"fmt"
 	appbsky "github.com/bluesky-social/indigo/api/bsky"
@@ -52,10 +51,6 @@ func (s FirehoseSubscription) close() {
 	}
 }
 
-func (s FirehoseSubscription) deleteCommit(uri string) {
-	s.db.Delete(&models.Post{}, "uri = ?", uri)
-}
-
 func (s FirehoseSubscription) getCursor() int {
 	var subState models.SubState
 	s.db.Where("service = ?", s.Service).First(&subState)
@@ -74,43 +69,71 @@ func (s FirehoseSubscription) getHandle() events.LiteStreamHandleFunc {
 		}
 		mu.Unlock()
 
-		if rec == nil || !strings.HasPrefix(path, "app.bsky.feed.post") {
-			return nil
-		}
-		post := rec.(*appbsky.FeedPost)
 		uri := fmt.Sprintf("at://%v/%v", did, path)
 
-		switch op {
-		case repomgr.EvtKindCreateRecord:
-			{
-				s.processCommit(post, uri, rcid.String())
-			}
-		case repomgr.EvtKindDeleteRecord:
-			{
-				s.deleteCommit(uri)
-			}
+		if strings.HasPrefix(path, "app.bsky.feed.like") {
+			s.processLike(rec, uri, did, rcid, op)
 		}
+
+		if strings.HasPrefix(path, "app.bsky.feed.post") {
+			s.processPost(rec, uri, rcid, op)
+		}
+
 		return nil
 	}
 }
 
-func (s FirehoseSubscription) processCommit(post *appbsky.FeedPost, uri string, cid string) {
-	text := strings.ToLower(post.Text)
-	if utils.ContainsAnySubstring(text, "bluesky", " bsky") {
-		var replyParent, replyRoot *string
+func (s FirehoseSubscription) processLike(rec any, uri string, actorDid string, rcid *cid.Cid, op repomgr.EventKind) {
+	switch op {
+	case repomgr.EvtKindCreateRecord:
+		{
+			like := rec.(*appbsky.FeedLike)
 
-		if post.Reply != nil {
-			replyParent = &post.Reply.Parent.Uri
-			replyRoot = &post.Reply.Root.Uri
+			var post models.Post
+			result := s.db.Where("uri = ?", like.Subject.Uri).First(&post)
+
+			if result.RowsAffected == 1 {
+				s.db.Create(&models.Like{
+					Uri:       uri,
+					Cid:       rcid.String(),
+					ActorDid:  actorDid,
+					Post:      post,
+					IndexedAt: time.Now(),
+				})
+			}
 		}
+	case repomgr.EvtKindDeleteRecord:
+		{
+			s.db.Delete(&models.Like{}, "uri = ?", uri)
+		}
+	}
+}
 
-		s.db.Create(&models.Post{
-			Uri:         uri,
-			Cid:         cid,
-			ReplyParent: replyParent,
-			ReplyRoot:   replyRoot,
-			IndexedAt:   time.Now(),
-		})
+func (s FirehoseSubscription) processPost(rec any, uri string, rcid *cid.Cid, op repomgr.EventKind) {
+	switch op {
+	case repomgr.EvtKindCreateRecord:
+		{
+			post := rec.(*appbsky.FeedPost)
+
+			var replyParent, replyRoot *string
+
+			if post.Reply != nil {
+				replyParent = &post.Reply.Parent.Uri
+				replyRoot = &post.Reply.Root.Uri
+			}
+
+			s.db.Create(&models.Post{
+				Uri:         uri,
+				Cid:         rcid.String(),
+				ReplyParent: replyParent,
+				ReplyRoot:   replyRoot,
+				IndexedAt:   time.Now(),
+			})
+		}
+	case repomgr.EvtKindDeleteRecord:
+		{
+			s.db.Delete(&models.Post{}, "uri = ?", uri)
+		}
 	}
 }
 

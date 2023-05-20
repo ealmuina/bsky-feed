@@ -27,7 +27,7 @@ var migrations = []migration{
 	// 001
 	{
 		apply: func(db *gorm.DB) error {
-			var tables = []interface{}{&Actor{}, &Post{}, &SubState{}}
+			var tables = []interface{}{&Actor{}, &Post{}, &SubState{}, &Like{}}
 
 			for _, table := range tables {
 				if !db.Migrator().HasTable(table) {
@@ -41,7 +41,7 @@ var migrations = []migration{
 			return nil
 		},
 		revert: func(db *gorm.DB) error {
-			var tables = []interface{}{&Actor{}, &Post{}, &SubState{}}
+			var tables = []interface{}{&Actor{}, &Post{}, &SubState{}, &Like{}}
 
 			for _, table := range tables {
 				err := db.Migrator().DropTable(table)
