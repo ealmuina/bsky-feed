@@ -6,5 +6,5 @@ type SubState struct {
 	gorm.Model
 
 	Service string `gorm:"index"`
-	Cursor  int
+	Cursor  int64
 }

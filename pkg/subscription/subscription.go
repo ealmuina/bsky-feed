@@ -13,7 +13,6 @@ import (
 	"gorm.io/gorm"
 	"net/url"
 	"strings"
-	"sync"
 	"time"
 )
 
@@ -23,7 +22,14 @@ type FirehoseSubscription struct {
 	db         *gorm.DB
 }
 
+func getCursor(service string, db *gorm.DB) int64 {
+	var subState models.SubState
+	db.Where("service = ?", service).First(&subState)
+	return subState.Cursor
+}
+
 func New(service string, db *gorm.DB, url url.URL) *FirehoseSubscription {
+	url.RawQuery = fmt.Sprintf("cursor=%v", getCursor(service, db))
 	c, _, err := websocket.DefaultDialer.Dial(url.String(), nil)
 	if err != nil {
 		log.Error(err)
@@ -51,23 +57,11 @@ func (s FirehoseSubscription) close() {
 	}
 }
 
-func (s FirehoseSubscription) getCursor() int {
-	var subState models.SubState
-	s.db.Where("service = ?", s.Service).First(&subState)
-	return subState.Cursor
-}
-
 func (s FirehoseSubscription) getHandle() events.LiteStreamHandleFunc {
-	mu := sync.Mutex{}
-	i := 0 // counter for updating cursor every 20 events
-
 	return func(op repomgr.EventKind, seq int64, path string, did string, rcid *cid.Cid, rec any) error {
-		mu.Lock()
-		i++
-		if i%20 == 0 {
-			go s.updateCursor(i)
+		if seq%20 == 0 {
+			go s.updateCursor(seq)
 		}
-		mu.Unlock()
 
 		uri := fmt.Sprintf("at://%v/%v", did, path)
 
@@ -137,8 +131,9 @@ func (s FirehoseSubscription) processPost(rec any, uri string, rcid *cid.Cid, op
 	}
 }
 
-func (s FirehoseSubscription) updateCursor(cursor int) {
-	s.db.Model(
+func (s FirehoseSubscription) updateCursor(cursor int64) {
+	// Update
+	result := s.db.Model(
 		models.SubState{},
 	).Select(
 		"cursor",
@@ -147,4 +142,12 @@ func (s FirehoseSubscription) updateCursor(cursor int) {
 	).Updates(
 		models.SubState{Cursor: cursor},
 	)
+
+	if result.RowsAffected == 0 {
+		// or Create
+		s.db.Create(&models.SubState{
+			Cursor:  cursor,
+			Service: s.Service,
+		})
+	}
 }
