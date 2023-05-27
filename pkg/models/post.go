@@ -8,9 +8,11 @@ import (
 type Post struct {
 	gorm.Model
 
-	Uri         string `gorm:"index"`
+	Uri         string `gorm:"uniqueIndex"`
 	Cid         string
 	ReplyParent *string
 	ReplyRoot   *string
 	IndexedAt   time.Time
+
+	Language string `gorm:"index"`
 }

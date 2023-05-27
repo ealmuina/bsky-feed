@@ -9,6 +9,7 @@ import (
 	"github.com/bluesky-social/indigo/repomgr"
 	"github.com/gorilla/websocket"
 	"github.com/ipfs/go-cid"
+	"github.com/pemistahl/lingua-go"
 	log "github.com/sirupsen/logrus"
 	"gorm.io/gorm"
 	"net/url"
@@ -116,12 +117,20 @@ func (s FirehoseSubscription) processPost(rec any, uri string, rcid *cid.Cid, op
 				replyRoot = &post.Reply.Root.Uri
 			}
 
+			// Classify by language
+			detector := lingua.NewLanguageDetectorBuilder().
+				FromAllLanguages().
+				WithPreloadedLanguageModels().
+				Build()
+			language, _ := detector.DetectLanguageOf(post.Text)
+
 			s.db.Create(&models.Post{
 				Uri:         uri,
 				Cid:         rcid.String(),
 				ReplyParent: replyParent,
 				ReplyRoot:   replyRoot,
 				IndexedAt:   time.Now(),
+				Language:    language.String(),
 			})
 		}
 	case repomgr.EvtKindDeleteRecord:

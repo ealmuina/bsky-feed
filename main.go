@@ -4,11 +4,14 @@ import (
 	"bsky/pkg/models"
 	"bsky/pkg/subscription"
 	"bsky/pkg/utils"
+	"bsky/server"
 	"net/url"
 )
 
 func main() {
-	db := models.Migrate(&models.MigrationConfig{DBPath: "test.db"})
+	db := models.Migrate(&models.MigrationConfig{
+		DBPath: "/mnt/c/Users/almui/Desktop/test.db",
+	})
 
 	go utils.CleanOldData(
 		db,
@@ -24,6 +27,8 @@ func main() {
 			Path:   "/xrpc/com.atproto.sync.subscribeRepos",
 		},
 	)
+	go firehoseSubscription.Run()
 
-	firehoseSubscription.Run()
+	s := server.Server{DB: db}
+	s.Run()
 }

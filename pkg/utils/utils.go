@@ -1,7 +1,10 @@
 package utils
 
 import (
+	"encoding/json"
+	log "github.com/sirupsen/logrus"
 	"gorm.io/gorm"
+	"strconv"
 	"time"
 )
 
@@ -19,4 +22,20 @@ func CleanOldData(db *gorm.DB, tables []any) {
 			}
 		}
 	}
+}
+
+func IntFromString(s string, defaultValue int) int {
+	atoi, err := strconv.Atoi(s)
+	if err != nil {
+		return defaultValue
+	}
+	return atoi
+}
+
+func ToJson(value any) []byte {
+	jsonResp, err := json.Marshal(value)
+	if err != nil {
+		log.Errorf("Error happened in JSON marshal. Err: %s", err)
+	}
+	return jsonResp
 }

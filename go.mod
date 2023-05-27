@@ -6,6 +6,7 @@ require (
 	github.com/bluesky-social/indigo v0.0.0-20230521020811-8be05e4183a0
 	github.com/gorilla/websocket v1.5.0
 	github.com/ipfs/go-cid v0.4.1
+	github.com/pemistahl/lingua-go v1.3.3
 	github.com/sirupsen/logrus v1.9.2
 	gorm.io/driver/sqlite v1.5.1
 	gorm.io/gorm v1.25.1
@@ -59,6 +60,7 @@ require (
 	github.com/petar/GoLLRB v0.0.0-20210522233825-ae3b015fd3e9 // indirect
 	github.com/polydawn/refmt v0.89.1-0.20221221234430-40501e09de1f // indirect
 	github.com/russross/blackfriday/v2 v2.1.0 // indirect
+	github.com/shopspring/decimal v1.3.1 // indirect
 	github.com/spaolacci/murmur3 v1.1.0 // indirect
 	github.com/urfave/cli/v2 v2.25.3 // indirect
 	github.com/whyrusleeping/cbor v0.0.0-20171005072247-63513f603b11 // indirect
