@@ -40,7 +40,7 @@ spec:
   ports:
     - port: 3000
       targetPort: 3000
-      nodePort: 33000
+      nodePort: 30033
   selector:
     app: bsky-feed
     component: api
