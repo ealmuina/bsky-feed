@@ -54,7 +54,7 @@ func (s Server) getFeedSkeleton(w http.ResponseWriter, r *http.Request) {
 func (s Server) Run() {
 	http.HandleFunc("/xrpc/app.bsky.feed.getFeedSkeleton", s.getFeedSkeleton)
 
-	err := http.ListenAndServe(":3000", nil)
+	err := http.ListenAndServe(":3333", nil)
 	if errors.Is(err, http.ErrServerClosed) {
 		fmt.Printf("server closed\n")
 	} else if err != nil {

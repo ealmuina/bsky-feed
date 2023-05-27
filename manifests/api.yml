@@ -38,8 +38,8 @@ metadata:
 spec:
   type: NodePort
   ports:
-    - port: 3000
-      targetPort: 3000
+    - port: 3333
+      targetPort: 3333
       nodePort: 30033
   selector:
     app: bsky-feed

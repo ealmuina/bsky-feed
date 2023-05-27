@@ -3,7 +3,7 @@ services:
     build:
       context: .
     ports:
-      - "3000:3000"
+      - "3333:3333"
     volumes:
       - .:/app
     command: go run .
