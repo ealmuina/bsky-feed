@@ -39,3 +39,17 @@ func ToJson(value any) []byte {
 	}
 	return jsonResp
 }
+
+func Recoverer(maxPanics, id int, f func()) {
+	defer func() {
+		if err := recover(); err != nil {
+			log.Errorf("HERE %v: %v", id, err)
+			if maxPanics == 0 {
+				panic("TOO MANY PANICS")
+			} else {
+				go Recoverer(maxPanics-1, id, f)
+			}
+		}
+	}()
+	f()
+}

@@ -5,6 +5,7 @@ import (
 	"bsky/pkg/subscription"
 	"bsky/pkg/utils"
 	"bsky/server"
+	"math"
 	"net/url"
 )
 
@@ -18,16 +19,18 @@ func main() {
 		[]interface{}{&models.Post{}, &models.Like{}},
 	)
 
-	firehoseSubscription := subscription.New(
-		"test",
-		db,
-		url.URL{
-			Scheme: "wss",
-			Host:   "bsky.social",
-			Path:   "/xrpc/com.atproto.sync.subscribeRepos",
-		},
-	)
-	go firehoseSubscription.Run()
+	go utils.Recoverer(math.MaxInt, 1, func() {
+		firehoseSubscription := subscription.New(
+			"test",
+			db,
+			url.URL{
+				Scheme: "wss",
+				Host:   "bsky.social",
+				Path:   "/xrpc/com.atproto.sync.subscribeRepos",
+			},
+		)
+		firehoseSubscription.Run()
+	})
 
 	s := server.Server{DB: db}
 	s.Run()

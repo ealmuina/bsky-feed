@@ -47,7 +47,7 @@ func (s FirehoseSubscription) Run() {
 	defer s.close()
 	err := events.ConsumeRepoStreamLite(context.Background(), s.connection, s.getHandle())
 	if err != nil {
-		log.Error(err)
+		log.Panic(err)
 	}
 }
 
@@ -66,9 +66,10 @@ func (s FirehoseSubscription) getHandle() events.LiteStreamHandleFunc {
 
 		uri := fmt.Sprintf("at://%v/%v", did, path)
 
-		if strings.HasPrefix(path, "app.bsky.feed.like") {
-			s.processLike(rec, uri, did, rcid, op)
-		}
+		// Don't process likes for the moment
+		//if strings.HasPrefix(path, "app.bsky.feed.like") {
+		//	s.processLike(rec, uri, did, rcid, op)
+		//}
 
 		if strings.HasPrefix(path, "app.bsky.feed.post") {
 			s.processPost(rec, uri, rcid, op)
@@ -120,6 +121,7 @@ func (s FirehoseSubscription) processPost(rec any, uri string, rcid *cid.Cid, op
 			// Classify by language
 			detector := lingua.NewLanguageDetectorBuilder().
 				FromAllLanguages().
+				WithMinimumRelativeDistance(0.6).
 				WithPreloadedLanguageModels().
 				Build()
 			language, _ := detector.DetectLanguageOf(post.Text)
