@@ -7,7 +7,7 @@ import (
 	"gorm.io/gorm"
 )
 
-const SpanishUri = "spanish"
+const SpanishUri = "at://did:plc:z3aeqjnupu54mnegflslmw6j/app.bsky.feed.generator/spanish"
 
 func Spanish(auth *auth.AuthConfig, db *gorm.DB, params feed.QueryParams) (string, []feed.SkeletonItem) {
 	language := lingua.Spanish.String()
