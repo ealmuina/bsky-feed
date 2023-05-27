@@ -10,7 +10,7 @@ import (
 
 func main() {
 	db := models.Migrate(&models.MigrationConfig{
-		DBPath: "/mnt/c/Users/almui/Desktop/test.db",
+		DBPath: "test.db",
 	})
 
 	go utils.CleanOldData(

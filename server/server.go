@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"gorm.io/gorm"
-	"io"
 	"net/http"
 	"os"
 )
@@ -17,11 +16,6 @@ type FeedAlgorithm = func(*auth.AuthConfig, *gorm.DB, feed.QueryParams) (string,
 
 type Server struct {
 	DB *gorm.DB
-}
-
-func (s Server) getRoot(w http.ResponseWriter, r *http.Request) {
-	fmt.Printf("got / request\n")
-	io.WriteString(w, "This is my website!\n")
 }
 
 func (s Server) getFeedSkeleton(w http.ResponseWriter, r *http.Request) {
@@ -58,10 +52,9 @@ func (s Server) getFeedSkeleton(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s Server) Run() {
-	http.HandleFunc("/", s.getRoot)
 	http.HandleFunc("/xrpc/app.bsky.feed.getFeedSkeleton", s.getFeedSkeleton)
 
-	err := http.ListenAndServe(":3333", nil)
+	err := http.ListenAndServe(":3000", nil)
 	if errors.Is(err, http.ErrServerClosed) {
 		fmt.Printf("server closed\n")
 	} else if err != nil {
