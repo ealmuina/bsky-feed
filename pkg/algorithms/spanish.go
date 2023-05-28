@@ -13,7 +13,10 @@ func Spanish(auth *auth.AuthConfig, db *gorm.DB, params feed.QueryParams) (strin
 	language := lingua.Spanish.String()
 	params.Language = &language
 
-	cursor, posts := feed.GetFeed(db, params)
+	cursor, posts := feed.GetFeed(db, params, func(query *gorm.DB) *gorm.DB {
+		// Exclude replies
+		return query.Where("reply_root IS NULL")
+	})
 
 	var result = make([]feed.SkeletonItem, 0)
 	for _, post := range posts {

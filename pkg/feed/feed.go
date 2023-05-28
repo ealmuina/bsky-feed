@@ -26,7 +26,7 @@ type SkeletonItem struct {
 	//Reason *ReasonRepost `json:"reason"`
 }
 
-func GetFeed(db *gorm.DB, params QueryParams) (string, []string) {
+func GetFeed(db *gorm.DB, params QueryParams, filter func(*gorm.DB) *gorm.DB) (string, []string) {
 	query := db.Order(
 		"indexed_at desc",
 	).Order(
@@ -56,6 +56,8 @@ func GetFeed(db *gorm.DB, params QueryParams) (string, []string) {
 	if params.Language != nil {
 		query = query.Where("language = ?", params.Language)
 	}
+
+	query = filter(query)
 
 	var posts []models.Post
 	query.Find(&posts)
