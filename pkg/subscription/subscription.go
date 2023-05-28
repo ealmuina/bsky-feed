@@ -121,7 +121,6 @@ func (s FirehoseSubscription) processPost(rec any, uri string, rcid *cid.Cid, op
 			// Classify by language
 			detector := lingua.NewLanguageDetectorBuilder().
 				FromAllLanguages().
-				WithMinimumRelativeDistance(0.6).
 				WithPreloadedLanguageModels().
 				Build()
 			language, _ := detector.DetectLanguageOf(post.Text)
