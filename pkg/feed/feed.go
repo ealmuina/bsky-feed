@@ -22,8 +22,8 @@ type ReasonRepost struct {
 }
 
 type SkeletonItem struct {
-	Post   string        `json:"post"`
-	Reason *ReasonRepost `json:"reason"`
+	Post string `json:"post"`
+	//Reason *ReasonRepost `json:"reason"`
 }
 
 func GetFeed(db *gorm.DB, params QueryParams) (string, []string) {
