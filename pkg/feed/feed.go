@@ -1,6 +1,7 @@
 package feed
 
 import (
+	"bsky/pkg/auth"
 	"bsky/pkg/models"
 	"fmt"
 	log "github.com/sirupsen/logrus"
@@ -9,6 +10,8 @@ import (
 	"strings"
 	"time"
 )
+
+type Algorithm func(*auth.AuthConfig, *gorm.DB, QueryParams) (string, []SkeletonItem)
 
 type QueryParams struct {
 	Limit    int
