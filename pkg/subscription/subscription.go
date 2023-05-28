@@ -18,9 +18,10 @@ import (
 )
 
 type FirehoseSubscription struct {
-	Service    string
-	connection *websocket.Conn
-	db         *gorm.DB
+	Service          string
+	connection       *websocket.Conn
+	db               *gorm.DB
+	languageDetector *lingua.LanguageDetector
 }
 
 func getCursor(service string, db *gorm.DB) int64 {
@@ -31,15 +32,23 @@ func getCursor(service string, db *gorm.DB) int64 {
 
 func New(service string, db *gorm.DB, url url.URL) *FirehoseSubscription {
 	url.RawQuery = fmt.Sprintf("cursor=%v", getCursor(service, db))
+
 	c, _, err := websocket.DefaultDialer.Dial(url.String(), nil)
 	if err != nil {
 		log.Error(err)
 		return nil
 	}
+
+	detector := lingua.NewLanguageDetectorBuilder().
+		FromAllLanguages().
+		WithPreloadedLanguageModels().
+		Build()
+
 	return &FirehoseSubscription{
-		Service:    service,
-		connection: c,
-		db:         db,
+		Service:          service,
+		connection:       c,
+		db:               db,
+		languageDetector: &detector,
 	}
 }
 
@@ -118,12 +127,7 @@ func (s FirehoseSubscription) processPost(rec any, uri string, rcid *cid.Cid, op
 				replyRoot = &post.Reply.Root.Uri
 			}
 
-			// Classify by language
-			detector := lingua.NewLanguageDetectorBuilder().
-				FromAllLanguages().
-				WithPreloadedLanguageModels().
-				Build()
-			language, _ := detector.DetectLanguageOf(post.Text)
+			language, _ := (*s.languageDetector).DetectLanguageOf(post.Text)
 
 			s.db.Create(&models.Post{
 				Uri:         uri,
