@@ -46,9 +46,11 @@ func GetFeed(db *gorm.DB, params QueryParams, filter func(*gorm.DB) *gorm.DB) (s
 			cid := s[1]
 
 			query = query.Where(
-				"indexed_at < ?", indexedAt,
-			).Or(
-				"indexed_at = ? AND cid < ?", indexedAt, cid,
+				query.Where(
+					"indexed_at < ?", indexedAt,
+				).Or(
+					"indexed_at = ? AND cid < ?", indexedAt, cid,
+				),
 			)
 		}
 	}
