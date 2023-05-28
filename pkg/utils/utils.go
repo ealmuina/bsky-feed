@@ -17,7 +17,7 @@ func CleanOldData(db *gorm.DB, tables []any) {
 				db.Unscoped().Delete(
 					table,
 					"created_at < ?",
-					now.Add(-48*time.Hour),
+					now.Add(-168*time.Hour),
 				)
 			}
 		}
