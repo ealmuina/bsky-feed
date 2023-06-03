@@ -29,6 +29,7 @@ func (s Server) getFeedSkeleton(w http.ResponseWriter, r *http.Request) {
 	feedAlgo := map[string]FeedAlgorithm{
 		algorithms.SpanishUri: algorithms.Spanish,
 		algorithms.CatalanUri: algorithms.Catalan,
+		algorithms.PortugueseUri: algorithms.Portuguese,
 	}[*feedUri]
 
 	if feedAlgo == nil {
