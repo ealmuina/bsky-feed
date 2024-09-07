@@ -7,3 +7,12 @@ services:
     volumes:
       - .:/app
     command: go run .
+  db:
+    image: postgres:latest
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - ./misc/db_init:/docker-entrypoint-initdb.d

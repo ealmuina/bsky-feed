@@ -1,7 +1,7 @@
 package server
 
 import (
-	"bsky/pkg/utils"
+	"bsky/utils"
 	log "github.com/sirupsen/logrus"
 	"net/http"
 	"net/url"
