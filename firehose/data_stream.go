@@ -100,6 +100,11 @@ func (s *Subscription) Run() {
 	}
 }
 
+func (s *Subscription) clearPostsCache() {
+	s.postsToCreate = make([]db.BulkCreatePostsParams, 0, PostsToCreateQueueSize)
+	s.postLanguagesToCreate = make([]db.BulkCreatePostLanguagesParams, 0, 2*PostsToCreateQueueSize)
+}
+
 func (s *Subscription) close() {
 	err := s.connection.Close()
 	if err != nil {
@@ -237,19 +242,19 @@ func (s *Subscription) handleFeedPostCreate(
 	}
 
 	if len(s.postsToCreate) > PostsToCreateQueueSize {
+		defer s.clearPostsCache()
+
 		// Bulk create posts
 		if _, err := s.queries.BulkCreatePosts(ctx, s.postsToCreate); err != nil {
 			log.Errorf("Error creating posts: %s", err)
 			return err
 		}
-		s.postsToCreate = make([]db.BulkCreatePostsParams, 0, PostsToCreateQueueSize)
 
 		// Bulk create post languages
 		if _, err := s.queries.BulkCreatePostLanguages(ctx, s.postLanguagesToCreate); err != nil {
 			log.Errorf("Error creating post languages: %s", err)
 			return err
 		}
-		s.postLanguagesToCreate = make([]db.BulkCreatePostLanguagesParams, 0, 2*PostsToCreateQueueSize)
 	}
 
 	return nil

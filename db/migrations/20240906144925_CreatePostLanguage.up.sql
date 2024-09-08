@@ -1,7 +1,7 @@
 CREATE TABLE post_languages
 (
     id          SERIAL PRIMARY KEY,
-    post_uri    VARCHAR REFERENCES "posts" ON DELETE CASCADE,
+    post_uri VARCHAR(255) REFERENCES "posts" ON DELETE CASCADE,
     language_id INTEGER REFERENCES "languages" ON DELETE CASCADE
 );
 

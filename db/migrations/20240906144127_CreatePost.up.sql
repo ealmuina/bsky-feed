@@ -1,12 +1,12 @@
 CREATE TABLE posts
 (
-    uri          VARCHAR PRIMARY KEY,
+    uri          VARCHAR(255) PRIMARY KEY,
 
-    author_did   VARCHAR REFERENCES "users",
+    author_did   VARCHAR(255) REFERENCES "users",
 
-    cid          VARCHAR NOT NULL,
-    reply_parent VARCHAR NULL,
-    reply_root   VARCHAR NULL,
+    cid          VARCHAR(255) NOT NULL,
+    reply_parent VARCHAR(255) NULL,
+    reply_root   VARCHAR(255) NULL,
 
     indexed_at   TIMESTAMP DEFAULT current_timestamp,
     created_at   TIMESTAMP

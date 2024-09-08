@@ -1,14 +1,14 @@
 CREATE TABLE users
 (
-    did             VARCHAR PRIMARY KEY,
-    handle          VARCHAR   NULL,
+    did             VARCHAR(255) PRIMARY KEY,
+    handle          VARCHAR(255) NULL,
 
-    followers_count INTEGER   NULL,
-    follows_count   INTEGER   NULL,
-    posts_count     INTEGER   NULL,
+    followers_count INTEGER      NULL,
+    follows_count   INTEGER      NULL,
+    posts_count     INTEGER      NULL,
 
     indexed_at      TIMESTAMP DEFAULT current_timestamp,
-    last_update     TIMESTAMP NULL
+    last_update     TIMESTAMP    NULL
 );
 
 CREATE INDEX IF NOT EXISTS "idx_users_did" ON "users" ("did");
