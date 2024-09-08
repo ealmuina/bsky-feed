@@ -37,7 +37,7 @@ func GetLanguageAlgorithm(languageCode string) feed.Algorithm {
 			*ctx,
 			db.GetLanguagePostsParams{
 				Code:      languageCode,
-				CreatedAt: pgtype.Timestamp{Time: createdAt},
+				CreatedAt: pgtype.Timestamp{Time: createdAt, Valid: true},
 				Cid:       cid,
 				Limit:     int32(params.Limit),
 			},

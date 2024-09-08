@@ -91,8 +91,15 @@ func (s *Server) Run() {
 
 func (s *Server) parseUri(uri *string) (string, error) {
 	components := strings.Split(*uri, "/")
+	repo := strings.Join(components[:len(components)-2], "/")
+	entityType := components[len(components)-2]
 
-	//TODO: Validate uri
+	if repo != os.Getenv("BSKY_REPO") {
+		return "", errors.New("invalid repository")
+	}
+	if entityType != "app.bsky.feed.generator" {
+		return "", errors.New("invalid entity type")
+	}
 
 	return components[len(components)-1], nil
 }

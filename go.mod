@@ -5,9 +5,9 @@ go 1.23
 toolchain go1.23.1
 
 require (
-	github.com/bluesky-social/indigo v0.0.0-20240906021954-f980b6a60e6a
+	github.com/bluesky-social/indigo v0.0.0-20240908164210-f9efd8cfb72e
 	github.com/gorilla/websocket v1.5.3
-	github.com/jackc/pgx/v5 v5.6.0
+	github.com/jackc/pgx/v5 v5.7.0
 	github.com/pemistahl/lingua-go v1.4.0
 	github.com/sirupsen/logrus v1.9.3
 	github.com/whyrusleeping/cbor-gen v0.1.3-0.20240904181319-8dc02b38228c
