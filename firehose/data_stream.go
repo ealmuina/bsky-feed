@@ -153,9 +153,8 @@ func (s *Subscription) getHandle() func(context.Context, *events.XRPCStreamEvent
 						return err
 					}
 				case repomgr.EvtKindDeleteRecord:
-					if err := s.handleRecordDelete(
-						ctx, commit.Repo, uri,
-					); err != nil {
+					recordType := strings.Split(op.Path, "/")[0]
+					if err := s.handleRecordDelete(ctx, uri, recordType); err != nil {
 						log.Errorf("Error handling delete record: %s", err)
 						return err
 					}
@@ -272,17 +271,22 @@ func (s *Subscription) handleRecordCreate(
 			log.Errorf("Error handling feed post create: %s", err)
 			return err
 		}
-	default:
-		// Ignore event
 	}
 	return nil
 }
 
 func (s *Subscription) handleRecordDelete(
 	ctx context.Context,
-	repo string,
 	uri string,
+	recordType string,
 ) error {
+	switch recordType {
+	case "app.bsky.feed.post":
+		if err := s.queries.DeletePost(ctx, uri); err != nil {
+			log.Errorf("Error deleting post: %s", err)
+			return err
+		}
+	}
 	return nil
 }
 

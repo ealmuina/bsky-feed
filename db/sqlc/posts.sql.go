@@ -20,6 +20,17 @@ type BulkCreatePostsParams struct {
 	CreatedAt   pgtype.Timestamp
 }
 
+const deletePost = `-- name: DeletePost :exec
+DELETE
+FROM posts
+WHERE uri = $1
+`
+
+func (q *Queries) DeletePost(ctx context.Context, uri string) error {
+	_, err := q.db.Exec(ctx, deletePost, uri)
+	return err
+}
+
 const getLanguagePosts = `-- name: GetLanguagePosts :many
 SELECT posts.uri, posts.author_did, posts.cid, posts.reply_parent, posts.reply_root, posts.indexed_at, posts.created_at
 FROM posts
