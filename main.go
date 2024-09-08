@@ -16,12 +16,12 @@ func main() {
 	connectionPool, err := pgxpool.New(
 		ctx,
 		fmt.Sprintf(
-			"user=%s password=%s dbname=%s sslmode=disable host=%s port=%d",
+			"user=%s password=%s dbname=%s sslmode=disable host=%s port=%s",
 			os.Getenv("DB_USERNAME"),
 			os.Getenv("DB_PASSWORD"),
 			"bsky_feeds",
-			"localhost",
-			5432,
+			os.Getenv("DB_HOST"),
+			os.Getenv("DB_PORT"),
 		),
 	)
 	if err != nil {
