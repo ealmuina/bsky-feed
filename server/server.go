@@ -23,9 +23,11 @@ func New(queries *db.Queries) Server {
 
 	// Populate language feeds
 	languages := map[string]string{
-		"spanish":    "es",
-		"portuguese": "pt",
+		"basque":     "eu",
 		"catalan":    "ca",
+		"galician":   "gl",
+		"portuguese": "pt",
+		"spanish":    "es",
 	}
 	for language, languageCode := range languages {
 		f := feed.New(
