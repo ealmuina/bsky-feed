@@ -4,3 +4,4 @@ ADD . /app
 WORKDIR /app
 
 RUN go mod download
+RUN go install github.com/sqlc-dev/sqlc/cmd/sqlc@latest
