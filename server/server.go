@@ -43,6 +43,41 @@ func New(queries *db.Queries) Server {
 	}
 }
 
+func (s *Server) Run() {
+	http.HandleFunc("/.well-known/did.json", s.getDidJson)
+	http.HandleFunc("/xrpc/app.bsky.feed.getFeedSkeleton", s.getFeedSkeleton)
+
+	err := http.ListenAndServe(":3333", nil)
+	if errors.Is(err, http.ErrServerClosed) {
+		fmt.Printf("server closed\n")
+	} else if err != nil {
+		fmt.Printf("error starting server: %s\n", err)
+		os.Exit(1)
+	}
+}
+
+func (s *Server) getDidJson(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	bskyHostname := os.Getenv("BSKY_HOSTNAME")
+	serviceDID := "did:web:" + bskyHostname
+
+	jsonResp := utils.ToJson(
+		map[string]any{
+			"@context": []string{"https://www.w3.org/ns/did/v1"},
+			"id":       serviceDID,
+			"service": []any{
+				map[string]string{
+					"id":              "#bsky_fg",
+					"type":            "BskyFeedGenerator",
+					"serviceEndpoint": "https://" + bskyHostname,
+				},
+			},
+		},
+	)
+	w.Write(jsonResp)
+}
+
 func (s *Server) getFeedSkeleton(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
@@ -77,18 +112,6 @@ func (s *Server) getFeedSkeleton(w http.ResponseWriter, r *http.Request) {
 
 	jsonResp := utils.ToJson(result)
 	w.Write(jsonResp)
-}
-
-func (s *Server) Run() {
-	http.HandleFunc("/xrpc/app.bsky.feed.getFeedSkeleton", s.getFeedSkeleton)
-
-	err := http.ListenAndServe(":3333", nil)
-	if errors.Is(err, http.ErrServerClosed) {
-		fmt.Printf("server closed\n")
-	} else if err != nil {
-		fmt.Printf("error starting server: %s\n", err)
-		os.Exit(1)
-	}
 }
 
 func (s *Server) parseUri(uri *string) (string, error) {
