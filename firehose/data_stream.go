@@ -24,7 +24,9 @@ import (
 const PostsToCreateQueueSize = 100
 
 type Subscription struct {
-	Service          string
+	Service string
+
+	url              url.URL
 	connection       *websocket.Conn
 	queries          *db.Queries
 	languageDetector *utils.LanguageDetector
@@ -37,12 +39,8 @@ type Subscription struct {
 }
 
 func New(service string, queries *db.Queries, url url.URL) *Subscription {
-	url.RawQuery = fmt.Sprintf("cursor=%v", getCursor(service, queries))
-
-	c, _, err := websocket.DefaultDialer.Dial(url.String(), nil)
-	if err != nil {
-		log.Error(err)
-		return nil
+	if cursor := getCursor(service, queries); cursor != 0 {
+		url.RawQuery = fmt.Sprintf("cursor=%v", cursor)
 	}
 
 	userDidSeen := sync.Map{}
@@ -56,8 +54,10 @@ func New(service string, queries *db.Queries, url url.URL) *Subscription {
 	}
 
 	return &Subscription{
-		Service:          service,
-		connection:       c,
+		Service: service,
+
+		url:              url,
+		connection:       getConnection(url),
 		queries:          queries,
 		languageDetector: utils.NewLanguageDetector(),
 
@@ -67,6 +67,14 @@ func New(service string, queries *db.Queries, url url.URL) *Subscription {
 		postsToCreate:         make([]db.BulkCreatePostsParams, 0, PostsToCreateQueueSize),
 		postLanguagesToCreate: make([]db.BulkCreatePostLanguagesParams, 0, 2*PostsToCreateQueueSize),
 	}
+}
+
+func getConnection(url url.URL) *websocket.Conn {
+	c, _, err := websocket.DefaultDialer.Dial(url.String(), nil)
+	if err != nil {
+		log.Error(err)
+	}
+	return c
 }
 
 func getCursor(service string, queries *db.Queries) int64 {
@@ -90,13 +98,19 @@ func (s *Subscription) Run() {
 		s.getHandle(),
 	)
 
-	err := events.HandleRepoStream(
-		context.Background(),
-		s.connection,
-		scheduler,
-	)
-	if err != nil {
-		log.Panic(err)
+	for {
+		err := events.HandleRepoStream(
+			context.Background(),
+			s.connection,
+			scheduler,
+		)
+		if err != nil {
+			log.Panic(err)
+		}
+		if recover() != nil {
+			// Reset connection
+			s.connection = getConnection(s.url)
+		}
 	}
 }
 
