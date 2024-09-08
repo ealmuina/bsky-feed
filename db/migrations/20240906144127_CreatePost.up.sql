@@ -4,9 +4,9 @@ CREATE TABLE posts
 
     author_did   VARCHAR REFERENCES "users",
 
-    cid          VARCHAR UNIQUE NOT NULL,
-    reply_parent VARCHAR        NULL,
-    reply_root   VARCHAR        NULL,
+    cid          VARCHAR NOT NULL,
+    reply_parent VARCHAR NULL,
+    reply_root   VARCHAR NULL,
 
     indexed_at   TIMESTAMP DEFAULT current_timestamp,
     created_at   TIMESTAMP

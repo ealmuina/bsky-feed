@@ -9,6 +9,39 @@ import (
 	"context"
 )
 
+// iteratorForBulkCreatePostLanguages implements pgx.CopyFromSource.
+type iteratorForBulkCreatePostLanguages struct {
+	rows                 []BulkCreatePostLanguagesParams
+	skippedFirstNextCall bool
+}
+
+func (r *iteratorForBulkCreatePostLanguages) Next() bool {
+	if len(r.rows) == 0 {
+		return false
+	}
+	if !r.skippedFirstNextCall {
+		r.skippedFirstNextCall = true
+		return true
+	}
+	r.rows = r.rows[1:]
+	return len(r.rows) > 0
+}
+
+func (r iteratorForBulkCreatePostLanguages) Values() ([]interface{}, error) {
+	return []interface{}{
+		r.rows[0].PostUri,
+		r.rows[0].LanguageID,
+	}, nil
+}
+
+func (r iteratorForBulkCreatePostLanguages) Err() error {
+	return nil
+}
+
+func (q *Queries) BulkCreatePostLanguages(ctx context.Context, arg []BulkCreatePostLanguagesParams) (int64, error) {
+	return q.db.CopyFrom(ctx, []string{"post_languages"}, []string{"post_uri", "language_id"}, &iteratorForBulkCreatePostLanguages{rows: arg})
+}
+
 // iteratorForBulkCreatePosts implements pgx.CopyFromSource.
 type iteratorForBulkCreatePosts struct {
 	rows                 []BulkCreatePostsParams
