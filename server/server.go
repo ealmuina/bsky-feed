@@ -45,6 +45,7 @@ func New(queries *db.Queries) Server {
 
 func (s *Server) Run() {
 	http.HandleFunc("/.well-known/did.json", s.getDidJson)
+	http.HandleFunc("/xrpc/app.bsky.feed.describeFeedGenerator", s.getDescribeFeedGenerator)
 	http.HandleFunc("/xrpc/app.bsky.feed.getFeedSkeleton", s.getFeedSkeleton)
 
 	err := http.ListenAndServe(":3333", nil)
@@ -71,6 +72,26 @@ func (s *Server) getDidJson(w http.ResponseWriter, r *http.Request) {
 					"id":              "#bsky_fg",
 					"type":            "BskyFeedGenerator",
 					"serviceEndpoint": "https://" + bskyHostname,
+				},
+			},
+		},
+	)
+	w.Write(jsonResp)
+}
+
+func (s *Server) getDescribeFeedGenerator(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	jsonResp := utils.ToJson(
+		map[string]any{
+			"encoding": "application/json",
+			"body": map[string]any{
+				"did": "did:web:" + os.Getenv("BSKY_HOSTNAME"),
+				"feeds": []map[string]string{
+					{"uri": "at://did:plc:qinqxdwwxgme6r4lgmkry5qu/app.bsky.feed.generator/basque"},
+					{"uri": "at://did:plc:qinqxdwwxgme6r4lgmkry5qu/app.bsky.feed.generator/catalan"},
+					{"uri": "at://did:plc:qinqxdwwxgme6r4lgmkry5qu/app.bsky.feed.generator/galician"},
+					{"uri": "at://did:plc:qinqxdwwxgme6r4lgmkry5qu/app.bsky.feed.generator/portuguese"},
+					{"uri": "at://did:plc:qinqxdwwxgme6r4lgmkry5qu/app.bsky.feed.generator/spanish"},
 				},
 			},
 		},
