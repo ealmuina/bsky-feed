@@ -7,7 +7,7 @@ import (
 
 type QueryParams struct {
 	Limit  int
-	Cursor string
+	Cursor *string
 }
 
 type Feed struct {

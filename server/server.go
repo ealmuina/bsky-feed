@@ -106,7 +106,7 @@ func (s *Server) getFeedSkeleton(w http.ResponseWriter, r *http.Request) {
 	result := requestedFeed.GetPosts(
 		feed.QueryParams{
 			Limit:  limit,
-			Cursor: *cursor,
+			Cursor: cursor,
 		},
 	)
 

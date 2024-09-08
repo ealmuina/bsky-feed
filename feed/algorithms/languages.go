@@ -16,14 +16,16 @@ const CursorEOF = "eof"
 
 func GetLanguageAlgorithm(languageCode string) feed.Algorithm {
 	return func(params feed.QueryParams, queries *db.Queries, ctx *context.Context) feed.Response {
-		if params.Cursor == CursorEOF {
+		if params.Cursor == nil {
+			*params.Cursor = fmt.Sprintf("%d::0", time.Now().Unix())
+		} else if *params.Cursor == CursorEOF {
 			return feed.Response{
 				Cursor: CursorEOF,
 				Posts:  make([]feed.Post, 0),
 			}
 		}
 
-		cursorParts := strings.Split(params.Cursor, "::")
+		cursorParts := strings.Split(*params.Cursor, "::")
 		if len(cursorParts) != 2 {
 			log.Errorf("Malformed cursor in %+v", params)
 			return feed.Response{}
