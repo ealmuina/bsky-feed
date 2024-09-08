@@ -7,6 +7,8 @@ services:
     volumes:
       - .:/app
     command: go run .
+    env_file:
+      - .env
   db:
     image: postgres:latest
     environment:
@@ -15,4 +17,4 @@ services:
     ports:
       - "5432:5432"
     volumes:
-      - ./misc/db_init:/docker-entrypoint-initdb.d
+      - ./db/db_init:/docker-entrypoint-initdb.d
