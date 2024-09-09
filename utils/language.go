@@ -6,7 +6,7 @@ import (
 	"strings"
 )
 
-const UserLanguageConfidenceThreshold = 0.15
+const UserLanguageConfidenceThreshold = 0.25
 const ModelLanguageConfidenceThreshold = 0.7
 
 type LanguageDetector struct {
@@ -57,7 +57,7 @@ func (d *LanguageDetector) DetectLanguage(text string, userLanguages []string) [
 	}
 
 	// No user language was confirmed
-	// Set model-detected language if confidence is higher than 0.7
+	// Set model-detected language if confidence is higher than ModelLanguageConfidenceThreshold
 	bestMatch := confidenceValues[0]
 	if bestMatch.Value() > ModelLanguageConfidenceThreshold {
 		return []string{bestMatch.Language().IsoCode639_1().String()}
