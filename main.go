@@ -4,9 +4,11 @@ import (
 	db "bsky/db/sqlc"
 	"bsky/firehose"
 	"bsky/server"
+	"bsky/utils"
 	"context"
 	"fmt"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"math"
 	"net/url"
 	"os"
 )
@@ -30,34 +32,23 @@ func main() {
 	queries := db.New(connectionPool)
 	s := server.New(queries)
 
-	subscription := firehose.New(
-		"bsky_feeds",
-		queries,
-		url.URL{
-			Scheme: "wss",
-			Host:   "bsky.network",
-			Path:   "/xrpc/com.atproto.sync.subscribeRepos",
-		},
-	)
-	go subscription.Run()
-
 	//go utils.CleanOldData(
 	//	db,
 	//	[]interface{}{&models.Post{}, &models.Like{}},
 	//)
 
-	//go utils.Recoverer(math.MaxInt, 1, func() {
-	//	firehoseSubscription := subscription.New(
-	//		"test",
-	//		db,
-	//		url.URL{
-	//			Scheme: "wss",
-	//			Host:   "bsky.social",
-	//			Path:   "/xrpc/com.atproto.sync.subscribeRepos",
-	//		},
-	//	)
-	//	firehoseSubscription.Run()
-	//})
+	go utils.Recoverer(math.MaxInt, 1, func() {
+		subscription := firehose.New(
+			"bsky_feeds",
+			queries,
+			url.URL{
+				Scheme: "wss",
+				Host:   "bsky.network",
+				Path:   "/xrpc/com.atproto.sync.subscribeRepos",
+			},
+		)
+		subscription.Run()
+	})
 
 	s.Run()
 }
