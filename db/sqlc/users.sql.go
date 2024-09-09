@@ -84,3 +84,34 @@ func (q *Queries) GetUserDids(ctx context.Context) ([]string, error) {
 	}
 	return items, nil
 }
+
+const updateUser = `-- name: UpdateUser :exec
+UPDATE users
+SET handle          = $2,
+    followers_count = $3,
+    follows_count   = $4,
+    posts_count     = $5,
+    last_update     = $6
+WHERE did = $1
+`
+
+type UpdateUserParams struct {
+	Did            string
+	Handle         pgtype.Text
+	FollowersCount pgtype.Int4
+	FollowsCount   pgtype.Int4
+	PostsCount     pgtype.Int4
+	LastUpdate     pgtype.Timestamp
+}
+
+func (q *Queries) UpdateUser(ctx context.Context, arg UpdateUserParams) error {
+	_, err := q.db.Exec(ctx, updateUser,
+		arg.Did,
+		arg.Handle,
+		arg.FollowersCount,
+		arg.FollowsCount,
+		arg.PostsCount,
+		arg.LastUpdate,
+	)
+	return err
+}

@@ -2,6 +2,7 @@ package firehose
 
 import (
 	db "bsky/db/sqlc"
+	"bsky/tasks"
 	"bsky/utils"
 	"bytes"
 	"context"
@@ -26,10 +27,11 @@ const PostsToCreateQueueSize = 100
 type Subscription struct {
 	Service string
 
-	url              url.URL
-	connection       *websocket.Conn
-	queries          *db.Queries
-	languageDetector *utils.LanguageDetector
+	url               url.URL
+	connection        *websocket.Conn
+	queries           *db.Queries
+	languageDetector  *utils.LanguageDetector
+	statisticsUpdater *tasks.StatisticsUpdater
 
 	userDidSeen           *sync.Map
 	languageIdCache       *sync.Map
@@ -53,13 +55,20 @@ func New(service string, queries *db.Queries, url url.URL) *Subscription {
 		userDidSeen.Store(did, true)
 	}
 
+	statisticsUpdater, err := tasks.NewStatisticsUpdater(queries)
+	if err != nil {
+		log.Errorf("Error creating statistics updater: %v", err)
+		panic(err)
+	}
+
 	return &Subscription{
 		Service: service,
 
-		url:              url,
-		connection:       getConnection(url),
-		queries:          queries,
-		languageDetector: utils.NewLanguageDetector(),
+		url:               url,
+		connection:        getConnection(url),
+		queries:           queries,
+		languageDetector:  utils.NewLanguageDetector(),
+		statisticsUpdater: statisticsUpdater,
 
 		userDidSeen:           &userDidSeen,
 		languageIdCache:       &sync.Map{},
@@ -89,6 +98,7 @@ func getCursor(service string, queries *db.Queries) int64 {
 }
 
 func (s *Subscription) Run() {
+	go s.statisticsUpdater.Run()
 	defer s.close()
 
 	scheduler := parallel.NewScheduler(
@@ -230,6 +240,8 @@ func (s *Subscription) handleFeedPostCreate(
 		replyRoot = pgtype.Text{String: data.Reply.Root.Uri, Valid: true}
 	}
 	languages := s.languageDetector.DetectLanguage(data.Text, data.Langs)
+
+	s.statisticsUpdater.Ch <- repoDID
 
 	s.postsMutex.Lock()
 	defer s.postsMutex.Unlock()
