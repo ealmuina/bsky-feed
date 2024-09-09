@@ -241,7 +241,7 @@ func (s *Subscription) handleFeedPostCreate(
 	}
 	languages := s.languageDetector.DetectLanguage(data.Text, data.Langs)
 
-	s.statisticsUpdater.Ch <- repoDID
+	//s.statisticsUpdater.Ch <- repoDID
 
 	s.postsMutex.Lock()
 	defer s.postsMutex.Unlock()
