@@ -30,12 +30,16 @@ func New(queries *db.Queries) Server {
 		"spanish":    "es",
 	}
 	for language, languageCode := range languages {
-		f := feed.New(
+		feeds[language] = feed.New(
 			queries,
 			algorithms.GetLanguageAlgorithm(languageCode),
 		)
-		feeds[language] = &f
 	}
+	// Additional feeds
+	feeds["top_spanish"] = feed.New(
+		queries,
+		algorithms.GetTopLanguageAlgorithm("es"),
+	)
 
 	return Server{
 		queries: queries,

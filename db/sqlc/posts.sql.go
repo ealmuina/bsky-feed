@@ -35,11 +35,10 @@ const getLanguagePosts = `-- name: GetLanguagePosts :many
 SELECT posts.uri, posts.author_did, posts.cid, posts.reply_parent, posts.reply_root, posts.indexed_at, posts.created_at
 FROM posts
          INNER JOIN post_languages pl on posts.uri = pl.post_uri
-         INNER JOIN public.languages l on l.id = pl.language_id
+         INNER JOIN languages l on l.id = pl.language_id
 WHERE l.code = $1
-    AND reply_root IS NULL
-    AND created_at < $2
-   OR (created_at = $2 AND cid < $3)
+  AND reply_root IS NULL
+  AND (created_at < $2 OR (created_at = $2 AND cid < $3))
 ORDER BY created_at DESC, cid DESC
 LIMIT $4
 `
@@ -53,6 +52,60 @@ type GetLanguagePostsParams struct {
 
 func (q *Queries) GetLanguagePosts(ctx context.Context, arg GetLanguagePostsParams) ([]Post, error) {
 	rows, err := q.db.Query(ctx, getLanguagePosts,
+		arg.Code,
+		arg.CreatedAt,
+		arg.Cid,
+		arg.Limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Post
+	for rows.Next() {
+		var i Post
+		if err := rows.Scan(
+			&i.Uri,
+			&i.AuthorDid,
+			&i.Cid,
+			&i.ReplyParent,
+			&i.ReplyRoot,
+			&i.IndexedAt,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getLanguageTopPosts = `-- name: GetLanguageTopPosts :many
+SELECT posts.uri, posts.author_did, posts.cid, posts.reply_parent, posts.reply_root, posts.indexed_at, posts.created_at
+FROM posts
+         INNER JOIN post_languages pl on posts.uri = pl.post_uri
+         INNER JOIN languages l on l.id = pl.language_id
+         INNER JOIN users u on posts.author_did = u.did
+WHERE l.code = $1
+  AND reply_root IS NULL
+  AND u.followers_count > 1000
+  AND (created_at < $2 OR (created_at = $2 AND cid < $3))
+ORDER BY created_at DESC, cid DESC
+LIMIT $4
+`
+
+type GetLanguageTopPostsParams struct {
+	Code      string
+	CreatedAt pgtype.Timestamp
+	Cid       string
+	Limit     int32
+}
+
+func (q *Queries) GetLanguageTopPosts(ctx context.Context, arg GetLanguageTopPostsParams) ([]Post, error) {
+	rows, err := q.db.Query(ctx, getLanguageTopPosts,
 		arg.Code,
 		arg.CreatedAt,
 		arg.Cid,
