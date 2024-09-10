@@ -299,8 +299,6 @@ func (s *Subscription) handleFeedPostCreate(
 	cid *util.LexLink,
 	data *appbsky.FeedPost,
 ) error {
-	s.createUser(repoDID)
-
 	createdAt, err := utils.ParseTime(data.CreatedAt)
 	if err != nil {
 		log.Errorf("Error parsing created at: %s", err)
@@ -313,6 +311,12 @@ func (s *Subscription) handleFeedPostCreate(
 	}
 	languages := s.languageDetector.DetectLanguage(data.Text, data.Langs)
 
+	// Skip storing posts with no language identified
+	if len(languages) == 0 {
+		return nil
+	}
+
+	s.createUser(repoDID)
 	s.createPost(
 		ctx,
 		&db.BulkCreatePostsParams{
@@ -325,7 +329,6 @@ func (s *Subscription) handleFeedPostCreate(
 		},
 		languages,
 	)
-
 	return nil
 }
 
