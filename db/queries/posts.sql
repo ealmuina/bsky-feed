@@ -2,10 +2,10 @@
 INSERT INTO posts (uri, author_did, cid, reply_parent, reply_root, created_at)
 VALUES ($1, $2, $3, $4, $5, $6);
 
--- name: DeletePost :exec
+-- name: BulkDeletePosts :exec
 DELETE
 FROM posts
-WHERE uri = $1;
+WHERE uri = ANY ($1::VARCHAR[]);
 
 -- name: GetLanguagePosts :many
 SELECT posts.*

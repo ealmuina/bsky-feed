@@ -23,7 +23,8 @@ import (
 )
 
 const SchedulerMaxConcurrency = 8
-const PostsToCreateQueueSize = 100
+const PostsToCreateBulkSize = 100
+const PostsToDeleteBulkSize = 100
 
 type Subscription struct {
 	Service string
@@ -34,11 +35,15 @@ type Subscription struct {
 	languageDetector  *utils.LanguageDetector
 	statisticsUpdater *tasks.StatisticsUpdater
 
-	userDidSeen           *sync.Map
-	languageIdCache       *sync.Map
+	userDidSeen     *sync.Map
+	languageIdCache *sync.Map
+
 	postsMutex            *sync.Mutex
 	postsToCreate         []db.BulkCreatePostsParams
 	postLanguagesToCreate []db.BulkCreatePostLanguagesParams
+
+	deleteMutex   *sync.Mutex
+	postsToDelete []string
 }
 
 func New(service string, queries *db.Queries, url url.URL) *Subscription {
@@ -71,11 +76,15 @@ func New(service string, queries *db.Queries, url url.URL) *Subscription {
 		languageDetector:  utils.NewLanguageDetector(),
 		statisticsUpdater: statisticsUpdater,
 
-		userDidSeen:           &userDidSeen,
-		languageIdCache:       &sync.Map{},
+		userDidSeen:     &userDidSeen,
+		languageIdCache: &sync.Map{},
+
 		postsMutex:            &sync.Mutex{},
-		postsToCreate:         make([]db.BulkCreatePostsParams, 0, PostsToCreateQueueSize),
-		postLanguagesToCreate: make([]db.BulkCreatePostLanguagesParams, 0, 2*PostsToCreateQueueSize),
+		postsToCreate:         make([]db.BulkCreatePostsParams, 0, PostsToCreateBulkSize),
+		postLanguagesToCreate: make([]db.BulkCreatePostLanguagesParams, 0, 2*PostsToCreateBulkSize),
+
+		deleteMutex:   &sync.Mutex{},
+		postsToDelete: make([]string, 0, PostsToDeleteBulkSize),
 	}
 }
 
@@ -147,6 +156,12 @@ func (s *Subscription) bulkCreatePosts(
 	}
 }
 
+func (s *Subscription) bulkDeletePosts(ctx context.Context, uris []string) {
+	if err := s.queries.BulkDeletePosts(ctx, uris); err != nil {
+		log.Errorf("Error deleting posts: %s", err)
+	}
+}
+
 func (s *Subscription) createPost(
 	ctx context.Context,
 	post *db.BulkCreatePostsParams,
@@ -169,7 +184,7 @@ func (s *Subscription) createPost(
 		)
 	}
 
-	if len(s.postsToCreate) > PostsToCreateQueueSize {
+	if len(s.postsToCreate) > PostsToCreateBulkSize {
 		// Clone caches and exec bulk insert
 		posts := make([]db.BulkCreatePostsParams, len(s.postsToCreate))
 		copy(posts, s.postsToCreate)
@@ -180,8 +195,8 @@ func (s *Subscription) createPost(
 		go s.bulkCreatePosts(ctx, posts, postLanguages)
 
 		// Clear buffers
-		s.postsToCreate = make([]db.BulkCreatePostsParams, 0, PostsToCreateQueueSize)
-		s.postLanguagesToCreate = make([]db.BulkCreatePostLanguagesParams, 0, 2*PostsToCreateQueueSize)
+		s.postsToCreate = make([]db.BulkCreatePostsParams, 0, PostsToCreateBulkSize)
+		s.postLanguagesToCreate = make([]db.BulkCreatePostLanguagesParams, 0, 2*PostsToCreateBulkSize)
 	}
 }
 
@@ -198,6 +213,23 @@ func (s *Subscription) createUser(repoDID string) {
 		return
 	}
 	s.userDidSeen.Store(repoDID, true)
+}
+
+func (s *Subscription) deletePost(ctx context.Context, uri string) {
+	s.deleteMutex.Lock()
+	defer s.deleteMutex.Unlock()
+
+	s.postsToDelete = append(s.postsToDelete, uri)
+
+	if len(s.postsToDelete) > PostsToDeleteBulkSize {
+		// Clone cache and exec bulk delete
+		uris := make([]string, len(s.postsToDelete))
+		copy(uris, s.postsToDelete)
+		go s.bulkDeletePosts(ctx, uris)
+
+		// Clear buffer
+		s.postsToDelete = make([]string, 0, PostsToDeleteBulkSize)
+	}
 }
 
 func (s *Subscription) getHandle() func(context.Context, *events.XRPCStreamEvent) error {
@@ -230,12 +262,12 @@ func (s *Subscription) getHandle() func(context.Context, *events.XRPCStreamEvent
 						log.Errorf("Error handling create record: %s", err)
 						return err
 					}
-					//case repomgr.EvtKindDeleteRecord:
-					//	recordType := strings.Split(op.Path, "/")[0]
-					//	if err := s.handleRecordDelete(ctx, uri, recordType); err != nil {
-					//		log.Errorf("Error handling delete record: %s", err)
-					//		return err
-					//	}
+				case repomgr.EvtKindDeleteRecord:
+					recordType := strings.Split(op.Path, "/")[0]
+					if err := s.handleRecordDelete(ctx, uri, recordType); err != nil {
+						log.Errorf("Error handling delete record: %s", err)
+						return err
+					}
 				}
 			}
 		}
@@ -334,10 +366,7 @@ func (s *Subscription) handleRecordDelete(
 ) error {
 	switch recordType {
 	case "app.bsky.feed.post":
-		if err := s.queries.DeletePost(ctx, uri); err != nil {
-			log.Errorf("Error deleting post: %s", err)
-			return err
-		}
+		s.deletePost(ctx, uri)
 	}
 	return nil
 }
