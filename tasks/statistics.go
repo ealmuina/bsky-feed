@@ -16,11 +16,7 @@ import (
 	"time"
 )
 
-const UserChannelBufferSize = 100000
-
 type StatisticsUpdater struct {
-	Ch chan string
-
 	queries         *db.Queries
 	client          *xrpc.Client
 	userLastUpdated map[string]time.Time
@@ -77,22 +73,19 @@ func NewStatisticsUpdater(queries *db.Queries) (*StatisticsUpdater, error) {
 	}
 
 	return &StatisticsUpdater{
-		Ch:              make(chan string, UserChannelBufferSize),
 		queries:         queries,
 		client:          client,
 		userLastUpdated: make(map[string]time.Time),
 	}, nil
 }
 
-func (u *StatisticsUpdater) Run() {
-	for did := range u.Ch {
-		now := time.Now()
-		yesterday := now.AddDate(0, 0, -1)
+func (u *StatisticsUpdater) UpdateUserStatistics(did string) {
+	now := time.Now()
+	yesterday := now.AddDate(0, 0, -1)
 
-		if u.userLastUpdated[did].Before(yesterday) {
-			u.updateUserData(did)
-			u.userLastUpdated[did] = now
-		}
+	if u.userLastUpdated[did].Before(yesterday) {
+		go u.updateUserData(did)
+		u.userLastUpdated[did] = now
 	}
 }
 

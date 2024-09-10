@@ -98,7 +98,6 @@ func getCursor(service string, queries *db.Queries) int64 {
 }
 
 func (s *Subscription) Run() {
-	go s.statisticsUpdater.Run()
 	defer s.close()
 
 	scheduler := parallel.NewScheduler(
@@ -133,6 +132,43 @@ func (s *Subscription) close() {
 	err := s.connection.Close()
 	if err != nil {
 		log.Error(err)
+	}
+}
+
+func (s *Subscription) createPost(
+	ctx context.Context,
+	post *db.BulkCreatePostsParams,
+	languages []string,
+) {
+	s.postsMutex.Lock()
+	defer s.postsMutex.Unlock()
+
+	s.postsToCreate = append(
+		s.postsToCreate,
+		*post,
+	)
+	for _, lang := range languages {
+		s.postLanguagesToCreate = append(
+			s.postLanguagesToCreate,
+			db.BulkCreatePostLanguagesParams{
+				PostUri:    pgtype.Text{String: post.Uri, Valid: true},
+				LanguageID: pgtype.Int4{Int32: s.getLanguageId(lang), Valid: true},
+			},
+		)
+	}
+
+	if len(s.postsToCreate) > PostsToCreateQueueSize {
+		defer s.clearPostsCache()
+
+		// Bulk create posts
+		if _, err := s.queries.BulkCreatePosts(ctx, s.postsToCreate); err != nil {
+			log.Errorf("Error creating posts: %s", err)
+		}
+
+		// Bulk create post languages
+		if _, err := s.queries.BulkCreatePostLanguages(ctx, s.postLanguagesToCreate); err != nil {
+			log.Errorf("Error creating post languages: %s", err)
+		}
 	}
 }
 
@@ -241,14 +277,9 @@ func (s *Subscription) handleFeedPostCreate(
 	}
 	languages := s.languageDetector.DetectLanguage(data.Text, data.Langs)
 
-	//s.statisticsUpdater.Ch <- repoDID
-
-	s.postsMutex.Lock()
-	defer s.postsMutex.Unlock()
-
-	s.postsToCreate = append(
-		s.postsToCreate,
-		db.BulkCreatePostsParams{
+	go s.createPost(
+		ctx,
+		&db.BulkCreatePostsParams{
 			Uri:         uri,
 			AuthorDid:   pgtype.Text{String: repoDID, Valid: true},
 			Cid:         cid.String(),
@@ -256,32 +287,9 @@ func (s *Subscription) handleFeedPostCreate(
 			ReplyRoot:   replyRoot,
 			CreatedAt:   pgtype.Timestamp{Time: createdAt, Valid: true},
 		},
+		languages,
 	)
-	for _, lang := range languages {
-		s.postLanguagesToCreate = append(
-			s.postLanguagesToCreate,
-			db.BulkCreatePostLanguagesParams{
-				PostUri:    pgtype.Text{String: uri, Valid: true},
-				LanguageID: pgtype.Int4{Int32: s.getLanguageId(lang), Valid: true},
-			},
-		)
-	}
-
-	if len(s.postsToCreate) > PostsToCreateQueueSize {
-		defer s.clearPostsCache()
-
-		// Bulk create posts
-		if _, err := s.queries.BulkCreatePosts(ctx, s.postsToCreate); err != nil {
-			log.Errorf("Error creating posts: %s", err)
-			return err
-		}
-
-		// Bulk create post languages
-		if _, err := s.queries.BulkCreatePostLanguages(ctx, s.postLanguagesToCreate); err != nil {
-			log.Errorf("Error creating post languages: %s", err)
-			return err
-		}
-	}
+	//s.statisticsUpdater.UpdateUserStatistics(repoDID)
 
 	return nil
 }
