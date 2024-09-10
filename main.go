@@ -4,6 +4,7 @@ import (
 	db "bsky/db/sqlc"
 	"bsky/firehose"
 	"bsky/server"
+	"bsky/tasks"
 	"bsky/utils"
 	"context"
 	"fmt"
@@ -12,6 +13,32 @@ import (
 	"net/url"
 	"os"
 )
+
+func runBackgroundTasks(queries *db.Queries) {
+	// DB cleanup
+	go utils.CleanOldData(queries)
+
+	// Firehose consumer
+	go utils.Recoverer(math.MaxInt, 1, func() {
+		subscription := firehose.New(
+			"bsky_feeds",
+			queries,
+			url.URL{
+				Scheme: "wss",
+				Host:   "bsky.network",
+				Path:   "/xrpc/com.atproto.sync.subscribeRepos",
+			},
+		)
+		subscription.Run()
+	})
+
+	// Statistics updater
+	statisticsUpdater, err := tasks.NewStatisticsUpdater(queries)
+	if err != nil {
+		panic(err)
+	}
+	go statisticsUpdater.Run()
+}
 
 func main() {
 	ctx := context.Background()
@@ -32,23 +59,8 @@ func main() {
 	queries := db.New(connectionPool)
 	s := server.New(queries)
 
-	//go utils.CleanOldData(
-	//	db,
-	//	[]interface{}{&models.Post{}, &models.Like{}},
-	//)
-
-	go utils.Recoverer(math.MaxInt, 1, func() {
-		subscription := firehose.New(
-			"bsky_feeds",
-			queries,
-			url.URL{
-				Scheme: "wss",
-				Host:   "bsky.network",
-				Path:   "/xrpc/com.atproto.sync.subscribeRepos",
-			},
-		)
-		subscription.Run()
-	})
+	// Run background tasks
+	runBackgroundTasks(queries)
 
 	s.Run()
 }

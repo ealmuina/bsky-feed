@@ -2,7 +2,6 @@ package firehose
 
 import (
 	db "bsky/db/sqlc"
-	"bsky/tasks"
 	"bsky/utils"
 	"bytes"
 	"context"
@@ -29,11 +28,10 @@ const PostsToDeleteBulkSize = 100
 type Subscription struct {
 	Service string
 
-	url               url.URL
-	connection        *websocket.Conn
-	queries           *db.Queries
-	languageDetector  *utils.LanguageDetector
-	statisticsUpdater *tasks.StatisticsUpdater
+	url              url.URL
+	connection       *websocket.Conn
+	queries          *db.Queries
+	languageDetector *utils.LanguageDetector
 
 	userDidSeen     *sync.Map
 	languageIdCache *sync.Map
@@ -61,20 +59,13 @@ func New(service string, queries *db.Queries, url url.URL) *Subscription {
 		userDidSeen.Store(did, true)
 	}
 
-	statisticsUpdater, err := tasks.NewStatisticsUpdater(queries)
-	if err != nil {
-		log.Errorf("Error creating statistics updater: %v", err)
-		panic(err)
-	}
-
 	return &Subscription{
 		Service: service,
 
-		url:               url,
-		connection:        getConnection(url),
-		queries:           queries,
-		languageDetector:  utils.NewLanguageDetector(),
-		statisticsUpdater: statisticsUpdater,
+		url:              url,
+		connection:       getConnection(url),
+		queries:          queries,
+		languageDetector: utils.NewLanguageDetector(),
 
 		userDidSeen:     &userDidSeen,
 		languageIdCache: &sync.Map{},
@@ -133,13 +124,6 @@ func (s *Subscription) Run() {
 	}
 }
 
-func (s *Subscription) close() {
-	err := s.connection.Close()
-	if err != nil {
-		log.Error(err)
-	}
-}
-
 func (s *Subscription) bulkCreatePosts(
 	ctx context.Context,
 	posts []db.BulkCreatePostsParams,
@@ -159,6 +143,13 @@ func (s *Subscription) bulkCreatePosts(
 func (s *Subscription) bulkDeletePosts(ctx context.Context, uris []string) {
 	if err := s.queries.BulkDeletePosts(ctx, uris); err != nil {
 		log.Errorf("Error deleting posts: %s", err)
+	}
+}
+
+func (s *Subscription) close() {
+	err := s.connection.Close()
+	if err != nil {
+		log.Error(err)
 	}
 }
 
@@ -334,7 +325,6 @@ func (s *Subscription) handleFeedPostCreate(
 		},
 		languages,
 	)
-	//s.statisticsUpdater.UpdateUserStatistics(repoDID)
 
 	return nil
 }

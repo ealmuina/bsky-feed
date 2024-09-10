@@ -11,10 +11,13 @@ import (
 	"github.com/bluesky-social/indigo/xrpc"
 	"github.com/jackc/pgx/v5/pgtype"
 	log "github.com/sirupsen/logrus"
+	"math"
 	"net/http"
 	"os"
 	"time"
 )
+
+const ActorGetProfilesMaxSize = 25
 
 type StatisticsUpdater struct {
 	queries         *db.Queries
@@ -79,38 +82,54 @@ func NewStatisticsUpdater(queries *db.Queries) (*StatisticsUpdater, error) {
 	}, nil
 }
 
-func (u *StatisticsUpdater) UpdateUserStatistics(did string) {
-	now := time.Now()
-	yesterday := now.AddDate(0, 0, -1)
-
-	if u.userLastUpdated[did].Before(yesterday) {
-		go u.updateUserData(did)
-		u.userLastUpdated[did] = now
+func (u *StatisticsUpdater) Run() {
+	u.updateUserStatistics()
+	for {
+		select {
+		case <-time.After(1 * time.Hour):
+			u.updateUserStatistics()
+		}
 	}
 }
 
-func (u *StatisticsUpdater) updateUserData(did string) {
+func (u *StatisticsUpdater) updateUserStatistics() {
 	ctx := context.Background()
 
-	profile, err := appbsky.ActorGetProfile(ctx, u.client, did)
+	dids, err := u.queries.GetUserDidsToRefreshStatistics(ctx)
 	if err != nil {
-		log.Errorf("Error getting profile: %v", err)
+		log.Errorf("Error getting user dids for update: %v", err)
 		return
 	}
+	numBatches := int(math.Ceil(
+		float64(len(dids)) / ActorGetProfilesMaxSize,
+	))
 
-	err = u.queries.UpdateUser(
-		ctx,
-		db.UpdateUserParams{
-			Did:            did,
-			Handle:         pgtype.Text{String: profile.Handle, Valid: true},
-			FollowersCount: pgtype.Int4{Int32: int32(*profile.FollowersCount), Valid: true},
-			FollowsCount:   pgtype.Int4{Int32: int32(*profile.FollowsCount), Valid: true},
-			PostsCount:     pgtype.Int4{Int32: int32(*profile.PostsCount), Valid: true},
-			LastUpdate:     pgtype.Timestamp{Time: time.Now(), Valid: true},
-		},
-	)
-	if err != nil {
-		log.Errorf("Error updating user: %v", err)
-		return
+	for i := 0; i < numBatches; i++ {
+		startIndex := i * ActorGetProfilesMaxSize
+		endIndex := int(math.Min(float64(startIndex+ActorGetProfilesMaxSize), float64(len(dids))))
+
+		profiles, err := appbsky.ActorGetProfiles(ctx, u.client, dids[startIndex:endIndex])
+		if err != nil {
+			log.Errorf("Error getting user profiles: %v", err)
+			continue
+		}
+
+		for _, profile := range profiles.Profiles {
+			err = u.queries.UpdateUser(
+				ctx,
+				db.UpdateUserParams{
+					Did:            profile.Did,
+					Handle:         pgtype.Text{String: profile.Handle, Valid: true},
+					FollowersCount: pgtype.Int4{Int32: int32(*profile.FollowersCount), Valid: true},
+					FollowsCount:   pgtype.Int4{Int32: int32(*profile.FollowsCount), Valid: true},
+					PostsCount:     pgtype.Int4{Int32: int32(*profile.PostsCount), Valid: true},
+					LastUpdate:     pgtype.Timestamp{Time: time.Now(), Valid: true},
+				},
+			)
+			if err != nil {
+				log.Errorf("Error updating user: %v", err)
+				continue
+			}
+		}
 	}
 }

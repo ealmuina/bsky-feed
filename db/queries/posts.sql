@@ -7,6 +7,11 @@ DELETE
 FROM posts
 WHERE uri = ANY ($1::VARCHAR[]);
 
+-- name: DeleteOldPosts :exec
+DELETE
+FROM posts
+WHERE indexed_at < current_timestamp - interval '10 days';
+
 -- name: GetLanguagePosts :many
 SELECT posts.*
 FROM posts

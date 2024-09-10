@@ -31,6 +31,17 @@ func (q *Queries) BulkDeletePosts(ctx context.Context, dollar_1 []string) error 
 	return err
 }
 
+const deleteOldPosts = `-- name: DeleteOldPosts :exec
+DELETE
+FROM posts
+WHERE indexed_at < current_timestamp - interval '10 days'
+`
+
+func (q *Queries) DeleteOldPosts(ctx context.Context) error {
+	_, err := q.db.Exec(ctx, deleteOldPosts)
+	return err
+}
+
 const getLanguagePosts = `-- name: GetLanguagePosts :many
 SELECT posts.uri, posts.author_did, posts.cid, posts.reply_parent, posts.reply_root, posts.indexed_at, posts.created_at
 FROM posts

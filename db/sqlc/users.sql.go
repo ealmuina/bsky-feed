@@ -85,6 +85,33 @@ func (q *Queries) GetUserDids(ctx context.Context) ([]string, error) {
 	return items, nil
 }
 
+const getUserDidsToRefreshStatistics = `-- name: GetUserDidsToRefreshStatistics :many
+SELECT users.did
+FROM users
+WHERE last_update IS NULL
+   OR last_update < current_timestamp - interval '1 day'
+`
+
+func (q *Queries) GetUserDidsToRefreshStatistics(ctx context.Context) ([]string, error) {
+	rows, err := q.db.Query(ctx, getUserDidsToRefreshStatistics)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []string
+	for rows.Next() {
+		var did string
+		if err := rows.Scan(&did); err != nil {
+			return nil, err
+		}
+		items = append(items, did)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const updateUser = `-- name: UpdateUser :exec
 UPDATE users
 SET handle          = $2,
