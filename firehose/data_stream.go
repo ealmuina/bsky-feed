@@ -22,6 +22,7 @@ import (
 	"sync"
 )
 
+const SchedulerMaxConcurrency = 8
 const PostsToCreateQueueSize = 100
 
 type Subscription struct {
@@ -101,7 +102,7 @@ func (s *Subscription) Run() {
 	defer s.close()
 
 	scheduler := parallel.NewScheduler(
-		4,
+		SchedulerMaxConcurrency,
 		1000,
 		"data_stream",
 		s.getHandle(),
@@ -123,15 +124,26 @@ func (s *Subscription) Run() {
 	}
 }
 
-func (s *Subscription) clearPostsCache() {
-	s.postsToCreate = make([]db.BulkCreatePostsParams, 0, PostsToCreateQueueSize)
-	s.postLanguagesToCreate = make([]db.BulkCreatePostLanguagesParams, 0, 2*PostsToCreateQueueSize)
-}
-
 func (s *Subscription) close() {
 	err := s.connection.Close()
 	if err != nil {
 		log.Error(err)
+	}
+}
+
+func (s *Subscription) bulkCreatePosts(
+	ctx context.Context,
+	posts []db.BulkCreatePostsParams,
+	postLanguages []db.BulkCreatePostLanguagesParams,
+) {
+	// Bulk create posts
+	if _, err := s.queries.BulkCreatePosts(ctx, posts); err != nil {
+		log.Errorf("Error creating posts: %s", err)
+	}
+
+	// Bulk create post languages
+	if _, err := s.queries.BulkCreatePostLanguages(ctx, postLanguages); err != nil {
+		log.Errorf("Error creating post languages: %s", err)
 	}
 }
 
@@ -158,17 +170,18 @@ func (s *Subscription) createPost(
 	}
 
 	if len(s.postsToCreate) > PostsToCreateQueueSize {
-		defer s.clearPostsCache()
+		// Clone caches and exec bulk insert
+		posts := make([]db.BulkCreatePostsParams, len(s.postsToCreate))
+		copy(posts, s.postsToCreate)
 
-		// Bulk create posts
-		if _, err := s.queries.BulkCreatePosts(ctx, s.postsToCreate); err != nil {
-			log.Errorf("Error creating posts: %s", err)
-		}
+		postLanguages := make([]db.BulkCreatePostLanguagesParams, len(s.postLanguagesToCreate))
+		copy(postLanguages, s.postLanguagesToCreate)
 
-		// Bulk create post languages
-		if _, err := s.queries.BulkCreatePostLanguages(ctx, s.postLanguagesToCreate); err != nil {
-			log.Errorf("Error creating post languages: %s", err)
-		}
+		go s.bulkCreatePosts(ctx, posts, postLanguages)
+
+		// Clear buffers
+		s.postsToCreate = make([]db.BulkCreatePostsParams, 0, PostsToCreateQueueSize)
+		s.postLanguagesToCreate = make([]db.BulkCreatePostLanguagesParams, 0, 2*PostsToCreateQueueSize)
 	}
 }
 
@@ -277,7 +290,7 @@ func (s *Subscription) handleFeedPostCreate(
 	}
 	languages := s.languageDetector.DetectLanguage(data.Text, data.Langs)
 
-	go s.createPost(
+	s.createPost(
 		ctx,
 		&db.BulkCreatePostsParams{
 			Uri:         uri,
