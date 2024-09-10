@@ -12,6 +12,11 @@ SET handle          = $2,
     last_update     = $6
 WHERE did = $1;
 
+-- name: DeleteUser :exec
+DELETE
+FROM users
+WHERE did = $1;
+
 -- name: GetUser :one
 SELECT *
 FROM users

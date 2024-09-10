@@ -17,6 +17,9 @@ import (
 	"time"
 )
 
+const AccountDeactivatedError = "AccountDeactivated"
+const InvalidRequestError = "InvalidRequest" // Seen when profile is not found
+
 type StatisticsUpdater struct {
 	queries         *db.Queries
 	client          *xrpc.Client
@@ -106,6 +109,21 @@ func (u *StatisticsUpdater) updateUserStatistics() {
 
 			var bskyErr *xrpc.Error
 			if errors.As(err, &bskyErr) {
+				if bskyErr.StatusCode == 400 {
+					var wrappedError *xrpc.XRPCError
+
+					if errors.As(bskyErr.Wrapped, &wrappedError) {
+						switch wrappedError.ErrStr {
+						case AccountDeactivatedError, InvalidRequestError:
+							// Delete user if profile does not exist anymore
+							if err := u.queries.DeleteUser(ctx, did); err != nil {
+								log.Errorf("Error deleting user %s: %v", did, err)
+							}
+						}
+					}
+				}
+
+				// Sleep if API rate limit has been exceeded
 				if bskyErr.Ratelimit.Remaining == 0 {
 					time.Sleep(bskyErr.Ratelimit.Reset.Sub(time.Now()))
 				}

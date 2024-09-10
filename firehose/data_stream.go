@@ -226,7 +226,7 @@ func (s *Subscription) deletePost(ctx context.Context, uri string) {
 func (s *Subscription) getHandle() func(context.Context, *events.XRPCStreamEvent) error {
 	return func(ctx context.Context, evt *events.XRPCStreamEvent) error {
 		if commit := evt.RepoCommit; commit != nil {
-			if commit.Seq%20 == 0 {
+			if commit.Seq%100 == 0 {
 				go s.updateCursor(commit.Seq)
 			}
 
