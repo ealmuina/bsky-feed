@@ -13,4 +13,5 @@ CREATE TABLE posts
 );
 
 CREATE INDEX IF NOT EXISTS "idx_posts_uri" ON "posts" ("uri");
+CREATE INDEX IF NOT EXISTS "idx_posts_author_did" ON "posts" ("author_did");
 CREATE INDEX IF NOT EXISTS "idx_posts_created_at" ON "posts" ("created_at");
