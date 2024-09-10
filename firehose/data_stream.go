@@ -230,12 +230,12 @@ func (s *Subscription) getHandle() func(context.Context, *events.XRPCStreamEvent
 						log.Errorf("Error handling create record: %s", err)
 						return err
 					}
-				case repomgr.EvtKindDeleteRecord:
-					recordType := strings.Split(op.Path, "/")[0]
-					if err := s.handleRecordDelete(ctx, uri, recordType); err != nil {
-						log.Errorf("Error handling delete record: %s", err)
-						return err
-					}
+					//case repomgr.EvtKindDeleteRecord:
+					//	recordType := strings.Split(op.Path, "/")[0]
+					//	if err := s.handleRecordDelete(ctx, uri, recordType); err != nil {
+					//		log.Errorf("Error handling delete record: %s", err)
+					//		return err
+					//	}
 				}
 			}
 		}
