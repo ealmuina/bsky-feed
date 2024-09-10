@@ -16,7 +16,9 @@ import (
 
 func runBackgroundTasks(queries *db.Queries) {
 	// DB cleanup
-	go utils.CleanOldData(queries)
+	go utils.Recoverer(math.MaxInt, 1, func() {
+		utils.CleanOldData(queries)
+	})
 
 	// Firehose consumer
 	go utils.Recoverer(math.MaxInt, 1, func() {
@@ -33,11 +35,13 @@ func runBackgroundTasks(queries *db.Queries) {
 	})
 
 	// Statistics updater
-	statisticsUpdater, err := tasks.NewStatisticsUpdater(queries)
-	if err != nil {
-		panic(err)
-	}
-	go statisticsUpdater.Run()
+	go utils.Recoverer(math.MaxInt, 1, func() {
+		statisticsUpdater, err := tasks.NewStatisticsUpdater(queries)
+		if err != nil {
+			panic(err)
+		}
+		statisticsUpdater.Run()
+	})
 }
 
 func main() {

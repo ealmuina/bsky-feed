@@ -19,6 +19,7 @@ import (
 
 const AccountDeactivatedError = "AccountDeactivated"
 const InvalidRequestError = "InvalidRequest" // Seen when profile is not found
+const ExpiredToken = "ExpiredToken"
 
 type StatisticsUpdater struct {
 	queries         *db.Queries
@@ -62,25 +63,13 @@ func getXRPCClient(username *syntax.AtIdentifier, password string) (*xrpc.Client
 }
 
 func NewStatisticsUpdater(queries *db.Queries) (*StatisticsUpdater, error) {
-	usernameString := os.Getenv("STATISTICS_USER")
-	username, err := syntax.ParseAtIdentifier(usernameString)
-	if err != nil {
-		return nil, err
-	}
-
-	client, err := getXRPCClient(
-		username,
-		os.Getenv("STATISTICS_PASSWORD"),
-	)
-	if err != nil {
-		return nil, err
-	}
-
-	return &StatisticsUpdater{
+	updater := StatisticsUpdater{
 		queries:         queries,
-		client:          client,
 		userLastUpdated: make(map[string]time.Time),
-	}, nil
+	}
+	updater.connectXRPCClient()
+
+	return &updater, nil
 }
 
 func (u *StatisticsUpdater) Run() {
@@ -91,6 +80,24 @@ func (u *StatisticsUpdater) Run() {
 			u.updateUserStatistics()
 		}
 	}
+}
+
+func (u *StatisticsUpdater) connectXRPCClient() {
+	usernameString := os.Getenv("STATISTICS_USER")
+	username, err := syntax.ParseAtIdentifier(usernameString)
+	if err != nil {
+		panic(err)
+	}
+
+	client, err := getXRPCClient(
+		username,
+		os.Getenv("STATISTICS_PASSWORD"),
+	)
+	if err != nil {
+		panic(err)
+	}
+
+	u.client = client
 }
 
 func (u *StatisticsUpdater) updateUserStatistics() {
@@ -119,6 +126,8 @@ func (u *StatisticsUpdater) updateUserStatistics() {
 							if err := u.queries.DeleteUser(ctx, did); err != nil {
 								log.Errorf("Error deleting user %s: %v", did, err)
 							}
+						case ExpiredToken:
+							u.connectXRPCClient()
 						}
 					}
 				}
