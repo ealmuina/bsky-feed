@@ -22,8 +22,6 @@ import (
 	"sync"
 )
 
-const PostsToCreateQueueSize = 100
-
 type Subscription struct {
 	Service string
 
@@ -33,11 +31,8 @@ type Subscription struct {
 	languageDetector  *utils.LanguageDetector
 	statisticsUpdater *tasks.StatisticsUpdater
 
-	userDidSeen           *sync.Map
-	languageIdCache       *sync.Map
-	postsMutex            *sync.Mutex
-	postsToCreate         []db.BulkCreatePostsParams
-	postLanguagesToCreate []db.BulkCreatePostLanguagesParams
+	userDidSeen     *sync.Map
+	languageIdCache *sync.Map
 }
 
 func New(service string, queries *db.Queries, url url.URL) *Subscription {
@@ -70,11 +65,8 @@ func New(service string, queries *db.Queries, url url.URL) *Subscription {
 		languageDetector:  utils.NewLanguageDetector(),
 		statisticsUpdater: statisticsUpdater,
 
-		userDidSeen:           &userDidSeen,
-		languageIdCache:       &sync.Map{},
-		postsMutex:            &sync.Mutex{},
-		postsToCreate:         make([]db.BulkCreatePostsParams, 0, PostsToCreateQueueSize),
-		postLanguagesToCreate: make([]db.BulkCreatePostLanguagesParams, 0, 2*PostsToCreateQueueSize),
+		userDidSeen:     &userDidSeen,
+		languageIdCache: &sync.Map{},
 	}
 }
 
@@ -123,11 +115,6 @@ func (s *Subscription) Run() {
 	}
 }
 
-func (s *Subscription) clearPostsCache() {
-	s.postsToCreate = make([]db.BulkCreatePostsParams, 0, PostsToCreateQueueSize)
-	s.postLanguagesToCreate = make([]db.BulkCreatePostLanguagesParams, 0, 2*PostsToCreateQueueSize)
-}
-
 func (s *Subscription) close() {
 	err := s.connection.Close()
 	if err != nil {
@@ -137,19 +124,13 @@ func (s *Subscription) close() {
 
 func (s *Subscription) createPost(
 	ctx context.Context,
-	post *db.BulkCreatePostsParams,
+	post *db.CreatePostParams,
 	languages []string,
 ) {
-	s.postsMutex.Lock()
-	defer s.postsMutex.Unlock()
-
-	s.postsToCreate = append(
-		s.postsToCreate,
-		*post,
-	)
+	postLanguages := make([]db.BulkCreatePostLanguagesParams, len(languages))
 	for _, lang := range languages {
-		s.postLanguagesToCreate = append(
-			s.postLanguagesToCreate,
+		postLanguages = append(
+			postLanguages,
 			db.BulkCreatePostLanguagesParams{
 				PostUri:    pgtype.Text{String: post.Uri, Valid: true},
 				LanguageID: pgtype.Int4{Int32: s.getLanguageId(lang), Valid: true},
@@ -157,18 +138,13 @@ func (s *Subscription) createPost(
 		)
 	}
 
-	if len(s.postsToCreate) > PostsToCreateQueueSize {
-		defer s.clearPostsCache()
-
-		// Bulk create posts
-		if _, err := s.queries.BulkCreatePosts(ctx, s.postsToCreate); err != nil {
-			log.Errorf("Error creating posts: %s", err)
-		}
-
-		// Bulk create post languages
-		if _, err := s.queries.BulkCreatePostLanguages(ctx, s.postLanguagesToCreate); err != nil {
-			log.Errorf("Error creating post languages: %s", err)
-		}
+	// Create post
+	if err := s.queries.CreatePost(ctx, *post); err != nil {
+		log.Errorf("Error creating posts: %s", err)
+	}
+	// Create post languages
+	if _, err := s.queries.BulkCreatePostLanguages(ctx, postLanguages); err != nil {
+		log.Errorf("Error creating post languages: %s", err)
 	}
 }
 
@@ -279,7 +255,7 @@ func (s *Subscription) handleFeedPostCreate(
 
 	go s.createPost(
 		ctx,
-		&db.BulkCreatePostsParams{
+		&db.CreatePostParams{
 			Uri:         uri,
 			AuthorDid:   pgtype.Text{String: repoDID, Valid: true},
 			Cid:         cid.String(),

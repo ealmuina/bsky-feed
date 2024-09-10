@@ -11,13 +11,30 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
-type BulkCreatePostsParams struct {
+const createPost = `-- name: CreatePost :exec
+INSERT INTO posts (uri, author_did, cid, reply_parent, reply_root, created_at)
+VALUES ($1, $2, $3, $4, $5, $6)
+`
+
+type CreatePostParams struct {
 	Uri         string
 	AuthorDid   pgtype.Text
 	Cid         string
 	ReplyParent pgtype.Text
 	ReplyRoot   pgtype.Text
 	CreatedAt   pgtype.Timestamp
+}
+
+func (q *Queries) CreatePost(ctx context.Context, arg CreatePostParams) error {
+	_, err := q.db.Exec(ctx, createPost,
+		arg.Uri,
+		arg.AuthorDid,
+		arg.Cid,
+		arg.ReplyParent,
+		arg.ReplyRoot,
+		arg.CreatedAt,
+	)
+	return err
 }
 
 const deletePost = `-- name: DeletePost :exec

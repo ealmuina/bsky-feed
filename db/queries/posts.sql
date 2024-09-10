@@ -1,4 +1,4 @@
--- name: BulkCreatePosts :copyfrom
+-- name: CreatePost :exec
 INSERT INTO posts (uri, author_did, cid, reply_parent, reply_root, created_at)
 VALUES ($1, $2, $3, $4, $5, $6);
 
