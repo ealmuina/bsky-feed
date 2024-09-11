@@ -6,9 +6,11 @@ services:
       - "3333:3333"
     volumes:
       - .:/app
-    command: go run .
+    command: sh ./run.sh
     env_file:
       - .env
+    depends_on:
+      - db
   db:
     image: postgres:latest
     environment:
