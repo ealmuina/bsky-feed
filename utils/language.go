@@ -32,6 +32,7 @@ func (d *LanguageDetector) DetectLanguage(text string, userLanguages []string) [
 	text = strings.Replace(text, "\n", ". ", -1)
 	text = removeEmoji(text)
 	text = removeLinks(text)
+	text = strings.TrimSpace(text)
 
 	if text == "" {
 		return userLanguages
@@ -44,8 +45,11 @@ func (d *LanguageDetector) DetectLanguage(text string, userLanguages []string) [
 		langCode := strings.ToLower(elem.Language().IsoCode639_1().String())
 		languageConfidence[langCode] = elem.Value()
 	}
+	bestMatch := confidenceValues[0]
+	bestMatchIso := strings.ToLower(bestMatch.Language().IsoCode639_1().String())
 
-	// Confirm user tag: confidence must be higher than UserLanguageConfidenceThreshold
+	// Confirm user tag if one of these is met:
+	// - confidence is higher than UserLanguageConfidenceThreshold
 	textLanguages := make([]string, 0)
 	for _, language := range userLanguages {
 		if languageConfidence[language] > UserLanguageConfidenceThreshold {
@@ -55,12 +59,15 @@ func (d *LanguageDetector) DetectLanguage(text string, userLanguages []string) [
 	if len(textLanguages) > 0 {
 		return textLanguages
 	}
+	// - user only tagged one language, and it's the one with the highest confidence
+	if len(userLanguages) == 1 && userLanguages[0] == bestMatchIso {
+		return []string{bestMatchIso}
+	}
 
 	// No user language was confirmed
 	// Set model-detected language if confidence is higher than ModelLanguageConfidenceThreshold
-	bestMatch := confidenceValues[0]
 	if bestMatch.Value() > ModelLanguageConfidenceThreshold {
-		return []string{bestMatch.Language().IsoCode639_1().String()}
+		return []string{bestMatchIso}
 	}
 
 	return textLanguages
