@@ -306,8 +306,12 @@ func (s *Subscription) handleFeedPostCreate(
 	}
 	var replyParent, replyRoot pgtype.Text
 	if data.Reply != nil {
-		replyParent = pgtype.Text{String: data.Reply.Parent.Uri, Valid: true}
-		replyRoot = pgtype.Text{String: data.Reply.Root.Uri, Valid: true}
+		if data.Reply.Parent != nil {
+			replyParent = pgtype.Text{String: data.Reply.Parent.Uri, Valid: true}
+		}
+		if data.Reply.Root != nil {
+			replyRoot = pgtype.Text{String: data.Reply.Root.Uri, Valid: true}
+		}
 	}
 	languages := s.languageDetector.DetectLanguage(data.Text, data.Langs)
 
