@@ -20,7 +20,7 @@ func GetLanguageAlgorithm(languageCode string) feed.Algorithm {
 		posts, err := queries.GetLanguagePosts(
 			*ctx,
 			db.GetLanguagePostsParams{
-				Code:      languageCode,
+				Language:  pgtype.Text{String: languageCode, Valid: true},
 				CreatedAt: pgtype.Timestamp{Time: createdAt, Valid: true},
 				Cid:       cid,
 				Limit:     int32(params.Limit),
@@ -45,7 +45,7 @@ func GetTopLanguageAlgorithm(languageCode string) feed.Algorithm {
 		posts, err := queries.GetLanguageTopPosts(
 			*ctx,
 			db.GetLanguageTopPostsParams{
-				Code:      languageCode,
+				Language:  pgtype.Text{String: languageCode, Valid: true},
 				CreatedAt: pgtype.Timestamp{Time: createdAt, Valid: true},
 				Cid:       cid,
 				Limit:     int32(params.Limit),

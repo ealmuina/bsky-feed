@@ -3,6 +3,7 @@ package utils
 import (
 	"github.com/pemistahl/lingua-go"
 	"regexp"
+	"slices"
 	"strings"
 )
 
@@ -21,7 +22,7 @@ func NewLanguageDetector() *LanguageDetector {
 	return &LanguageDetector{&model}
 }
 
-func (d *LanguageDetector) DetectLanguage(text string, userLanguages []string) []string {
+func (d *LanguageDetector) DetectLanguage(text string, userLanguages []string) string {
 	for i, lang := range userLanguages {
 		userLanguages[i] = strings.Split(
 			strings.ToLower(lang),
@@ -35,7 +36,10 @@ func (d *LanguageDetector) DetectLanguage(text string, userLanguages []string) [
 	text = strings.TrimSpace(text)
 
 	if text == "" {
-		return userLanguages
+		if len(userLanguages) > 0 {
+			return userLanguages[0]
+		}
+		return ""
 	}
 
 	// Compute language confidence values
@@ -50,27 +54,26 @@ func (d *LanguageDetector) DetectLanguage(text string, userLanguages []string) [
 
 	// Confirm user tag if one of these is met:
 	// - confidence is higher than UserLanguageConfidenceThreshold
-	textLanguages := make([]string, 0)
-	for _, language := range userLanguages {
-		if languageConfidence[language] > UserLanguageConfidenceThreshold {
-			textLanguages = append(textLanguages, language)
+	for langCode, confidence := range languageConfidence {
+		if confidence < UserLanguageConfidenceThreshold {
+			break
 		}
-	}
-	if len(textLanguages) > 0 {
-		return textLanguages
+		if slices.Contains(userLanguages, langCode) {
+			return langCode
+		}
 	}
 	// - user only tagged one language, and it's the one with the highest confidence
 	if len(userLanguages) == 1 && userLanguages[0] == bestMatchIso {
-		return []string{bestMatchIso}
+		return bestMatchIso
 	}
 
 	// No user language was confirmed
 	// Set model-detected language if confidence is higher than ModelLanguageConfidenceThreshold
 	if bestMatch.Value() > ModelLanguageConfidenceThreshold {
-		return []string{bestMatchIso}
+		return bestMatchIso
 	}
 
-	return textLanguages
+	return ""
 }
 
 func removeEmoji(text string) string {

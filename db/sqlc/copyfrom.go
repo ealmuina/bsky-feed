@@ -9,39 +9,6 @@ import (
 	"context"
 )
 
-// iteratorForBulkCreatePostLanguages implements pgx.CopyFromSource.
-type iteratorForBulkCreatePostLanguages struct {
-	rows                 []BulkCreatePostLanguagesParams
-	skippedFirstNextCall bool
-}
-
-func (r *iteratorForBulkCreatePostLanguages) Next() bool {
-	if len(r.rows) == 0 {
-		return false
-	}
-	if !r.skippedFirstNextCall {
-		r.skippedFirstNextCall = true
-		return true
-	}
-	r.rows = r.rows[1:]
-	return len(r.rows) > 0
-}
-
-func (r iteratorForBulkCreatePostLanguages) Values() ([]interface{}, error) {
-	return []interface{}{
-		r.rows[0].PostUri,
-		r.rows[0].LanguageID,
-	}, nil
-}
-
-func (r iteratorForBulkCreatePostLanguages) Err() error {
-	return nil
-}
-
-func (q *Queries) BulkCreatePostLanguages(ctx context.Context, arg []BulkCreatePostLanguagesParams) (int64, error) {
-	return q.db.CopyFrom(ctx, []string{"post_languages"}, []string{"post_uri", "language_id"}, &iteratorForBulkCreatePostLanguages{rows: arg})
-}
-
 // iteratorForBulkCreatePosts implements pgx.CopyFromSource.
 type iteratorForBulkCreatePosts struct {
 	rows                 []BulkCreatePostsParams
@@ -68,6 +35,7 @@ func (r iteratorForBulkCreatePosts) Values() ([]interface{}, error) {
 		r.rows[0].ReplyParent,
 		r.rows[0].ReplyRoot,
 		r.rows[0].CreatedAt,
+		r.rows[0].Language,
 	}, nil
 }
 
@@ -76,5 +44,5 @@ func (r iteratorForBulkCreatePosts) Err() error {
 }
 
 func (q *Queries) BulkCreatePosts(ctx context.Context, arg []BulkCreatePostsParams) (int64, error) {
-	return q.db.CopyFrom(ctx, []string{"posts"}, []string{"uri", "author_did", "cid", "reply_parent", "reply_root", "created_at"}, &iteratorForBulkCreatePosts{rows: arg})
+	return q.db.CopyFrom(ctx, []string{"posts"}, []string{"uri", "author_did", "cid", "reply_parent", "reply_root", "created_at", "language"}, &iteratorForBulkCreatePosts{rows: arg})
 }

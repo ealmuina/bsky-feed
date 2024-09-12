@@ -8,11 +8,6 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
-type Language struct {
-	ID   int32
-	Code string
-}
-
 type Post struct {
 	Uri         string
 	AuthorDid   pgtype.Text
@@ -21,12 +16,7 @@ type Post struct {
 	ReplyRoot   pgtype.Text
 	IndexedAt   pgtype.Timestamp
 	CreatedAt   pgtype.Timestamp
-}
-
-type PostLanguage struct {
-	ID         int32
-	PostUri    pgtype.Text
-	LanguageID pgtype.Int4
+	Language    pgtype.Text
 }
 
 type SubscriptionState struct {
