@@ -53,6 +53,10 @@ func (d *LanguageDetector) DetectLanguage(text string, userLanguages []string) s
 	bestMatchIso := strings.ToLower(bestMatch.Language().IsoCode639_1().String())
 
 	// Confirm user tag if one of these is met:
+	// - user only tagged one language, and it's the one with the highest confidence
+	if len(userLanguages) == 1 && userLanguages[0] == bestMatchIso {
+		return bestMatchIso
+	}
 	// - confidence is higher than UserLanguageConfidenceThreshold
 	for langCode, confidence := range languageConfidence {
 		if confidence < UserLanguageConfidenceThreshold {
@@ -61,10 +65,6 @@ func (d *LanguageDetector) DetectLanguage(text string, userLanguages []string) s
 		if slices.Contains(userLanguages, langCode) {
 			return langCode
 		}
-	}
-	// - user only tagged one language, and it's the one with the highest confidence
-	if len(userLanguages) == 1 && userLanguages[0] == bestMatchIso {
-		return bestMatchIso
 	}
 
 	// No user language was confirmed
