@@ -154,7 +154,7 @@ func (s *Subscription) createPost(
 		*post,
 	)
 
-	if len(s.postsToCreate) > PostsToCreateBulkSize {
+	if len(s.postsToCreate) >= PostsToCreateBulkSize {
 		// Clone buffer and exec bulk insert
 		go s.bulkCreatePosts(ctx, s.postsToCreate)
 		// Clear buffer
@@ -183,12 +183,9 @@ func (s *Subscription) deletePost(ctx context.Context, uri string) {
 
 	s.postsToDelete = append(s.postsToDelete, uri)
 
-	if len(s.postsToDelete) > PostsToDeleteBulkSize {
+	if len(s.postsToDelete) >= PostsToDeleteBulkSize {
 		// Clone cache and exec bulk delete
-		uris := make([]string, len(s.postsToDelete))
-		copy(uris, s.postsToDelete)
-		go s.bulkDeletePosts(ctx, uris)
-
+		go s.bulkDeletePosts(ctx, s.postsToDelete)
 		// Clear buffer
 		s.postsToDelete = make([]string, 0, PostsToDeleteBulkSize)
 	}
