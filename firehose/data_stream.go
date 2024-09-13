@@ -156,10 +156,7 @@ func (s *Subscription) createPost(
 
 	if len(s.postsToCreate) > PostsToCreateBulkSize {
 		// Clone buffer and exec bulk insert
-		posts := make([]db.BulkCreatePostsParams, len(s.postsToCreate))
-		copy(posts, s.postsToCreate)
-		go s.bulkCreatePosts(ctx, posts)
-
+		go s.bulkCreatePosts(ctx, s.postsToCreate)
 		// Clear buffer
 		s.postsToCreate = make([]db.BulkCreatePostsParams, 0, PostsToCreateBulkSize)
 	}
