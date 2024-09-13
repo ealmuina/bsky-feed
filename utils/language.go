@@ -10,6 +10,11 @@ import (
 const UserLanguageConfidenceThreshold = 0.25
 const ModelLanguageConfidenceThreshold = 0.7
 
+var RestrictedLanguages = []string{
+	"eu",
+	"gl",
+}
+
 type LanguageDetector struct {
 	model *lingua.LanguageDetector
 }
@@ -69,7 +74,8 @@ func (d *LanguageDetector) DetectLanguage(text string, userLanguages []string) s
 
 	// No user language was confirmed
 	// Set model-detected language if confidence is higher than ModelLanguageConfidenceThreshold
-	if bestMatch.Value() > ModelLanguageConfidenceThreshold {
+	// Do not accept results from RestrictedLanguages
+	if bestMatch.Value() > ModelLanguageConfidenceThreshold && !slices.Contains(RestrictedLanguages, bestMatchIso) {
 		return bestMatchIso
 	}
 
