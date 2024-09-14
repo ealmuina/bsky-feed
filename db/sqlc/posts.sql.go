@@ -106,14 +106,20 @@ func (q *Queries) GetLanguagePosts(ctx context.Context, arg GetLanguagePostsPara
 }
 
 const getLanguageTopPosts = `-- name: GetLanguageTopPosts :many
-SELECT posts.uri, posts.author_did, posts.cid, posts.reply_parent, posts.reply_root, posts.indexed_at, posts.created_at, posts.language
+WITH top_reposts AS (SELECT post_uri, uri repost_uri
+                     FROM interactions
+                              INNER JOIN users u ON author_did = u.did
+                     WHERE u.followers_count > 1000
+                       AND kind = 'repost')
+SELECT posts.uri, posts.author_did, posts.cid, posts.reply_parent, posts.reply_root, posts.indexed_at, posts.created_at, posts.language, repost_uri
 FROM posts
          INNER JOIN users u ON author_did = u.did
+         LEFT JOIN top_reposts tr ON uri = tr.post_uri
 WHERE language = $1
   AND reply_root IS NULL
-  AND u.followers_count > 1000
-  AND (created_at < $2 OR (created_at = $2 AND cid < $3))
-ORDER BY created_at DESC, cid DESC
+  AND (u.followers_count > 1000 or tr.repost_uri IS NOT NULL)
+  AND (posts.created_at < $2 OR (posts.created_at = $2 AND posts.cid < $3))
+ORDER BY posts.created_at DESC, posts.cid DESC
 LIMIT $4
 `
 
@@ -124,7 +130,19 @@ type GetLanguageTopPostsParams struct {
 	Limit     int32
 }
 
-func (q *Queries) GetLanguageTopPosts(ctx context.Context, arg GetLanguageTopPostsParams) ([]Post, error) {
+type GetLanguageTopPostsRow struct {
+	Uri         string
+	AuthorDid   string
+	Cid         string
+	ReplyParent pgtype.Text
+	ReplyRoot   pgtype.Text
+	IndexedAt   pgtype.Timestamp
+	CreatedAt   pgtype.Timestamp
+	Language    pgtype.Text
+	RepostUri   pgtype.Text
+}
+
+func (q *Queries) GetLanguageTopPosts(ctx context.Context, arg GetLanguageTopPostsParams) ([]GetLanguageTopPostsRow, error) {
 	rows, err := q.db.Query(ctx, getLanguageTopPosts,
 		arg.Language,
 		arg.CreatedAt,
@@ -135,9 +153,9 @@ func (q *Queries) GetLanguageTopPosts(ctx context.Context, arg GetLanguageTopPos
 		return nil, err
 	}
 	defer rows.Close()
-	var items []Post
+	var items []GetLanguageTopPostsRow
 	for rows.Next() {
-		var i Post
+		var i GetLanguageTopPostsRow
 		if err := rows.Scan(
 			&i.Uri,
 			&i.AuthorDid,
@@ -147,6 +165,7 @@ func (q *Queries) GetLanguageTopPosts(ctx context.Context, arg GetLanguageTopPos
 			&i.IndexedAt,
 			&i.CreatedAt,
 			&i.Language,
+			&i.RepostUri,
 		); err != nil {
 			return nil, err
 		}

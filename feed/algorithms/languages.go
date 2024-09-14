@@ -16,7 +16,7 @@ func GetLanguageAlgorithm(languageCode string) feed.Algorithm {
 		ctx *context.Context,
 		createdAt time.Time,
 		cid string,
-	) []db.Post {
+	) []feed.Post {
 		posts, err := queries.GetLanguagePosts(
 			*ctx,
 			db.GetLanguagePostsParams{
@@ -30,7 +30,15 @@ func GetLanguageAlgorithm(languageCode string) feed.Algorithm {
 			log.Errorf("error getting language posts: %v", err)
 			return nil
 		}
-		return posts
+		result := make([]feed.Post, len(posts))
+		for i, post := range posts {
+			result[i] = feed.Post{
+				Uri:       post.Uri,
+				Cid:       post.Cid,
+				CreatedAt: post.CreatedAt.Time,
+			}
+		}
+		return result
 	}
 }
 
@@ -41,7 +49,7 @@ func GetTopLanguageAlgorithm(languageCode string) feed.Algorithm {
 		ctx *context.Context,
 		createdAt time.Time,
 		cid string,
-	) []db.Post {
+	) []feed.Post {
 		posts, err := queries.GetLanguageTopPosts(
 			*ctx,
 			db.GetLanguageTopPostsParams{
@@ -55,6 +63,25 @@ func GetTopLanguageAlgorithm(languageCode string) feed.Algorithm {
 			log.Errorf("error getting top language posts: %v", err)
 			return nil
 		}
-		return posts
+
+		result := make([]feed.Post, len(posts))
+
+		for i, post := range posts {
+			var reason map[string]string = nil
+			if post.RepostUri.Valid {
+				reason = map[string]string{
+					"$type":  "app.bsky.feed.defs#skeletonReasonRepost",
+					"repost": post.RepostUri.String,
+				}
+			}
+			result[i] = feed.Post{
+				Uri:       post.Uri,
+				Cid:       post.Cid,
+				Reason:    reason,
+				CreatedAt: post.CreatedAt.Time,
+			}
+		}
+
+		return result
 	}
 }

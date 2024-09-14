@@ -22,6 +22,26 @@ type Feed struct {
 	algorithm Algorithm
 }
 
+type Response struct {
+	Cursor string `json:"cursor"`
+	Posts  []Post `json:"feed"`
+}
+
+type Post struct {
+	Uri       string            `json:"post"`
+	Reason    map[string]string `json:"reason"`
+	CreatedAt time.Time         `json:"-"`
+	Cid       string            `json:"-"`
+}
+
+type Algorithm func(
+	params QueryParams,
+	queries *db.Queries,
+	ctx *context.Context,
+	createdAt time.Time,
+	cid string,
+) []Post
+
 func New(queries *db.Queries, algorithm Algorithm) *Feed {
 	return &Feed{
 		queries:   queries,
@@ -53,42 +73,18 @@ func (feed *Feed) GetPosts(params QueryParams) Response {
 
 	posts := feed.algorithm(params, feed.queries, &ctx, createdAt, cid)
 
-	result := make([]Post, len(posts))
-	for i, post := range posts {
-		result[i] = Post{
-			Uri: post.Uri,
-		}
-	}
-
 	cursor := CursorEOF
 	if len(posts) > 0 {
 		lastPost := posts[len(posts)-1]
 		cursor = fmt.Sprintf(
 			"%d::%s",
-			lastPost.CreatedAt.Time.Unix(),
+			lastPost.CreatedAt.Unix(),
 			lastPost.Cid,
 		)
 	}
 
 	return Response{
 		Cursor: cursor,
-		Posts:  result,
+		Posts:  posts,
 	}
 }
-
-type Response struct {
-	Cursor string `json:"cursor"`
-	Posts  []Post `json:"feed"`
-}
-
-type Post struct {
-	Uri string `json:"post"`
-}
-
-type Algorithm func(
-	params QueryParams,
-	queries *db.Queries,
-	ctx *context.Context,
-	createdAt time.Time,
-	cid string,
-) []db.Post
