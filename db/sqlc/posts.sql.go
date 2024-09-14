@@ -106,20 +106,32 @@ func (q *Queries) GetLanguagePosts(ctx context.Context, arg GetLanguagePostsPara
 }
 
 const getLanguageTopPosts = `-- name: GetLanguageTopPosts :many
-WITH top_reposts AS (SELECT post_uri, uri repost_uri
-                     FROM interactions
-                              INNER JOIN users u ON author_did = u.did
-                     WHERE u.followers_count > 1000
-                       AND kind = 'repost')
-SELECT posts.uri, posts.author_did, posts.cid, posts.reply_parent, posts.reply_root, posts.indexed_at, posts.created_at, posts.language, repost_uri
-FROM posts
-         INNER JOIN users u ON author_did = u.did
-         LEFT JOIN top_reposts tr ON uri = tr.post_uri
-WHERE language = $1
-  AND reply_root IS NULL
-  AND (u.followers_count > 1000 or tr.repost_uri IS NOT NULL)
-  AND (posts.created_at < $2 OR (posts.created_at = $2 AND posts.cid < $3))
-ORDER BY posts.created_at DESC, posts.cid DESC
+(SELECT i.post_uri as uri,
+        i.uri      as repost_uri,
+        i.created_at,
+        i.cid
+ FROM interactions i
+          INNER JOIN users u ON author_did = u.did
+          INNER JOIN posts p ON post_uri = p.uri
+ WHERE p.language = $1
+   AND u.followers_count > 1000
+   AND (i.created_at < $2 OR (i.created_at = $2 AND i.cid < $3))
+ ORDER BY i.created_at DESC, i.cid DESC
+ LIMIT $4)
+UNION
+(SELECT uri as uri,
+        ''  as repost_uri,
+        created_at,
+        cid
+ FROM posts
+          INNER JOIN users u ON posts.author_did = u.did
+ WHERE language = $1
+   AND reply_root IS NULL
+   AND u.followers_count > 1000
+   AND (created_at < $2 OR (created_at = $2 AND cid < $3))
+ ORDER BY created_at DESC, cid DESC
+ LIMIT $4)
+ORDER BY created_at DESC, cid DESC
 LIMIT $4
 `
 
@@ -131,17 +143,14 @@ type GetLanguageTopPostsParams struct {
 }
 
 type GetLanguageTopPostsRow struct {
-	Uri         string
-	AuthorDid   string
-	Cid         string
-	ReplyParent pgtype.Text
-	ReplyRoot   pgtype.Text
-	IndexedAt   pgtype.Timestamp
-	CreatedAt   pgtype.Timestamp
-	Language    pgtype.Text
-	RepostUri   pgtype.Text
+	Uri       string
+	RepostUri string
+	CreatedAt pgtype.Timestamp
+	Cid       string
 }
 
+// Reposts from top accounts
+// Posts from top accounts
 func (q *Queries) GetLanguageTopPosts(ctx context.Context, arg GetLanguageTopPostsParams) ([]GetLanguageTopPostsRow, error) {
 	rows, err := q.db.Query(ctx, getLanguageTopPosts,
 		arg.Language,
@@ -158,14 +167,9 @@ func (q *Queries) GetLanguageTopPosts(ctx context.Context, arg GetLanguageTopPos
 		var i GetLanguageTopPostsRow
 		if err := rows.Scan(
 			&i.Uri,
-			&i.AuthorDid,
-			&i.Cid,
-			&i.ReplyParent,
-			&i.ReplyRoot,
-			&i.IndexedAt,
-			&i.CreatedAt,
-			&i.Language,
 			&i.RepostUri,
+			&i.CreatedAt,
+			&i.Cid,
 		); err != nil {
 			return nil, err
 		}

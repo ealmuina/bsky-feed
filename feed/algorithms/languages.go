@@ -68,10 +68,10 @@ func GetTopLanguageAlgorithm(languageCode string) feed.Algorithm {
 
 		for i, post := range posts {
 			var reason map[string]string = nil
-			if post.RepostUri.Valid {
+			if post.RepostUri != "" {
 				reason = map[string]string{
 					"$type":  "app.bsky.feed.defs#skeletonReasonRepost",
-					"repost": post.RepostUri.String,
+					"repost": post.RepostUri,
 				}
 			}
 			result[i] = feed.Post{
