@@ -106,31 +106,16 @@ func (q *Queries) GetLanguagePosts(ctx context.Context, arg GetLanguagePostsPara
 }
 
 const getLanguageTopPosts = `-- name: GetLanguageTopPosts :many
-(SELECT i.post_uri as uri,
-        i.uri      as repost_uri,
-        i.created_at,
-        i.cid
- FROM interactions i
-          INNER JOIN users u ON author_did = u.did
-          INNER JOIN posts p ON post_uri = p.uri
- WHERE p.language = $1
-   AND u.followers_count > 1000
-   AND (i.created_at < $2 OR (i.created_at = $2 AND i.cid < $3))
- ORDER BY i.created_at DESC, i.cid DESC
- LIMIT $4)
-UNION
-(SELECT uri as uri,
-        ''  as repost_uri,
-        created_at,
-        cid
- FROM posts
-          INNER JOIN users u ON posts.author_did = u.did
- WHERE language = $1
-   AND reply_root IS NULL
-   AND u.followers_count > 1000
-   AND (created_at < $2 OR (created_at = $2 AND cid < $3))
- ORDER BY created_at DESC, cid DESC
- LIMIT $4)
+SELECT uri as uri,
+       ''  as repost_uri,
+       created_at,
+       cid
+FROM posts
+         INNER JOIN users u ON posts.author_did = u.did
+WHERE language = $1
+  AND reply_root IS NULL
+  AND u.followers_count > 1000
+  AND (created_at < $2 OR (created_at = $2 AND cid < $3))
 ORDER BY created_at DESC, cid DESC
 LIMIT $4
 `
@@ -149,8 +134,6 @@ type GetLanguageTopPostsRow struct {
 	Cid       string
 }
 
-// Reposts from top accounts
-// Posts from top accounts
 func (q *Queries) GetLanguageTopPosts(ctx context.Context, arg GetLanguageTopPostsParams) ([]GetLanguageTopPostsRow, error) {
 	rows, err := q.db.Query(ctx, getLanguageTopPosts,
 		arg.Language,

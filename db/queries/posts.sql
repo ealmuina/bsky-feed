@@ -27,32 +27,15 @@ ORDER BY created_at DESC, cid DESC
 LIMIT $4;
 
 -- name: GetLanguageTopPosts :many
--- Reposts from top accounts
-(SELECT i.post_uri as uri,
-        i.uri      as repost_uri,
-        i.created_at,
-        i.cid
- FROM interactions i
-          INNER JOIN users u ON author_did = u.did
-          INNER JOIN posts p ON post_uri = p.uri
- WHERE p.language = $1
-   AND u.followers_count > 1000
-   AND (i.created_at < $2 OR (i.created_at = $2 AND i.cid < $3))
- ORDER BY i.created_at DESC, i.cid DESC
- LIMIT $4)
-UNION
--- Posts from top accounts
-(SELECT uri as uri,
-        ''  as repost_uri,
-        created_at,
-        cid
- FROM posts
-          INNER JOIN users u ON posts.author_did = u.did
- WHERE language = $1
-   AND reply_root IS NULL
-   AND u.followers_count > 1000
-   AND (created_at < $2 OR (created_at = $2 AND cid < $3))
- ORDER BY created_at DESC, cid DESC
- LIMIT $4)
+SELECT uri as uri,
+       ''  as repost_uri,
+       created_at,
+       cid
+FROM posts
+         INNER JOIN users u ON posts.author_did = u.did
+WHERE language = $1
+  AND reply_root IS NULL
+  AND u.followers_count > 1000
+  AND (created_at < $2 OR (created_at = $2 AND cid < $3))
 ORDER BY created_at DESC, cid DESC
 LIMIT $4;
