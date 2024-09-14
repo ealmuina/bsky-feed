@@ -9,6 +9,7 @@ import (
 	"context"
 	"fmt"
 	"github.com/jackc/pgx/v5/pgxpool"
+	log "github.com/sirupsen/logrus"
 	"math"
 	"net/url"
 	"os"
@@ -45,6 +46,8 @@ func runBackgroundTasks(queries *db.Queries) {
 }
 
 func main() {
+	log.SetLevel(log.WarnLevel)
+
 	ctx := context.Background()
 	connectionPool, err := pgxpool.New(
 		ctx,

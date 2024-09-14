@@ -100,6 +100,23 @@ func (u *StatisticsUpdater) connectXRPCClient() {
 	u.client = client
 }
 
+func (u *StatisticsUpdater) deleteUser(ctx context.Context, did string) {
+	// Delete user
+	delete(u.userLastUpdated, did)
+	if err := u.queries.DeleteUser(ctx, did); err != nil {
+		log.Errorf("Error deleting user %s: %v", did, err)
+		return
+	}
+	// Delete user's posts
+	if err := u.queries.DeleteUserPosts(ctx, did); err != nil {
+		log.Errorf("Error deleting posts for user %s: %v", did, err)
+	}
+	// Delete user's interactions
+	if err := u.queries.DeleteUser(ctx, did); err != nil {
+		log.Errorf("Error deleting user %s: %v", did, err)
+	}
+}
+
 func (u *StatisticsUpdater) updateUserStatistics() {
 	ctx := context.Background()
 
@@ -123,9 +140,7 @@ func (u *StatisticsUpdater) updateUserStatistics() {
 						switch wrappedError.ErrStr {
 						case AccountDeactivatedError, InvalidRequestError:
 							// Delete user if profile does not exist anymore
-							if err := u.queries.DeleteUser(ctx, did); err != nil {
-								log.Errorf("Error deleting user %s: %v", did, err)
-							}
+							u.deleteUser(ctx, did)
 						case ExpiredToken:
 							u.connectXRPCClient()
 						}

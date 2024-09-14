@@ -12,6 +12,11 @@ DELETE
 FROM posts
 WHERE indexed_at < current_timestamp - interval '10 days';
 
+-- name: DeleteUserPosts :exec
+DELETE
+FROM posts
+WHERE author_did = $1;
+
 -- name: GetLanguagePosts :many
 SELECT posts.*
 FROM posts
@@ -24,7 +29,7 @@ LIMIT $4;
 -- name: GetLanguageTopPosts :many
 SELECT posts.*
 FROM posts
-         INNER JOIN users u on posts.author_did = u.did
+         INNER JOIN users u ON author_did = u.did
 WHERE language = $1
   AND reply_root IS NULL
   AND u.followers_count > 1000

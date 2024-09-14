@@ -13,7 +13,7 @@ import (
 
 type BulkCreatePostsParams struct {
 	Uri         string
-	AuthorDid   pgtype.Text
+	AuthorDid   string
 	Cid         string
 	ReplyParent pgtype.Text
 	ReplyRoot   pgtype.Text
@@ -40,6 +40,17 @@ WHERE indexed_at < current_timestamp - interval '10 days'
 
 func (q *Queries) DeleteOldPosts(ctx context.Context) error {
 	_, err := q.db.Exec(ctx, deleteOldPosts)
+	return err
+}
+
+const deleteUserPosts = `-- name: DeleteUserPosts :exec
+DELETE
+FROM posts
+WHERE author_did = $1
+`
+
+func (q *Queries) DeleteUserPosts(ctx context.Context, authorDid string) error {
+	_, err := q.db.Exec(ctx, deleteUserPosts, authorDid)
 	return err
 }
 
@@ -97,7 +108,7 @@ func (q *Queries) GetLanguagePosts(ctx context.Context, arg GetLanguagePostsPara
 const getLanguageTopPosts = `-- name: GetLanguageTopPosts :many
 SELECT posts.uri, posts.author_did, posts.cid, posts.reply_parent, posts.reply_root, posts.indexed_at, posts.created_at, posts.language
 FROM posts
-         INNER JOIN users u on posts.author_did = u.did
+         INNER JOIN users u ON author_did = u.did
 WHERE language = $1
   AND reply_root IS NULL
   AND u.followers_count > 1000

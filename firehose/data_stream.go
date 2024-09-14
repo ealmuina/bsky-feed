@@ -23,7 +23,9 @@ import (
 
 const SchedulerMaxConcurrency = 8
 const PostsToCreateBulkSize = 100
+const InteractionsToCreateBulkSize = 100
 const PostsToDeleteBulkSize = 100
+const InteractionsToDeleteBulkSize = 100
 
 type Subscription struct {
 	Service string
@@ -33,28 +35,21 @@ type Subscription struct {
 	queries          *db.Queries
 	languageDetector *utils.LanguageDetector
 
-	userDidSeen *sync.Map
+	userDidCache *sync.Map
 
-	postsMutex    *sync.Mutex
-	postsToCreate []db.BulkCreatePostsParams
-
-	deleteMutex   *sync.Mutex
-	postsToDelete []string
+	postsToCreateMutex        sync.Mutex
+	postsToCreate             []db.BulkCreatePostsParams
+	interactionsToCreateMutex sync.Mutex
+	interactionsToCreate      []db.BulkCreateInteractionsParams
+	postsToDeleteMutex        sync.Mutex
+	postsToDelete             []string
+	interactionsToDeleteMutex sync.Mutex
+	interactionsToDelete      []string
 }
 
 func New(service string, queries *db.Queries, url url.URL) *Subscription {
 	if cursor := getCursor(service, queries); cursor != 0 {
 		url.RawQuery = fmt.Sprintf("cursor=%v", cursor)
-	}
-
-	userDidSeen := sync.Map{}
-	dids, err := queries.GetUserDids(context.Background())
-	if err != nil {
-		log.Error(err)
-		dids = make([]string, 0)
-	}
-	for _, did := range dids {
-		userDidSeen.Store(did, true)
 	}
 
 	return &Subscription{
@@ -65,13 +60,16 @@ func New(service string, queries *db.Queries, url url.URL) *Subscription {
 		queries:          queries,
 		languageDetector: utils.NewLanguageDetector(),
 
-		userDidSeen: &userDidSeen,
+		userDidCache: loadUserDidSeen(queries),
 
-		postsMutex:    &sync.Mutex{},
-		postsToCreate: make([]db.BulkCreatePostsParams, 0, PostsToCreateBulkSize),
-
-		deleteMutex:   &sync.Mutex{},
-		postsToDelete: make([]string, 0, PostsToDeleteBulkSize),
+		postsToCreateMutex:        sync.Mutex{},
+		postsToCreate:             make([]db.BulkCreatePostsParams, 0, PostsToCreateBulkSize),
+		interactionsToCreateMutex: sync.Mutex{},
+		interactionsToCreate:      make([]db.BulkCreateInteractionsParams, 0, InteractionsToCreateBulkSize),
+		postsToDeleteMutex:        sync.Mutex{},
+		postsToDelete:             make([]string, 0, PostsToDeleteBulkSize),
+		interactionsToDeleteMutex: sync.Mutex{},
+		interactionsToDelete:      make([]string, 0, InteractionsToDeleteBulkSize),
 	}
 }
 
@@ -92,6 +90,22 @@ func getCursor(service string, queries *db.Queries) int64 {
 		log.Errorf("Error getting subscription state: %s", err)
 	}
 	return state.Cursor
+}
+
+func loadUserDidSeen(queries *db.Queries) *sync.Map {
+	userDidSeen := sync.Map{}
+
+	dids, err := queries.GetUserDids(context.Background())
+	if err != nil {
+		log.Error(err)
+		dids = make([]string, 0)
+	}
+
+	for _, did := range dids {
+		userDidSeen.Store(did, true)
+	}
+
+	return &userDidSeen
 }
 
 func (s *Subscription) Run() {
@@ -120,12 +134,27 @@ func (s *Subscription) Run() {
 	}
 }
 
+func (s *Subscription) bulkCreateInteractions(
+	ctx context.Context,
+	interactions []db.BulkCreateInteractionsParams,
+) {
+	if _, err := s.queries.BulkCreateInteractions(ctx, interactions); err != nil {
+		log.Errorf("Error creating interactions: %s", err)
+	}
+}
+
 func (s *Subscription) bulkCreatePosts(
 	ctx context.Context,
 	posts []db.BulkCreatePostsParams,
 ) {
 	if _, err := s.queries.BulkCreatePosts(ctx, posts); err != nil {
 		log.Errorf("Error creating posts: %s", err)
+	}
+}
+
+func (s *Subscription) bulkDeleteInteractions(ctx context.Context, uris []string) {
+	if err := s.queries.BulkDeleteInteractions(ctx, uris); err != nil {
+		log.Errorf("Error deleting interactions: %s", err)
 	}
 }
 
@@ -142,28 +171,8 @@ func (s *Subscription) close() {
 	}
 }
 
-func (s *Subscription) createPost(
-	ctx context.Context,
-	post *db.BulkCreatePostsParams,
-) {
-	s.postsMutex.Lock()
-	defer s.postsMutex.Unlock()
-
-	s.postsToCreate = append(
-		s.postsToCreate,
-		*post,
-	)
-
-	if len(s.postsToCreate) >= PostsToCreateBulkSize {
-		// Clone buffer and exec bulk insert
-		go s.bulkCreatePosts(ctx, s.postsToCreate)
-		// Clear buffer
-		s.postsToCreate = make([]db.BulkCreatePostsParams, 0, PostsToCreateBulkSize)
-	}
-}
-
 func (s *Subscription) createUser(repoDID string) {
-	if _, ok := s.userDidSeen.Load(repoDID); ok {
+	if _, ok := s.userDidCache.Load(repoDID); ok {
 		return
 	}
 	err := s.queries.CreateUser(
@@ -174,17 +183,31 @@ func (s *Subscription) createUser(repoDID string) {
 		log.Errorf("Error creating user: %s", err)
 		return
 	}
-	s.userDidSeen.Store(repoDID, true)
+	s.userDidCache.Store(repoDID, true)
+}
+
+func (s *Subscription) deleteInteraction(ctx context.Context, uri string) {
+	s.interactionsToDeleteMutex.Lock()
+	defer s.interactionsToDeleteMutex.Unlock()
+
+	s.interactionsToDelete = append(s.interactionsToDelete, uri)
+
+	if len(s.interactionsToDelete) >= InteractionsToDeleteBulkSize {
+		// Clone buffer and exec bulk delete
+		go s.bulkDeleteInteractions(ctx, s.interactionsToDelete)
+		// Clear buffer
+		s.interactionsToDelete = make([]string, 0, InteractionsToDeleteBulkSize)
+	}
 }
 
 func (s *Subscription) deletePost(ctx context.Context, uri string) {
-	s.deleteMutex.Lock()
-	defer s.deleteMutex.Unlock()
+	s.postsToDeleteMutex.Lock()
+	defer s.postsToDeleteMutex.Unlock()
 
 	s.postsToDelete = append(s.postsToDelete, uri)
 
 	if len(s.postsToDelete) >= PostsToDeleteBulkSize {
-		// Clone cache and exec bulk delete
+		// Clone buffer and exec bulk delete
 		go s.bulkDeletePosts(ctx, s.postsToDelete)
 		// Clear buffer
 		s.postsToDelete = make([]string, 0, PostsToDeleteBulkSize)
@@ -258,11 +281,15 @@ func (s *Subscription) handleFeedPostCreate(
 	language := s.languageDetector.DetectLanguage(data.Text, data.Langs)
 
 	s.createUser(repoDID)
-	s.createPost(
-		ctx,
-		&db.BulkCreatePostsParams{
+
+	s.postsToCreateMutex.Lock()
+	defer s.postsToCreateMutex.Unlock()
+
+	s.postsToCreate = append(
+		s.postsToCreate,
+		db.BulkCreatePostsParams{
 			Uri:         uri,
-			AuthorDid:   pgtype.Text{String: repoDID, Valid: true},
+			AuthorDid:   repoDID,
 			Cid:         cid.String(),
 			ReplyParent: replyParent,
 			ReplyRoot:   replyRoot,
@@ -270,6 +297,54 @@ func (s *Subscription) handleFeedPostCreate(
 			Language:    pgtype.Text{String: language, Valid: language != ""},
 		},
 	)
+	if len(s.postsToCreate) >= PostsToCreateBulkSize {
+		// Clone buffer and exec bulk insert
+		go s.bulkCreatePosts(ctx, s.postsToCreate)
+		// Clear buffer
+		s.postsToCreate = make([]db.BulkCreatePostsParams, 0, PostsToCreateBulkSize)
+	}
+
+	return nil
+}
+
+func (s *Subscription) handleInteractionCreate(
+	ctx context.Context,
+	repoDID string,
+	uri string,
+	cid *util.LexLink,
+	kind db.InteractionType,
+	createdAtStr string,
+	postUri string,
+) error {
+	createdAt, err := utils.ParseTime(createdAtStr)
+	if err != nil {
+		log.Errorf("Error parsing created at: %s", err)
+		return err
+	}
+
+	s.createUser(repoDID)
+
+	s.interactionsToCreateMutex.Lock()
+	defer s.interactionsToCreateMutex.Unlock()
+
+	s.interactionsToCreate = append(
+		s.interactionsToCreate,
+		db.BulkCreateInteractionsParams{
+			Uri:       uri,
+			Cid:       cid.String(),
+			Kind:      kind,
+			AuthorDid: repoDID,
+			PostUri:   postUri,
+			CreatedAt: pgtype.Timestamp{Time: createdAt, Valid: true},
+		},
+	)
+	if len(s.interactionsToCreate) >= InteractionsToCreateBulkSize {
+		// Clone buffer and exec bulk insert
+		go s.bulkCreateInteractions(ctx, s.interactionsToCreate)
+		// Clear buffer
+		s.interactionsToCreate = make([]db.BulkCreateInteractionsParams, 0, InteractionsToCreateBulkSize)
+	}
+
 	return nil
 }
 
@@ -280,17 +355,35 @@ func (s *Subscription) handleRecordCreate(
 	cid *util.LexLink,
 	record typegen.CBORMarshaler,
 ) error {
+	var err error = nil
 	switch data := record.(type) {
 	case *appbsky.FeedPost:
-		err := s.handleFeedPostCreate(
+		err = s.handleFeedPostCreate(
 			ctx, repoDID, uri, cid, data,
 		)
-		if err != nil {
-			log.Errorf("Error handling feed post create: %s", err)
-			return err
-		}
+	case *appbsky.FeedLike:
+		err = s.handleInteractionCreate(
+			ctx,
+			repoDID,
+			uri,
+			cid,
+			db.InteractionTypeLike,
+			data.CreatedAt,
+			data.Subject.Uri,
+		)
+	case *appbsky.FeedRepost:
+		err = s.handleInteractionCreate(
+			ctx,
+			repoDID,
+			uri,
+			cid,
+			db.InteractionTypeRepost,
+			data.CreatedAt,
+			data.Subject.Uri,
+		)
 	}
-	return nil
+
+	return err
 }
 
 func (s *Subscription) handleRecordDelete(
@@ -301,6 +394,8 @@ func (s *Subscription) handleRecordDelete(
 	switch recordType {
 	case "app.bsky.feed.post":
 		s.deletePost(ctx, uri)
+	case "app.bsky.feed.like", "app.bsky.feed.repost":
+		s.deleteInteraction(ctx, uri)
 	}
 	return nil
 }
