@@ -18,7 +18,7 @@ import (
 func runBackgroundTasks(queries *db.Queries) {
 	// DB cleanup
 	go utils.Recoverer(math.MaxInt, 1, func() {
-		utils.CleanOldData(queries)
+		tasks.CleanOldData(queries)
 	})
 
 	// Firehose consumer

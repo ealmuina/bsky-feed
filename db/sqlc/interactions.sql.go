@@ -31,6 +31,17 @@ func (q *Queries) BulkDeleteInteractions(ctx context.Context, dollar_1 []string)
 	return err
 }
 
+const deleteOldInteractions = `-- name: DeleteOldInteractions :exec
+DELETE
+FROM interactions
+WHERE indexed_at < current_timestamp - interval '10 days'
+`
+
+func (q *Queries) DeleteOldInteractions(ctx context.Context) error {
+	_, err := q.db.Exec(ctx, deleteOldInteractions)
+	return err
+}
+
 const deleteUserInteractions = `-- name: DeleteUserInteractions :exec
 DELETE
 FROM interactions

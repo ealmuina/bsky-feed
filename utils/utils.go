@@ -1,23 +1,10 @@
 package utils
 
 import (
-	db "bsky/db/sqlc"
-	"context"
 	"encoding/json"
 	log "github.com/sirupsen/logrus"
 	"strconv"
-	"time"
 )
-
-func CleanOldData(queries *db.Queries) {
-	ctx := context.Background()
-	for {
-		select {
-		case <-time.After(24 * time.Hour):
-			queries.DeleteOldPosts(ctx)
-		}
-	}
-}
 
 func IntFromString(s string, defaultValue int) int {
 	atoi, err := strconv.Atoi(s)

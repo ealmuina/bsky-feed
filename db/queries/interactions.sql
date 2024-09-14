@@ -11,3 +11,8 @@ WHERE uri = ANY ($1::VARCHAR[]);
 DELETE
 FROM interactions
 WHERE author_did = $1;
+
+-- name: DeleteOldInteractions :exec
+DELETE
+FROM interactions
+WHERE indexed_at < current_timestamp - interval '10 days';
