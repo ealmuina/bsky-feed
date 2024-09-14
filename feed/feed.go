@@ -3,6 +3,7 @@ package feed
 import (
 	"bsky/db/sqlc"
 	"context"
+	"encoding/json"
 	"fmt"
 	log "github.com/sirupsen/logrus"
 	"strconv"
@@ -28,10 +29,20 @@ type Response struct {
 }
 
 type Post struct {
-	Uri       string            `json:"post"`
-	Reason    map[string]string `json:"reason"`
-	CreatedAt time.Time         `json:"-"`
-	Cid       string            `json:"-"`
+	Uri       string
+	Reason    map[string]string
+	CreatedAt time.Time
+	Cid       string
+}
+
+func (p Post) MarshalJSON() ([]byte, error) {
+	result := map[string]any{
+		"post": p.Uri,
+	}
+	if p.Reason != nil {
+		result["reason"] = p.Reason
+	}
+	return json.Marshal(result)
 }
 
 type Algorithm func(
