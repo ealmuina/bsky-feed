@@ -23,7 +23,7 @@ func runBackgroundTasks(queries *db.Queries) {
 
 	// Firehose consumer
 	go utils.Recoverer(math.MaxInt, 1, func() {
-		subscription := firehose.New(
+		subscription := firehose.NewSubscription(
 			"bsky_feeds",
 			queries,
 			url.URL{

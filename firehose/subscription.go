@@ -37,7 +37,7 @@ func getConnection(url url.URL) *websocket.Conn {
 	return c
 }
 
-func New(service string, queries *db.Queries, url url.URL) *Subscription {
+func NewSubscription(service string, queries *db.Queries, url url.URL) *Subscription {
 	storage := NewStorage(queries)
 
 	if cursor := storage.GetCursor(service); cursor != 0 {

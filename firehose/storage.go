@@ -48,6 +48,8 @@ func loadUserDidSeen(queries *db.Queries) *sync.Map {
 
 func NewStorage(queries *db.Queries) Storage {
 	return Storage{
+		queries: queries,
+
 		userDidCache: loadUserDidSeen(queries),
 
 		postsToCreateMutex:        sync.Mutex{},
