@@ -42,6 +42,7 @@ FROM interactions i
          INNER JOIN posts p ON i.post_uri = p.uri
          INNER JOIN users u ON u.did = p.author_did
 WHERE p.author_did = $1
+  AND p.reply_root IS NULL
   AND p.created_at < now() - interval '1 day'
   AND i.created_at > now() - interval '7 days'
 GROUP BY u.followers_count;
