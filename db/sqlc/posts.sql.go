@@ -114,7 +114,8 @@ FROM posts
          INNER JOIN users u ON posts.author_did = u.did
 WHERE language = $1
   AND reply_root IS NULL
-  AND u.followers_count > 1000
+  AND u.followers_count > 200
+  AND u.engagement_factor > 1
   AND (created_at < $2 OR (created_at = $2 AND cid < $3))
 ORDER BY created_at DESC, cid DESC
 LIMIT $4

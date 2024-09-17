@@ -5,11 +5,12 @@ ON CONFLICT DO NOTHING;
 
 -- name: UpdateUser :exec
 UPDATE users
-SET handle          = $2,
-    followers_count = $3,
-    follows_count   = $4,
-    posts_count     = $5,
-    last_update     = $6
+SET handle            = $2,
+    followers_count   = $3,
+    follows_count     = $4,
+    posts_count       = $5,
+    engagement_factor = $6,
+    last_update       = $7
 WHERE did = $1;
 
 -- name: DeleteUser :exec
@@ -32,3 +33,15 @@ SELECT users.did
 FROM users
 WHERE last_update IS NULL
    OR last_update < current_timestamp - interval '1 day';
+
+-- name: CalculateUserEngagement :one
+SELECT (
+           ((count(i.uri) / count(DISTINCT i.post_uri)::float) * 100 / u.followers_count) / (5 / log(u.followers_count))
+           )::float
+FROM interactions i
+         INNER JOIN posts p ON i.post_uri = p.uri
+         INNER JOIN users u ON u.did = p.author_did
+WHERE p.author_did = $1
+  AND p.created_at < now() - interval '1 day'
+  AND i.created_at > now() - interval '7 days'
+GROUP BY u.followers_count;

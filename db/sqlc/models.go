@@ -81,11 +81,12 @@ type SubscriptionState struct {
 }
 
 type User struct {
-	Did            string
-	Handle         pgtype.Text
-	FollowersCount pgtype.Int4
-	FollowsCount   pgtype.Int4
-	PostsCount     pgtype.Int4
-	IndexedAt      pgtype.Timestamp
-	LastUpdate     pgtype.Timestamp
+	Did              string
+	Handle           pgtype.Text
+	FollowersCount   pgtype.Int4
+	FollowsCount     pgtype.Int4
+	PostsCount       pgtype.Int4
+	IndexedAt        pgtype.Timestamp
+	LastUpdate       pgtype.Timestamp
+	EngagementFactor pgtype.Float8
 }

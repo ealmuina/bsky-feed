@@ -82,6 +82,15 @@ func (u *StatisticsUpdater) Run() {
 	}
 }
 
+func (u *StatisticsUpdater) calculateEngagement(ctx context.Context, did string) float64 {
+	engagementFactor, err := u.queries.CalculateUserEngagement(ctx, did)
+	if err != nil {
+		log.Infof("Error while calculating engagement factor for user %s: %v", did, err)
+		return 0
+	}
+	return engagementFactor
+}
+
 func (u *StatisticsUpdater) connectXRPCClient() {
 	usernameString := os.Getenv("STATISTICS_USER")
 	username, err := syntax.ParseAtIdentifier(usernameString)
@@ -132,6 +141,7 @@ func (u *StatisticsUpdater) updateUserStatistics() {
 			log.Errorf("Error getting profile for user %s: %v", did, err)
 
 			var bskyErr *xrpc.Error
+
 			if errors.As(err, &bskyErr) {
 				if bskyErr.StatusCode == 400 {
 					var wrappedError *xrpc.XRPCError
@@ -155,15 +165,18 @@ func (u *StatisticsUpdater) updateUserStatistics() {
 			continue
 		}
 
+		engagementFactor := u.calculateEngagement(ctx, did)
+
 		err = u.queries.UpdateUser(
 			ctx,
 			db.UpdateUserParams{
-				Did:            profile.Did,
-				Handle:         pgtype.Text{String: profile.Handle, Valid: true},
-				FollowersCount: pgtype.Int4{Int32: int32(*profile.FollowersCount), Valid: true},
-				FollowsCount:   pgtype.Int4{Int32: int32(*profile.FollowsCount), Valid: true},
-				PostsCount:     pgtype.Int4{Int32: int32(*profile.PostsCount), Valid: true},
-				LastUpdate:     pgtype.Timestamp{Time: time.Now(), Valid: true},
+				Did:              profile.Did,
+				Handle:           pgtype.Text{String: profile.Handle, Valid: true},
+				FollowersCount:   pgtype.Int4{Int32: int32(*profile.FollowersCount), Valid: true},
+				FollowsCount:     pgtype.Int4{Int32: int32(*profile.FollowsCount), Valid: true},
+				PostsCount:       pgtype.Int4{Int32: int32(*profile.PostsCount), Valid: true},
+				EngagementFactor: pgtype.Float8{Float64: engagementFactor, Valid: engagementFactor > 0},
+				LastUpdate:       pgtype.Timestamp{Time: time.Now(), Valid: true},
 			},
 		)
 		if err != nil {
