@@ -17,6 +17,7 @@ import (
 	"time"
 )
 
+const EngagementMinFollowers = 200
 const AccountDeactivatedError = "AccountDeactivated"
 const InvalidRequestError = "InvalidRequest" // Seen when profile is not found
 const ExpiredToken = "ExpiredToken"
@@ -165,7 +166,10 @@ func (u *StatisticsUpdater) updateUserStatistics() {
 			continue
 		}
 
-		engagementFactor := u.calculateEngagement(ctx, did)
+		engagementFactor := -1.0
+		if *profile.PostsCount > 0 && *profile.FollowersCount > EngagementMinFollowers {
+			engagementFactor = u.calculateEngagement(ctx, did)
+		}
 
 		err = u.queries.UpdateUser(
 			ctx,
