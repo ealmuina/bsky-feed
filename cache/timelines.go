@@ -37,7 +37,7 @@ func (c *TimelinesCache) AddPost(feedName string, post Post) {
 			context.Background(),
 			c.getRedisKey(feedName),
 			redis.Z{
-				Score:  float64(-post.CreatedAt.Unix()), // Sort DESC
+				Score:  float64(post.CreatedAt.Unix()),
 				Member: bytes,
 			},
 		)
@@ -54,11 +54,11 @@ func (c *TimelinesCache) DeleteExpiredPosts(feedName string, expiration time.Tim
 }
 
 func (c *TimelinesCache) GetTimeline(feedName string, startIndex int64, endIndex int64) []Post {
-	members := c.redisClient.ZRange(
+	members := c.redisClient.ZRevRange( // Retrieve in DESC order
 		context.Background(),
 		c.getRedisKey(feedName),
 		startIndex,
-		endIndex,
+		endIndex-1,
 	)
 	posts := make([]Post, len(members.Val()))
 	for i, member := range members.Val() {

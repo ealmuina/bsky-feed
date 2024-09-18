@@ -7,12 +7,12 @@ import (
 
 type Post struct {
 	// Serialized
-	Uri       string
-	Reason    map[string]string
-	CreatedAt time.Time
-	Cid       string
+	Uri    string
+	Reason map[string]string
 
 	// Non serialized
+	Cid         string
+	CreatedAt   time.Time
 	AuthorDid   string
 	ReplyParent string
 	ReplyRoot   string
@@ -21,9 +21,7 @@ type Post struct {
 
 func (p *Post) MarshalJSON() ([]byte, error) {
 	result := map[string]any{
-		"post":       p.Uri,
-		"cid":        p.Cid,
-		"created_at": p.CreatedAt.Unix(),
+		"post": p.Uri,
 	}
 	if p.Reason != nil {
 		result["reason"] = p.Reason
@@ -39,8 +37,6 @@ func (p *Post) UnmarshalJSON(b []byte) error {
 
 	p.Uri = dict["post"].(string)
 	p.Reason = dict["reason"].(map[string]string)
-	p.CreatedAt = time.Unix(dict["created_at"].(int64), 0)
-	p.Cid = dict["cid"].(string)
 
 	return nil
 }
