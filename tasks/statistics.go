@@ -1,6 +1,7 @@
 package tasks
 
 import (
+	"bsky/cache"
 	db "bsky/db/sqlc"
 	"context"
 	"errors"
@@ -26,6 +27,7 @@ type StatisticsUpdater struct {
 	queries         *db.Queries
 	client          *xrpc.Client
 	userLastUpdated map[string]time.Time
+	usersCache      *cache.UsersCache
 }
 
 func getXRPCClient(username *syntax.AtIdentifier, password string) (*xrpc.Client, error) {
@@ -63,10 +65,11 @@ func getXRPCClient(username *syntax.AtIdentifier, password string) (*xrpc.Client
 	}, nil
 }
 
-func NewStatisticsUpdater(queries *db.Queries) (*StatisticsUpdater, error) {
+func NewStatisticsUpdater(queries *db.Queries, usersCache *cache.UsersCache) (*StatisticsUpdater, error) {
 	updater := StatisticsUpdater{
 		queries:         queries,
 		userLastUpdated: make(map[string]time.Time),
+		usersCache:      usersCache,
 	}
 	updater.connectXRPCClient()
 
@@ -171,6 +174,14 @@ func (u *StatisticsUpdater) updateUserStatistics() {
 			engagementFactor = u.calculateEngagement(ctx, did)
 		}
 
+		// Update on cache
+		u.usersCache.AddUser(cache.User{
+			Did:              profile.Did,
+			FollowersCount:   *profile.FollowersCount,
+			EngagementFactor: engagementFactor,
+		})
+
+		// Update on DB
 		err = u.queries.UpdateUser(
 			ctx,
 			db.UpdateUserParams{

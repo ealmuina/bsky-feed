@@ -1,9 +1,10 @@
 package server
 
 import (
+	"bsky/cache"
 	db "bsky/db/sqlc"
-	"bsky/feed"
-	"bsky/feed/algorithms"
+	"bsky/feeds"
+	"bsky/feeds/algorithms"
 	"bsky/utils"
 	"errors"
 	"fmt"
@@ -13,37 +14,68 @@ import (
 	"strings"
 )
 
-type Server struct {
-	queries *db.Queries
-	feeds   map[string]*feed.Feed
+var LanguageFeeds = map[string]string{
+	"basque":     "eu",
+	"catalan":    "ca",
+	"galician":   "gl",
+	"portuguese": "pt",
+	"spanish":    "es",
+}
+var TopLanguageFeeds = map[string]string{
+	"top_spanish": "es",
 }
 
-func New(queries *db.Queries) Server {
-	feeds := make(map[string]*feed.Feed)
+type Server struct {
+	queries *db.Queries
+	feeds   map[string]*feeds.Feed
+}
+
+func NewServer(
+	queries *db.Queries,
+	timelinesCache *cache.TimelinesCache,
+	usersCache *cache.UsersCache,
+) Server {
+	serverFeeds := make(map[string]*feeds.Feed)
+
+	// Initialize users cache
+	//users, err := queries.GetUsersStatistics(context.Background())
+	//if err != nil {
+	//	panic(err)
+	//}
+	//for _, user := range users {
+	//	usersCache.AddUser(cache.User{
+	//		Did:              user.Did,
+	//		FollowersCount:   int64(user.FollowersCount.Int32),
+	//		EngagementFactor: user.EngagementFactor.Float64,
+	//	})
+	//}
 
 	// Populate language feeds
-	languages := map[string]string{
-		"basque":     "eu",
-		"catalan":    "ca",
-		"galician":   "gl",
-		"portuguese": "pt",
-		"spanish":    "es",
-	}
-	for language, languageCode := range languages {
-		feeds[language] = feed.New(
+	for language, languageCode := range LanguageFeeds {
+		serverFeeds[language] = feeds.NewFeed(
+			language,
 			queries,
+			timelinesCache,
+			usersCache,
 			algorithms.GetLanguageAlgorithm(languageCode),
+			algorithms.GetTopLanguageAlgorithmAcceptance(languageCode),
 		)
 	}
 	// Additional feeds
-	feeds["top_spanish"] = feed.New(
-		queries,
-		algorithms.GetTopLanguageAlgorithm("es"),
-	)
+	for feedName, languageCode := range TopLanguageFeeds {
+		serverFeeds[feedName] = feeds.NewFeed(
+			feedName,
+			queries,
+			timelinesCache,
+			usersCache,
+			algorithms.GetTopLanguageAlgorithm(languageCode),
+			algorithms.GetTopLanguageAlgorithmAcceptance(languageCode),
+		)
+	}
 
 	return Server{
 		queries: queries,
-		feeds:   feeds,
+		feeds:   serverFeeds,
 	}
 }
 
@@ -91,11 +123,11 @@ func (s *Server) getDescribeFeedGenerator(w http.ResponseWriter, r *http.Request
 			"body": map[string]any{
 				"did": "did:web:" + os.Getenv("BSKY_HOSTNAME"),
 				"feeds": []map[string]string{
-					{"uri": "at://did:plc:qinqxdwwxgme6r4lgmkry5qu/app.bsky.feed.generator/basque"},
-					{"uri": "at://did:plc:qinqxdwwxgme6r4lgmkry5qu/app.bsky.feed.generator/catalan"},
-					{"uri": "at://did:plc:qinqxdwwxgme6r4lgmkry5qu/app.bsky.feed.generator/galician"},
-					{"uri": "at://did:plc:qinqxdwwxgme6r4lgmkry5qu/app.bsky.feed.generator/portuguese"},
-					{"uri": "at://did:plc:qinqxdwwxgme6r4lgmkry5qu/app.bsky.feed.generator/spanish"},
+					{"uri": "at://did:plc:qinqxdwwxgme6r4lgmkry5qu/app.bsky.feeds.generator/basque"},
+					{"uri": "at://did:plc:qinqxdwwxgme6r4lgmkry5qu/app.bsky.feeds.generator/catalan"},
+					{"uri": "at://did:plc:qinqxdwwxgme6r4lgmkry5qu/app.bsky.feeds.generator/galician"},
+					{"uri": "at://did:plc:qinqxdwwxgme6r4lgmkry5qu/app.bsky.feeds.generator/portuguese"},
+					{"uri": "at://did:plc:qinqxdwwxgme6r4lgmkry5qu/app.bsky.feeds.generator/spanish"},
 				},
 			},
 		},
@@ -128,9 +160,9 @@ func (s *Server) getFeedSkeleton(w http.ResponseWriter, r *http.Request) {
 	}
 
 	requestedFeed := s.feeds[feedName]
-	result := requestedFeed.GetPosts(
-		feed.QueryParams{
-			Limit:  limit,
+	result := requestedFeed.GetTimeline(
+		feeds.QueryParams{
+			Limit:  int64(limit),
 			Cursor: *cursor,
 		},
 	)

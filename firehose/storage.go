@@ -2,6 +2,7 @@ package firehose
 
 import (
 	db "bsky/db/sqlc"
+	"bsky/feeds"
 	"context"
 	"github.com/bluesky-social/indigo/lex/util"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -17,6 +18,7 @@ const InteractionsToDeleteBulkSize = 100
 
 type Storage struct {
 	queries *db.Queries
+	feeds   []*feeds.Feed
 
 	userDidCache *sync.Map
 
@@ -102,27 +104,23 @@ func (s *Storage) CreateInteraction(
 
 func (s *Storage) CreatePost(
 	ctx context.Context,
-	uri string,
-	authorDid string,
-	cid *util.LexLink,
-	replyParent string,
-	replyRoot string,
-	createdAt time.Time,
-	language string,
+	post feeds.Post,
 ) error {
+	go s.addPostToFeeds(post)
+
 	s.postsToCreateMutex.Lock()
 	defer s.postsToCreateMutex.Unlock()
 
 	s.postsToCreate = append(
 		s.postsToCreate,
 		db.BulkCreatePostsParams{
-			Uri:         uri,
-			AuthorDid:   authorDid,
-			Cid:         cid.String(),
-			ReplyParent: pgtype.Text{String: replyParent, Valid: replyParent != ""},
-			ReplyRoot:   pgtype.Text{String: replyRoot, Valid: replyRoot != ""},
-			CreatedAt:   pgtype.Timestamp{Time: createdAt, Valid: true},
-			Language:    pgtype.Text{String: language, Valid: language != ""},
+			Uri:         post.Uri,
+			AuthorDid:   post.AuthorDid,
+			Cid:         post.Cid,
+			ReplyParent: pgtype.Text{String: post.ReplyParent, Valid: post.ReplyParent != ""},
+			ReplyRoot:   pgtype.Text{String: post.ReplyRoot, Valid: post.ReplyRoot != ""},
+			CreatedAt:   pgtype.Timestamp{Time: post.CreatedAt, Valid: true},
+			Language:    pgtype.Text{String: post.Language, Valid: post.Language != ""},
 		},
 	)
 	if len(s.postsToCreate) >= PostsToCreateBulkSize {
@@ -211,5 +209,11 @@ func (s *Storage) UpdateCursor(service string, cursor int64) {
 	)
 	if err != nil {
 		log.Errorf("Error updating cursor: %s", err)
+	}
+}
+
+func (s *Storage) addPostToFeeds(post feeds.Post) {
+	for _, f := range s.feeds {
+		f.AddPost(post)
 	}
 }

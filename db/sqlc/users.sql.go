@@ -145,6 +145,39 @@ func (q *Queries) GetUserDidsToRefreshStatistics(ctx context.Context) ([]string,
 	return items, nil
 }
 
+const getUsersStatistics = `-- name: GetUsersStatistics :many
+SELECT did, followers_count, engagement_factor
+FROM users
+WHERE followers_count IS NOT NULL
+  AND engagement_factor IS NOT NULL
+`
+
+type GetUsersStatisticsRow struct {
+	Did              string
+	FollowersCount   pgtype.Int4
+	EngagementFactor pgtype.Float8
+}
+
+func (q *Queries) GetUsersStatistics(ctx context.Context) ([]GetUsersStatisticsRow, error) {
+	rows, err := q.db.Query(ctx, getUsersStatistics)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetUsersStatisticsRow
+	for rows.Next() {
+		var i GetUsersStatisticsRow
+		if err := rows.Scan(&i.Did, &i.FollowersCount, &i.EngagementFactor); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const updateUser = `-- name: UpdateUser :exec
 UPDATE users
 SET handle            = $2,

@@ -2,6 +2,7 @@ package firehose
 
 import (
 	db "bsky/db/sqlc"
+	"bsky/feeds"
 	"bsky/utils"
 	"bytes"
 	"context"
@@ -158,7 +159,16 @@ func (s *Subscription) handleFeedPostCreate(
 		repoDID,
 	)
 	return s.storage.CreatePost(
-		ctx, uri, repoDID, cid, replyParent, replyRoot, createdAt, language,
+		ctx,
+		feeds.Post{
+			Uri:         uri,
+			AuthorDid:   repoDID,
+			Cid:         cid.String(),
+			ReplyParent: replyParent,
+			ReplyRoot:   replyRoot,
+			CreatedAt:   createdAt,
+			Language:    language,
+		},
 	)
 }
 
@@ -229,9 +239,9 @@ func (s *Subscription) handleRecordDelete(
 	recordType string,
 ) error {
 	switch recordType {
-	case "app.bsky.feed.post":
+	case "app.bsky.feeds.post":
 		s.storage.DeletePost(ctx, uri)
-	case "app.bsky.feed.like", "app.bsky.feed.repost":
+	case "app.bsky.feeds.like", "app.bsky.feeds.repost":
 		s.storage.DeleteInteraction(ctx, uri)
 	}
 	return nil

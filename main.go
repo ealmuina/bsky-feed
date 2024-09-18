@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bsky/cache"
 	db "bsky/db/sqlc"
 	"bsky/firehose"
 	"bsky/server"
@@ -9,16 +10,21 @@ import (
 	"context"
 	"fmt"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/redis/go-redis/v9"
 	log "github.com/sirupsen/logrus"
 	"math"
 	"net/url"
 	"os"
 )
 
-func runBackgroundTasks(queries *db.Queries) {
+func runBackgroundTasks(
+	queries *db.Queries,
+	usersCache *cache.UsersCache,
+	timelinesCache *cache.TimelinesCache,
+) {
 	// DB cleanup
 	go utils.Recoverer(math.MaxInt, 1, func() {
-		tasks.CleanOldData(queries)
+		tasks.CleanOldData(queries, timelinesCache)
 	})
 
 	// Firehose consumer
@@ -37,7 +43,7 @@ func runBackgroundTasks(queries *db.Queries) {
 
 	// Statistics updater
 	go utils.Recoverer(math.MaxInt, 1, func() {
-		statisticsUpdater, err := tasks.NewStatisticsUpdater(queries)
+		statisticsUpdater, err := tasks.NewStatisticsUpdater(queries, usersCache)
 		if err != nil {
 			panic(err)
 		}
@@ -64,10 +70,21 @@ func main() {
 		panic(err)
 	}
 	queries := db.New(connectionPool)
-	s := server.New(queries)
+
+	redisHost := os.Getenv("REDIS_HOST")
+	redisPort := os.Getenv("REDIS_PORT")
+	redisOptions := redis.Options{
+		Addr:     fmt.Sprintf("%s:%s", redisHost, redisPort),
+		Password: "", // no password set
+		DB:       0,  // use default DB
+	}
+	usersCache := cache.NewUsersCache(&redisOptions)
+	timelinesCache := cache.NewTimelinesCache(&redisOptions)
+
+	s := server.NewServer(queries, timelinesCache, usersCache)
 
 	// Run background tasks
-	runBackgroundTasks(queries)
+	runBackgroundTasks(queries, usersCache, timelinesCache)
 
 	s.Run()
 }
