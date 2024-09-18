@@ -10,7 +10,7 @@ import (
 	"time"
 )
 
-const MinTopUserFollowers = 200
+const MinTopUserFollowers = 300
 const MinTopUserEngagementFactor = 1.0
 
 func GetLanguageAlgorithm(languageCode string) feeds.Algorithm {
