@@ -122,7 +122,7 @@ const getUserDidsToRefreshStatistics = `-- name: GetUserDidsToRefreshStatistics 
 SELECT users.did
 FROM users
 WHERE last_update IS NULL
-   OR last_update < current_timestamp - interval '1 day'
+   OR last_update < current_timestamp - interval '1 week'
 `
 
 func (q *Queries) GetUserDidsToRefreshStatistics(ctx context.Context) ([]string, error) {

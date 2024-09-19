@@ -77,12 +77,8 @@ func NewStatisticsUpdater(queries *db.Queries, usersCache *cache.UsersCache) (*S
 }
 
 func (u *StatisticsUpdater) Run() {
-	u.updateUserStatistics()
 	for {
-		select {
-		case <-time.After(1 * time.Hour):
-			u.updateUserStatistics()
-		}
+		u.updateUserStatistics()
 	}
 }
 
