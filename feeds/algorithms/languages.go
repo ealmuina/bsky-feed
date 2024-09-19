@@ -44,7 +44,7 @@ func GetLanguageAlgorithm(languageCode string) feeds.Algorithm {
 
 func GetLanguageAlgorithmAcceptance(languageCode string) feeds.AlgorithmAcceptance {
 	return func(feed *feeds.Feed, post feeds.Post) (ok bool, reason map[string]string) {
-		return post.Language == languageCode, nil
+		return post.Language == languageCode && post.ReplyRoot == "", nil
 	}
 }
 
@@ -94,8 +94,8 @@ func GetTopLanguageAlgorithmAcceptance(languageCode string) feeds.AlgorithmAccep
 		feed *feeds.Feed,
 		post feeds.Post,
 	) (ok bool, reason map[string]string) {
-		// Bad language. Skip directly
-		if post.Language != languageCode {
+		// Bad language or reply. Skip directly
+		if post.Language != languageCode || post.ReplyRoot != "" {
 			return false, nil
 		}
 
