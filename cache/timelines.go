@@ -13,10 +13,6 @@ type Post struct {
 	Uri    string
 	Reason map[string]string
 	Rank   float64
-	//AuthorDid   string
-	//ReplyParent string
-	//ReplyRoot   string
-	//Language    string
 }
 
 type TimelinesCache struct {

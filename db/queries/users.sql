@@ -28,12 +28,6 @@ LIMIT 1;
 SELECT users.did
 FROM users;
 
--- name: GetUsersStatistics :many
-SELECT did, followers_count, engagement_factor
-FROM users
-WHERE followers_count IS NOT NULL
-  AND engagement_factor IS NOT NULL;
-
 -- name: GetUserDidsToRefreshStatistics :many
 SELECT users.did
 FROM users

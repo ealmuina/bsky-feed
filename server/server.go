@@ -37,19 +37,6 @@ func NewServer(
 ) Server {
 	serverFeeds := make(map[string]*feeds.Feed)
 
-	// Initialize users cache
-	//users, err := queries.GetUsersStatistics(context.Background())
-	//if err != nil {
-	//	panic(err)
-	//}
-	//for _, user := range users {
-	//	usersCache.AddUser(cache.User{
-	//		Did:              user.Did,
-	//		FollowersCount:   int64(user.FollowersCount.Int32),
-	//		EngagementFactor: user.EngagementFactor.Float64,
-	//	})
-	//}
-
 	// Populate language feeds
 	for language, languageCode := range LanguageFeeds {
 		serverFeeds[language] = feeds.NewFeed(

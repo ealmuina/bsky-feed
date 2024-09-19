@@ -10,7 +10,6 @@ import (
 	"time"
 )
 
-const TimelineInitPosts = 250
 const CursorEOF = "eof"
 
 type Feed struct {
@@ -31,12 +30,6 @@ func feedPostToCachePost(post *Post) cache.Post {
 		Uri:    post.Uri,
 		Reason: post.Reason,
 		Rank:   post.Rank,
-		//CreatedAt:   post.CreatedAt,
-		//Cid:         post.Cid,
-		//AuthorDid:   post.AuthorDid,
-		//ReplyParent: post.ReplyParent,
-		//ReplyRoot:   post.ReplyRoot,
-		//Language:    post.Language,
 	}
 }
 
@@ -48,18 +41,6 @@ func NewFeed(
 	algorithm Algorithm,
 	acceptsPost AlgorithmAcceptance,
 ) *Feed {
-	// Initialize timeline
-	//posts := algorithm(
-	//	QueryParams{Cursor: getNewCursor(), Limit: TimelineInitPosts},
-	//	queries,
-	//	context.Background(),
-	//	time.Now(),
-	//	"0",
-	//)
-	//for _, post := range posts {
-	//	timelinesCache.AddPost(name, feedPostToCachePost(&post))
-	//}
-
 	// Build feeds
 	return &Feed{
 		Name:           name,
@@ -106,7 +87,6 @@ func (f *Feed) GetTimeline(params QueryParams) Response {
 	for i, cachedPost := range cachedPosts {
 		posts[i].Uri = cachedPost.Uri
 		posts[i].Reason = cachedPost.Reason
-		//posts[i].CreatedAt = cachedPost.CreatedAt
 		posts[i].Rank = cachedPost.Rank
 	}
 
