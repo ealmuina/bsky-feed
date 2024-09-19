@@ -78,7 +78,7 @@ func NewStatisticsUpdater(queries *db.Queries, usersCache *cache.UsersCache) (*S
 
 func (u *StatisticsUpdater) Run() {
 	for {
-		u.updateUserStatistics()
+		u.updateUsersStatistics()
 	}
 }
 
@@ -126,7 +126,67 @@ func (u *StatisticsUpdater) deleteUser(ctx context.Context, did string) {
 	}
 }
 
-func (u *StatisticsUpdater) updateUserStatistics() {
+func (u *StatisticsUpdater) updateUserStatistics(ctx context.Context, did string) {
+	profile, err := appbsky.ActorGetProfile(ctx, u.client, did)
+	if err != nil {
+		log.Errorf("Error getting profile for user %s: %v", did, err)
+
+		var bskyErr *xrpc.Error
+
+		if errors.As(err, &bskyErr) {
+			if bskyErr.StatusCode == 400 {
+				var wrappedError *xrpc.XRPCError
+
+				if errors.As(bskyErr.Wrapped, &wrappedError) {
+					switch wrappedError.ErrStr {
+					case AccountDeactivatedError, InvalidRequestError:
+						// Delete user if profile does not exist anymore
+						u.deleteUser(ctx, did)
+					case ExpiredToken:
+						u.connectXRPCClient()
+					}
+				}
+			}
+
+			// Sleep if API rate limit has been exceeded
+			if bskyErr.Ratelimit.Remaining == 0 {
+				time.Sleep(bskyErr.Ratelimit.Reset.Sub(time.Now()))
+			}
+		}
+		return
+	}
+
+	engagementFactor := -1.0
+	if *profile.PostsCount > 0 && *profile.FollowersCount > EngagementMinFollowers {
+		engagementFactor = u.calculateEngagement(ctx, did)
+	}
+
+	// Update on cache
+	u.usersCache.AddUser(cache.User{
+		Did:              profile.Did,
+		FollowersCount:   *profile.FollowersCount,
+		EngagementFactor: engagementFactor,
+	})
+
+	// Update on DB
+	err = u.queries.UpdateUser(
+		ctx,
+		db.UpdateUserParams{
+			Did:              profile.Did,
+			Handle:           pgtype.Text{String: profile.Handle, Valid: true},
+			FollowersCount:   pgtype.Int4{Int32: int32(*profile.FollowersCount), Valid: true},
+			FollowsCount:     pgtype.Int4{Int32: int32(*profile.FollowsCount), Valid: true},
+			PostsCount:       pgtype.Int4{Int32: int32(*profile.PostsCount), Valid: true},
+			EngagementFactor: pgtype.Float8{Float64: engagementFactor, Valid: engagementFactor > 0},
+			LastUpdate:       pgtype.Timestamp{Time: time.Now(), Valid: true},
+		},
+	)
+	if err != nil {
+		log.Errorf("Error updating user: %v", err)
+	}
+}
+
+func (u *StatisticsUpdater) updateUsersStatistics() {
 	ctx := context.Background()
 
 	dids, err := u.queries.GetUserDidsToRefreshStatistics(ctx)
@@ -136,63 +196,6 @@ func (u *StatisticsUpdater) updateUserStatistics() {
 	}
 
 	for _, did := range dids {
-		profile, err := appbsky.ActorGetProfile(ctx, u.client, did)
-		if err != nil {
-			log.Errorf("Error getting profile for user %s: %v", did, err)
-
-			var bskyErr *xrpc.Error
-
-			if errors.As(err, &bskyErr) {
-				if bskyErr.StatusCode == 400 {
-					var wrappedError *xrpc.XRPCError
-
-					if errors.As(bskyErr.Wrapped, &wrappedError) {
-						switch wrappedError.ErrStr {
-						case AccountDeactivatedError, InvalidRequestError:
-							// Delete user if profile does not exist anymore
-							u.deleteUser(ctx, did)
-						case ExpiredToken:
-							u.connectXRPCClient()
-						}
-					}
-				}
-
-				// Sleep if API rate limit has been exceeded
-				if bskyErr.Ratelimit.Remaining == 0 {
-					time.Sleep(bskyErr.Ratelimit.Reset.Sub(time.Now()))
-				}
-			}
-			continue
-		}
-
-		engagementFactor := -1.0
-		if *profile.PostsCount > 0 && *profile.FollowersCount > EngagementMinFollowers {
-			engagementFactor = u.calculateEngagement(ctx, did)
-		}
-
-		// Update on cache
-		u.usersCache.AddUser(cache.User{
-			Did:              profile.Did,
-			FollowersCount:   *profile.FollowersCount,
-			EngagementFactor: engagementFactor,
-		})
-
-		// Update on DB
-		err = u.queries.UpdateUser(
-			ctx,
-			db.UpdateUserParams{
-				Did:              profile.Did,
-				Handle:           pgtype.Text{String: profile.Handle, Valid: true},
-				FollowersCount:   pgtype.Int4{Int32: int32(*profile.FollowersCount), Valid: true},
-				FollowsCount:     pgtype.Int4{Int32: int32(*profile.FollowsCount), Valid: true},
-				PostsCount:       pgtype.Int4{Int32: int32(*profile.PostsCount), Valid: true},
-				EngagementFactor: pgtype.Float8{Float64: engagementFactor, Valid: engagementFactor > 0},
-				LastUpdate:       pgtype.Timestamp{Time: time.Now(), Valid: true},
-			},
-		)
-		if err != nil {
-			log.Errorf("Error updating user: %v", err)
-			continue
-		}
+		u.updateUserStatistics(ctx, did)
 	}
 }
