@@ -68,11 +68,11 @@ func (r iteratorForBulkCreatePosts) Values() ([]interface{}, error) {
 	return []interface{}{
 		r.rows[0].Uri,
 		r.rows[0].AuthorDid,
-		r.rows[0].Cid,
 		r.rows[0].ReplyParent,
 		r.rows[0].ReplyRoot,
 		r.rows[0].CreatedAt,
 		r.rows[0].Language,
+		r.rows[0].Rank,
 	}, nil
 }
 
@@ -81,5 +81,5 @@ func (r iteratorForBulkCreatePosts) Err() error {
 }
 
 func (q *Queries) BulkCreatePosts(ctx context.Context, arg []BulkCreatePostsParams) (int64, error) {
-	return q.db.CopyFrom(ctx, []string{"posts"}, []string{"uri", "author_did", "cid", "reply_parent", "reply_root", "created_at", "language"}, &iteratorForBulkCreatePosts{rows: arg})
+	return q.db.CopyFrom(ctx, []string{"posts"}, []string{"uri", "author_did", "reply_parent", "reply_root", "created_at", "language", "rank"}, &iteratorForBulkCreatePosts{rows: arg})
 }

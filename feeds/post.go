@@ -11,7 +11,7 @@ type Post struct {
 	Reason map[string]string
 
 	// Non serialized
-	Cid         string
+	Rank        float64
 	CreatedAt   time.Time
 	AuthorDid   string
 	ReplyParent string

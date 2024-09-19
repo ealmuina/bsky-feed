@@ -48,9 +48,10 @@ func loadUserDidSeen(queries *db.Queries) *sync.Map {
 	return &userDidSeen
 }
 
-func NewStorage(queries *db.Queries) Storage {
+func NewStorage(queries *db.Queries, feeds []*feeds.Feed) Storage {
 	return Storage{
 		queries: queries,
+		feeds:   feeds,
 
 		userDidCache: loadUserDidSeen(queries),
 
@@ -116,11 +117,11 @@ func (s *Storage) CreatePost(
 		db.BulkCreatePostsParams{
 			Uri:         post.Uri,
 			AuthorDid:   post.AuthorDid,
-			Cid:         post.Cid,
 			ReplyParent: pgtype.Text{String: post.ReplyParent, Valid: post.ReplyParent != ""},
 			ReplyRoot:   pgtype.Text{String: post.ReplyRoot, Valid: post.ReplyRoot != ""},
 			CreatedAt:   pgtype.Timestamp{Time: post.CreatedAt, Valid: true},
 			Language:    pgtype.Text{String: post.Language, Valid: post.Language != ""},
+			Rank:        pgtype.Float8{Float64: post.Rank, Valid: true},
 		},
 	)
 	if len(s.postsToCreate) >= PostsToCreateBulkSize {

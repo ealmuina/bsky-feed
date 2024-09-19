@@ -58,7 +58,7 @@ func NewServer(
 			timelinesCache,
 			usersCache,
 			algorithms.GetLanguageAlgorithm(languageCode),
-			algorithms.GetTopLanguageAlgorithmAcceptance(languageCode),
+			algorithms.GetLanguageAlgorithmAcceptance(languageCode),
 		)
 	}
 	// Additional feeds
@@ -77,6 +77,14 @@ func NewServer(
 		queries: queries,
 		feeds:   serverFeeds,
 	}
+}
+
+func (s *Server) GetFeeds() []*feeds.Feed {
+	result := make([]*feeds.Feed, 0, len(s.feeds))
+	for _, feed := range s.feeds {
+		result = append(result, feed)
+	}
+	return result
 }
 
 func (s *Server) Run() {

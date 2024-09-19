@@ -7,7 +7,6 @@ import (
 	"context"
 	"github.com/jackc/pgx/v5/pgtype"
 	log "github.com/sirupsen/logrus"
-	"time"
 )
 
 const MinTopUserFollowers = 300
@@ -18,16 +17,14 @@ func GetLanguageAlgorithm(languageCode string) feeds.Algorithm {
 		params feeds.QueryParams,
 		queries *db.Queries,
 		ctx context.Context,
-		createdAt time.Time,
-		cid string,
+		cursorRank float64,
 	) []feeds.Post {
 		posts, err := queries.GetLanguagePosts(
 			ctx,
 			db.GetLanguagePostsParams{
-				Language:  pgtype.Text{String: languageCode, Valid: true},
-				CreatedAt: pgtype.Timestamp{Time: createdAt, Valid: true},
-				Cid:       cid,
-				Limit:     int32(params.Limit),
+				Language: pgtype.Text{String: languageCode, Valid: true},
+				Rank:     pgtype.Float8{Float64: cursorRank, Valid: true},
+				Limit:    int32(params.Limit),
 			},
 		)
 		if err != nil {
@@ -37,9 +34,8 @@ func GetLanguageAlgorithm(languageCode string) feeds.Algorithm {
 		result := make([]feeds.Post, len(posts))
 		for i, post := range posts {
 			result[i] = feeds.Post{
-				Uri:       post.Uri,
-				Cid:       post.Cid,
-				CreatedAt: post.CreatedAt.Time,
+				Uri:  post.Uri,
+				Rank: post.Rank.Float64,
 			}
 		}
 		return result
@@ -57,16 +53,14 @@ func GetTopLanguageAlgorithm(languageCode string) feeds.Algorithm {
 		params feeds.QueryParams,
 		queries *db.Queries,
 		ctx context.Context,
-		createdAt time.Time,
-		cid string,
+		cursorRank float64,
 	) []feeds.Post {
 		posts, err := queries.GetLanguageTopPosts(
 			ctx,
 			db.GetLanguageTopPostsParams{
-				Language:  pgtype.Text{String: languageCode, Valid: true},
-				CreatedAt: pgtype.Timestamp{Time: createdAt, Valid: true},
-				Cid:       cid,
-				Limit:     int32(params.Limit),
+				Language: pgtype.Text{String: languageCode, Valid: true},
+				Rank:     pgtype.Float8{Float64: cursorRank, Valid: true},
+				Limit:    int32(params.Limit),
 			},
 		)
 		if err != nil {
@@ -85,10 +79,9 @@ func GetTopLanguageAlgorithm(languageCode string) feeds.Algorithm {
 				}
 			}
 			result[i] = feeds.Post{
-				Uri:       post.Uri,
-				Cid:       post.Cid,
-				Reason:    reason,
-				CreatedAt: post.CreatedAt.Time,
+				Uri:    post.Uri,
+				Rank:   post.Rank.Float64,
+				Reason: reason,
 			}
 		}
 

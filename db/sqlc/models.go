@@ -66,12 +66,12 @@ type Interaction struct {
 type Post struct {
 	Uri         string
 	AuthorDid   string
-	Cid         string
 	ReplyParent pgtype.Text
 	ReplyRoot   pgtype.Text
 	IndexedAt   pgtype.Timestamp
 	CreatedAt   pgtype.Timestamp
 	Language    pgtype.Text
+	Rank        pgtype.Float8
 }
 
 type SubscriptionState struct {

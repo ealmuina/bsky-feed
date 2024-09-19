@@ -7,7 +7,6 @@ import (
 	"fmt"
 	log "github.com/sirupsen/logrus"
 	"strconv"
-	"strings"
 	"time"
 )
 
@@ -24,19 +23,20 @@ type Feed struct {
 }
 
 func getNewCursor() string {
-	return fmt.Sprintf("0::%d::0", time.Now().Unix())
+	return fmt.Sprintf("%d", time.Now().Unix())
 }
 
 func feedPostToCachePost(post *Post) cache.Post {
 	return cache.Post{
-		Uri:         post.Uri,
-		Reason:      post.Reason,
-		CreatedAt:   post.CreatedAt,
-		Cid:         post.Cid,
-		AuthorDid:   post.AuthorDid,
-		ReplyParent: post.ReplyParent,
-		ReplyRoot:   post.ReplyRoot,
-		Language:    post.Language,
+		Uri:    post.Uri,
+		Reason: post.Reason,
+		Rank:   post.Rank,
+		//CreatedAt:   post.CreatedAt,
+		//Cid:         post.Cid,
+		//AuthorDid:   post.AuthorDid,
+		//ReplyParent: post.ReplyParent,
+		//ReplyRoot:   post.ReplyRoot,
+		//Language:    post.Language,
 	}
 }
 
@@ -90,35 +90,29 @@ func (f *Feed) GetTimeline(params QueryParams) Response {
 		}
 	}
 
-	cursorParts := strings.Split(params.Cursor, "::")
-	if len(cursorParts) != 3 {
+	cursorRank, err := strconv.ParseFloat(params.Cursor, 64)
+	if err != nil {
 		log.Errorf("Malformed cursor in %+v", params)
 		return Response{}
 	}
 
-	timelineIndex, _ := strconv.ParseInt(cursorParts[0], 10, 64)
-	createdAtInt, _ := strconv.ParseInt(cursorParts[1], 10, 64)
-
-	createdAt := time.Unix(createdAtInt, 0)
-	cid := cursorParts[2]
-
 	// Attempt to hit cache first
 	cachedPosts := f.TimelinesCache.GetTimeline(
 		f.Name,
-		timelineIndex,
-		timelineIndex+params.Limit,
+		cursorRank,
+		params.Limit,
 	)
 	posts := make([]Post, len(cachedPosts))
 	for i, cachedPost := range cachedPosts {
 		posts[i].Uri = cachedPost.Uri
 		posts[i].Reason = cachedPost.Reason
-		posts[i].CreatedAt = cachedPost.CreatedAt
-		posts[i].Cid = cachedPost.Cid
+		//posts[i].CreatedAt = cachedPost.CreatedAt
+		posts[i].Rank = cachedPost.Rank
 	}
 
 	// Not found. Go to DB
 	if int64(len(posts)) < params.Limit {
-		posts = f.algorithm(params, f.Queries, ctx, createdAt, cid)
+		posts = f.algorithm(params, f.Queries, ctx, cursorRank)
 
 		// Add to cache
 		for _, post := range posts {
@@ -129,12 +123,7 @@ func (f *Feed) GetTimeline(params QueryParams) Response {
 	cursor := CursorEOF
 	if len(posts) > 0 {
 		lastPost := posts[len(posts)-1]
-		cursor = fmt.Sprintf(
-			"%d::%d::%s",
-			timelineIndex+int64(len(posts)),
-			lastPost.CreatedAt.Unix(),
-			lastPost.Cid,
-		)
+		cursor = fmt.Sprintf("%f", lastPost.Rank)
 	}
 
 	return Response{

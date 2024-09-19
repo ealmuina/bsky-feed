@@ -14,11 +14,11 @@ import (
 type BulkCreatePostsParams struct {
 	Uri         string
 	AuthorDid   string
-	Cid         string
 	ReplyParent pgtype.Text
 	ReplyRoot   pgtype.Text
 	CreatedAt   pgtype.Timestamp
 	Language    pgtype.Text
+	Rank        pgtype.Float8
 }
 
 const bulkDeletePosts = `-- name: BulkDeletePosts :exec
@@ -35,7 +35,7 @@ func (q *Queries) BulkDeletePosts(ctx context.Context, dollar_1 []string) error 
 const deleteOldPosts = `-- name: DeleteOldPosts :exec
 DELETE
 FROM posts
-WHERE indexed_at < current_timestamp - interval '10 days'
+WHERE posts.created_at < current_timestamp - interval '10 days'
 `
 
 func (q *Queries) DeleteOldPosts(ctx context.Context) error {
@@ -55,29 +55,23 @@ func (q *Queries) DeleteUserPosts(ctx context.Context, authorDid string) error {
 }
 
 const getLanguagePosts = `-- name: GetLanguagePosts :many
-SELECT posts.uri, posts.author_did, posts.cid, posts.reply_parent, posts.reply_root, posts.indexed_at, posts.created_at, posts.language
+SELECT posts.uri, posts.author_did, posts.reply_parent, posts.reply_root, posts.indexed_at, posts.created_at, posts.language, posts.rank
 FROM posts
 WHERE language = $1
   AND reply_root IS NULL
-  AND (created_at < $2 OR (created_at = $2 AND cid < $3))
-ORDER BY created_at DESC, cid DESC
-LIMIT $4
+  AND rank < $2
+ORDER BY rank DESC
+LIMIT $3
 `
 
 type GetLanguagePostsParams struct {
-	Language  pgtype.Text
-	CreatedAt pgtype.Timestamp
-	Cid       string
-	Limit     int32
+	Language pgtype.Text
+	Rank     pgtype.Float8
+	Limit    int32
 }
 
 func (q *Queries) GetLanguagePosts(ctx context.Context, arg GetLanguagePostsParams) ([]Post, error) {
-	rows, err := q.db.Query(ctx, getLanguagePosts,
-		arg.Language,
-		arg.CreatedAt,
-		arg.Cid,
-		arg.Limit,
-	)
+	rows, err := q.db.Query(ctx, getLanguagePosts, arg.Language, arg.Rank, arg.Limit)
 	if err != nil {
 		return nil, err
 	}
@@ -88,12 +82,12 @@ func (q *Queries) GetLanguagePosts(ctx context.Context, arg GetLanguagePostsPara
 		if err := rows.Scan(
 			&i.Uri,
 			&i.AuthorDid,
-			&i.Cid,
 			&i.ReplyParent,
 			&i.ReplyRoot,
 			&i.IndexedAt,
 			&i.CreatedAt,
 			&i.Language,
+			&i.Rank,
 		); err != nil {
 			return nil, err
 		}
@@ -109,39 +103,33 @@ const getLanguageTopPosts = `-- name: GetLanguageTopPosts :many
 SELECT uri as uri,
        ''  as repost_uri,
        created_at,
-       cid
+       rank
 FROM posts
          INNER JOIN users u ON posts.author_did = u.did
 WHERE language = $1
   AND reply_root IS NULL
   AND u.followers_count > 300
   AND u.engagement_factor > 1
-  AND (created_at < $2 OR (created_at = $2 AND cid < $3))
-ORDER BY created_at DESC, cid DESC
-LIMIT $4
+  AND rank < $2
+ORDER BY rank DESC
+LIMIT $3
 `
 
 type GetLanguageTopPostsParams struct {
-	Language  pgtype.Text
-	CreatedAt pgtype.Timestamp
-	Cid       string
-	Limit     int32
+	Language pgtype.Text
+	Rank     pgtype.Float8
+	Limit    int32
 }
 
 type GetLanguageTopPostsRow struct {
 	Uri       string
 	RepostUri string
 	CreatedAt pgtype.Timestamp
-	Cid       string
+	Rank      pgtype.Float8
 }
 
 func (q *Queries) GetLanguageTopPosts(ctx context.Context, arg GetLanguageTopPostsParams) ([]GetLanguageTopPostsRow, error) {
-	rows, err := q.db.Query(ctx, getLanguageTopPosts,
-		arg.Language,
-		arg.CreatedAt,
-		arg.Cid,
-		arg.Limit,
-	)
+	rows, err := q.db.Query(ctx, getLanguageTopPosts, arg.Language, arg.Rank, arg.Limit)
 	if err != nil {
 		return nil, err
 	}
@@ -153,7 +141,7 @@ func (q *Queries) GetLanguageTopPosts(ctx context.Context, arg GetLanguageTopPos
 			&i.Uri,
 			&i.RepostUri,
 			&i.CreatedAt,
-			&i.Cid,
+			&i.Rank,
 		); err != nil {
 			return nil, err
 		}

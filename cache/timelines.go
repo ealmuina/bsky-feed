@@ -10,14 +10,13 @@ import (
 )
 
 type Post struct {
-	Cid         string // Keep first as Redis sorts in lexicographic order when score is the same
-	Uri         string
-	Reason      map[string]string
-	CreatedAt   time.Time
-	AuthorDid   string
-	ReplyParent string
-	ReplyRoot   string
-	Language    string
+	Uri    string
+	Reason map[string]string
+	Rank   float64
+	//AuthorDid   string
+	//ReplyParent string
+	//ReplyRoot   string
+	//Language    string
 }
 
 type TimelinesCache struct {
@@ -37,7 +36,7 @@ func (c *TimelinesCache) AddPost(feedName string, post Post) {
 			context.Background(),
 			c.getRedisKey(feedName),
 			redis.Z{
-				Score:  float64(post.CreatedAt.Unix()),
+				Score:  post.Rank,
 				Member: bytes,
 			},
 		)
@@ -53,12 +52,14 @@ func (c *TimelinesCache) DeleteExpiredPosts(feedName string, expiration time.Tim
 	)
 }
 
-func (c *TimelinesCache) GetTimeline(feedName string, startIndex int64, endIndex int64) []Post {
-	members := c.redisClient.ZRevRange( // Retrieve in DESC order
+func (c *TimelinesCache) GetTimeline(feedName string, startScore float64, limit int64) []Post {
+	members := c.redisClient.ZRevRangeByScore( // Retrieve in DESC order
 		context.Background(),
 		c.getRedisKey(feedName),
-		startIndex,
-		endIndex-1,
+		&redis.ZRangeBy{
+			Max:   fmt.Sprintf("%f", startScore),
+			Count: limit,
+		},
 	)
 	posts := make([]Post, len(members.Val()))
 	for i, member := range members.Val() {

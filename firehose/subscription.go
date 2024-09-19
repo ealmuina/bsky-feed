@@ -16,6 +16,9 @@ import (
 	"github.com/gorilla/websocket"
 	log "github.com/sirupsen/logrus"
 	typegen "github.com/whyrusleeping/cbor-gen"
+	"hash"
+	"hash/fnv"
+	"math"
 	"net/url"
 	"strings"
 )
@@ -28,6 +31,7 @@ type Subscription struct {
 	connection       *websocket.Conn
 	languageDetector *utils.LanguageDetector
 	storage          *Storage
+	hasher           hash.Hash32
 }
 
 func getConnection(url url.URL) *websocket.Conn {
@@ -38,8 +42,14 @@ func getConnection(url url.URL) *websocket.Conn {
 	return c
 }
 
-func NewSubscription(service string, queries *db.Queries, url url.URL) *Subscription {
-	storage := NewStorage(queries)
+func NewSubscription(
+	service string,
+	queries *db.Queries,
+	feeds []*feeds.Feed,
+	url url.URL,
+) *Subscription {
+	storage := NewStorage(queries, feeds)
+	hasher := fnv.New32a()
 
 	if cursor := storage.GetCursor(service); cursor != 0 {
 		url.RawQuery = fmt.Sprintf("cursor=%v", cursor)
@@ -51,6 +61,7 @@ func NewSubscription(service string, queries *db.Queries, url url.URL) *Subscrip
 		connection:       getConnection(url),
 		languageDetector: utils.NewLanguageDetector(),
 		storage:          &storage,
+		hasher:           hasher,
 	}
 }
 
@@ -134,7 +145,6 @@ func (s *Subscription) handleFeedPostCreate(
 	ctx context.Context,
 	repoDID string,
 	uri string,
-	cid *util.LexLink,
 	data *appbsky.FeedPost,
 ) error {
 	createdAt, err := utils.ParseTime(data.CreatedAt)
@@ -155,6 +165,14 @@ func (s *Subscription) handleFeedPostCreate(
 
 	language := s.languageDetector.DetectLanguage(data.Text, data.Langs)
 
+	// Calculate rank
+	s.hasher.Write([]byte(uri))
+	hash := s.hasher.Sum32()
+	s.hasher.Reset()
+	decimalPlaces := int(math.Log10(float64(hash))) + 1
+	divisor := math.Pow10(decimalPlaces)
+	rank := float64(createdAt.Unix()) + float64(hash)/divisor
+
 	s.storage.CreateUser(
 		repoDID,
 	)
@@ -163,11 +181,11 @@ func (s *Subscription) handleFeedPostCreate(
 		feeds.Post{
 			Uri:         uri,
 			AuthorDid:   repoDID,
-			Cid:         cid.String(),
 			ReplyParent: replyParent,
 			ReplyRoot:   replyRoot,
 			CreatedAt:   createdAt,
 			Language:    language,
+			Rank:        rank,
 		},
 	)
 }
@@ -206,7 +224,7 @@ func (s *Subscription) handleRecordCreate(
 	switch data := record.(type) {
 	case *appbsky.FeedPost:
 		err = s.handleFeedPostCreate(
-			ctx, repoDID, uri, cid, data,
+			ctx, repoDID, uri, data,
 		)
 	case *appbsky.FeedLike:
 		err = s.handleInteractionCreate(

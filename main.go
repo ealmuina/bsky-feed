@@ -3,6 +3,7 @@ package main
 import (
 	"bsky/cache"
 	db "bsky/db/sqlc"
+	"bsky/feeds"
 	"bsky/firehose"
 	"bsky/server"
 	"bsky/tasks"
@@ -19,6 +20,7 @@ import (
 
 func runBackgroundTasks(
 	queries *db.Queries,
+	feeds []*feeds.Feed,
 	usersCache *cache.UsersCache,
 	timelinesCache *cache.TimelinesCache,
 ) {
@@ -32,6 +34,7 @@ func runBackgroundTasks(
 		subscription := firehose.NewSubscription(
 			"bsky_feeds",
 			queries,
+			feeds,
 			url.URL{
 				Scheme: "wss",
 				Host:   "bsky.network",
@@ -84,7 +87,7 @@ func main() {
 	s := server.NewServer(queries, timelinesCache, usersCache)
 
 	// Run background tasks
-	runBackgroundTasks(queries, usersCache, timelinesCache)
+	runBackgroundTasks(queries, s.GetFeeds(), usersCache, timelinesCache)
 
 	s.Run()
 }
