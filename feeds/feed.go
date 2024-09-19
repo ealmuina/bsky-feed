@@ -74,7 +74,10 @@ func (f *Feed) GetTimeline(params QueryParams) Response {
 	cursorRank, err := strconv.ParseFloat(params.Cursor, 64)
 	if err != nil {
 		log.Errorf("Malformed cursor in %+v", params)
-		return Response{}
+		return Response{
+			Cursor: CursorEOF,
+			Posts:  make([]Post, 0),
+		}
 	}
 
 	// Attempt to hit cache first
