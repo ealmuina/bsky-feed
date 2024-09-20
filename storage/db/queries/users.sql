@@ -42,7 +42,7 @@ FROM users;
 SELECT users.did
 FROM users
 WHERE last_update IS NULL
-   OR last_update < current_timestamp - interval '1 week';
+   OR last_update < current_timestamp - interval '30 days';
 
 -- name: CalculateUserEngagement :one
 SELECT (
