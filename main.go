@@ -1,11 +1,9 @@
 package main
 
 import (
-	"bsky/cache"
-	db "bsky/db/sqlc"
-	"bsky/feeds"
 	"bsky/firehose"
 	"bsky/server"
+	"bsky/storage"
 	"bsky/tasks"
 	"bsky/utils"
 	"context"
@@ -18,35 +16,29 @@ import (
 	"os"
 )
 
-func runBackgroundTasks(
-	queries *db.Queries,
-	feeds []*feeds.Feed,
-	usersCache *cache.UsersCache,
-	timelinesCache *cache.TimelinesCache,
-) {
+func runBackgroundTasks(storageManager *storage.Manager) {
 	// DB cleanup
 	go utils.Recoverer(math.MaxInt, 1, func() {
-		tasks.CleanOldData(queries, timelinesCache)
+		tasks.CleanOldData(storageManager)
 	})
 
 	// Firehose consumer
 	go utils.Recoverer(math.MaxInt, 1, func() {
 		subscription := firehose.NewSubscription(
 			"bsky_feeds",
-			queries,
-			feeds,
 			url.URL{
 				Scheme: "wss",
 				Host:   "bsky.network",
 				Path:   "/xrpc/com.atproto.sync.subscribeRepos",
 			},
+			storageManager,
 		)
 		subscription.Run()
 	})
 
 	// Statistics updater
 	go utils.Recoverer(math.MaxInt, 1, func() {
-		statisticsUpdater, err := tasks.NewStatisticsUpdater(queries, usersCache)
+		statisticsUpdater, err := tasks.NewStatisticsUpdater(storageManager)
 		if err != nil {
 			panic(err)
 		}
@@ -72,22 +64,21 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	queries := db.New(connectionPool)
 
 	redisHost := os.Getenv("REDIS_HOST")
 	redisPort := os.Getenv("REDIS_PORT")
-	redisOptions := redis.Options{
+	redisClient := redis.NewClient(&redis.Options{
 		Addr:     fmt.Sprintf("%s:%s", redisHost, redisPort),
 		Password: "", // no password set
 		DB:       0,  // use default DB
-	}
-	usersCache := cache.NewUsersCache(&redisOptions)
-	timelinesCache := cache.NewTimelinesCache(&redisOptions)
+	})
 
-	s := server.NewServer(queries, timelinesCache, usersCache)
+	storageManager := storage.NewManager(connectionPool, redisClient)
 
 	// Run background tasks
-	runBackgroundTasks(queries, s.GetFeeds(), usersCache, timelinesCache)
+	runBackgroundTasks(storageManager)
 
+	// Run server
+	s := server.NewServer(storageManager)
 	s.Run()
 }

@@ -1,6 +1,7 @@
 package cache
 
 import (
+	"bsky/storage/models"
 	"context"
 	"encoding/json"
 	"github.com/redis/go-redis/v9"
@@ -9,23 +10,17 @@ import (
 
 const UsersCacheRedisKey = "users"
 
-type User struct {
-	Did              string  `json:"did"`
-	FollowersCount   int64   `json:"followers_count"`
-	EngagementFactor float64 `json:"engagement_factor"`
-}
-
 type UsersCache struct {
 	redisClient *redis.Client
 }
 
-func NewUsersCache(options *redis.Options) *UsersCache {
-	return &UsersCache{
-		redisClient: redis.NewClient(options),
+func NewUsersCache(redisConnection *redis.Client) UsersCache {
+	return UsersCache{
+		redisClient: redisConnection,
 	}
 }
 
-func (c *UsersCache) AddUser(user User) {
+func (c *UsersCache) AddUser(user models.User) {
 	bytes, err := json.Marshal(user)
 	if err == nil {
 		c.redisClient.HSet(
@@ -37,21 +32,25 @@ func (c *UsersCache) AddUser(user User) {
 	}
 }
 
-func (c *UsersCache) GetUser(did string) (bool, User) {
+func (c *UsersCache) DeleteUser(did string) {
+	c.redisClient.HDel(context.Background(), UsersCacheRedisKey, did)
+}
+
+func (c *UsersCache) GetUser(did string) (bool, models.User) {
 	val, err := c.redisClient.HGet(
 		context.Background(),
 		UsersCacheRedisKey,
 		did,
 	).Result()
 	if err != nil {
-		return false, User{}
+		return false, models.User{}
 	}
 
-	var user User
+	var user models.User
 	err = json.Unmarshal([]byte(val), &user)
 	if err != nil {
 		log.Errorf("Error unmarshalling post: %s", err)
-		return false, User{}
+		return false, models.User{}
 	}
 	return true, user
 }

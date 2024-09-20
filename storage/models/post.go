@@ -1,4 +1,4 @@
-package feeds
+package models
 
 import (
 	"encoding/json"

@@ -1,8 +1,9 @@
 package firehose
 
 import (
-	db "bsky/db/sqlc"
-	"bsky/feeds"
+	"bsky/storage"
+	db "bsky/storage/db/sqlc"
+	"bsky/storage/models"
 	"bsky/utils"
 	"bytes"
 	"context"
@@ -26,12 +27,12 @@ import (
 const SchedulerMaxConcurrency = 8
 
 type Subscription struct {
-	Service          string
+	serviceName      string
 	url              url.URL
 	connection       *websocket.Conn
 	languageDetector *utils.LanguageDetector
-	storage          *Storage
 	hasher           hash.Hash32
+	storageManager   *storage.Manager
 }
 
 func getConnection(url url.URL) *websocket.Conn {
@@ -43,25 +44,21 @@ func getConnection(url url.URL) *websocket.Conn {
 }
 
 func NewSubscription(
-	service string,
-	queries *db.Queries,
-	feeds []*feeds.Feed,
+	serviceName string,
 	url url.URL,
+	storageManager *storage.Manager,
 ) *Subscription {
-	storage := NewStorage(queries, feeds)
-	hasher := fnv.New32a()
-
-	if cursor := storage.GetCursor(service); cursor != 0 {
+	if cursor := storageManager.GetCursor(serviceName); cursor != 0 {
 		url.RawQuery = fmt.Sprintf("cursor=%v", cursor)
 	}
 
 	return &Subscription{
-		Service:          service,
+		serviceName:      serviceName,
 		url:              url,
 		connection:       getConnection(url),
 		languageDetector: utils.NewLanguageDetector(),
-		storage:          &storage,
-		hasher:           hasher,
+		hasher:           fnv.New32a(),
+		storageManager:   storageManager,
 	}
 }
 
@@ -102,7 +99,7 @@ func (s *Subscription) getHandle() func(context.Context, *events.XRPCStreamEvent
 	return func(ctx context.Context, evt *events.XRPCStreamEvent) error {
 		if commit := evt.RepoCommit; commit != nil {
 			if commit.Seq%100 == 0 {
-				go s.storage.UpdateCursor(s.Service, commit.Seq)
+				go s.storageManager.UpdateCursor(s.serviceName, commit.Seq)
 			}
 
 			rr, err := repo.ReadRepoFromCar(ctx, bytes.NewReader(commit.Blocks))
@@ -123,14 +120,14 @@ func (s *Subscription) getHandle() func(context.Context, *events.XRPCStreamEvent
 					}
 
 					if err := s.handleRecordCreate(
-						ctx, commit.Repo, uri, op.Cid, record,
+						commit.Repo, uri, op.Cid, record,
 					); err != nil {
 						log.Errorf("Error handling create record: %s", err)
 						return err
 					}
 				case repomgr.EvtKindDeleteRecord:
 					recordType := strings.Split(op.Path, "/")[0]
-					if err := s.handleRecordDelete(ctx, uri, recordType); err != nil {
+					if err := s.handleRecordDelete(uri, recordType); err != nil {
 						log.Errorf("Error handling delete record: %s", err)
 						return err
 					}
@@ -142,7 +139,6 @@ func (s *Subscription) getHandle() func(context.Context, *events.XRPCStreamEvent
 }
 
 func (s *Subscription) handleFeedPostCreate(
-	ctx context.Context,
 	repoDID string,
 	uri string,
 	data *appbsky.FeedPost,
@@ -173,25 +169,23 @@ func (s *Subscription) handleFeedPostCreate(
 	divisor := math.Pow10(decimalPlaces)
 	rank := float64(createdAt.Unix()) + float64(hash)/divisor
 
-	s.storage.CreateUser(
-		repoDID,
-	)
-	return s.storage.CreatePost(
-		ctx,
-		feeds.Post{
-			Uri:         uri,
-			AuthorDid:   repoDID,
-			ReplyParent: replyParent,
-			ReplyRoot:   replyRoot,
-			CreatedAt:   createdAt,
-			Language:    language,
-			Rank:        rank,
-		},
-	)
+	post := models.Post{
+		Uri:         uri,
+		AuthorDid:   repoDID,
+		ReplyParent: replyParent,
+		ReplyRoot:   replyRoot,
+		CreatedAt:   createdAt,
+		Language:    language,
+		Rank:        rank,
+	}
+
+	s.storageManager.CreateUser(repoDID)
+	go s.storageManager.CreatePost(post)
+
+	return nil
 }
 
 func (s *Subscription) handleInteractionCreate(
-	ctx context.Context,
 	repoDID string,
 	uri string,
 	cid *util.LexLink,
@@ -205,16 +199,15 @@ func (s *Subscription) handleInteractionCreate(
 		return err
 	}
 
-	s.storage.CreateUser(
+	s.storageManager.CreateUser(
 		repoDID,
 	)
-	return s.storage.CreateInteraction(
-		ctx, repoDID, uri, cid, kind, createdAt, postUri,
+	return s.storageManager.CreateInteraction(
+		repoDID, uri, cid, kind, createdAt, postUri,
 	)
 }
 
 func (s *Subscription) handleRecordCreate(
-	ctx context.Context,
 	repoDID string,
 	uri string,
 	cid *util.LexLink,
@@ -224,11 +217,10 @@ func (s *Subscription) handleRecordCreate(
 	switch data := record.(type) {
 	case *appbsky.FeedPost:
 		err = s.handleFeedPostCreate(
-			ctx, repoDID, uri, data,
+			repoDID, uri, data,
 		)
 	case *appbsky.FeedLike:
 		err = s.handleInteractionCreate(
-			ctx,
 			repoDID,
 			uri,
 			cid,
@@ -238,7 +230,6 @@ func (s *Subscription) handleRecordCreate(
 		)
 	case *appbsky.FeedRepost:
 		err = s.handleInteractionCreate(
-			ctx,
 			repoDID,
 			uri,
 			cid,
@@ -251,16 +242,12 @@ func (s *Subscription) handleRecordCreate(
 	return err
 }
 
-func (s *Subscription) handleRecordDelete(
-	ctx context.Context,
-	uri string,
-	recordType string,
-) error {
+func (s *Subscription) handleRecordDelete(uri string, recordType string) error {
 	switch recordType {
 	case "app.bsky.feeds.post":
-		s.storage.DeletePost(ctx, uri)
+		s.storageManager.DeletePost(uri)
 	case "app.bsky.feeds.like", "app.bsky.feeds.repost":
-		s.storage.DeleteInteraction(ctx, uri)
+		s.storageManager.DeleteInteraction(uri)
 	}
 	return nil
 }

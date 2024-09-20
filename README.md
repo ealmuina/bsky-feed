@@ -11,13 +11,13 @@ sqlc generate
 ### Apply pending migrations
 
 ```bash
-migrate -database 'postgres://postgres:postgres@db:5432/bsky_feeds?sslmode=disable' -path=db/migrations up
+migrate -database 'postgres://postgres:postgres@db:5432/bsky_feeds?sslmode=disable' -path=storage/db/migrations up
 ```
 
 ### Generate new migration
 
 ```bash
-migrate create -ext sql -dir db/migrations <MigrationName>
+migrate create -ext sql -dir storage/db/migrations <MigrationName>
 ```
 
 ### Create DB Dump

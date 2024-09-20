@@ -1,8 +1,8 @@
 package tasks
 
 import (
-	"bsky/cache"
-	db "bsky/db/sqlc"
+	"bsky/storage"
+	"bsky/storage/models"
 	"context"
 	"errors"
 	"fmt"
@@ -11,7 +11,6 @@ import (
 	"github.com/bluesky-social/indigo/atproto/identity"
 	"github.com/bluesky-social/indigo/atproto/syntax"
 	"github.com/bluesky-social/indigo/xrpc"
-	"github.com/jackc/pgx/v5/pgtype"
 	log "github.com/sirupsen/logrus"
 	"net/http"
 	"os"
@@ -24,10 +23,9 @@ const InvalidRequestError = "InvalidRequest" // Seen when profile is not found
 const ExpiredToken = "ExpiredToken"
 
 type StatisticsUpdater struct {
-	queries         *db.Queries
 	client          *xrpc.Client
+	storageManager  *storage.Manager
 	userLastUpdated map[string]time.Time
-	usersCache      *cache.UsersCache
 }
 
 func getXRPCClient(username *syntax.AtIdentifier, password string) (*xrpc.Client, error) {
@@ -65,11 +63,10 @@ func getXRPCClient(username *syntax.AtIdentifier, password string) (*xrpc.Client
 	}, nil
 }
 
-func NewStatisticsUpdater(queries *db.Queries, usersCache *cache.UsersCache) (*StatisticsUpdater, error) {
+func NewStatisticsUpdater(storageManager *storage.Manager) (*StatisticsUpdater, error) {
 	updater := StatisticsUpdater{
-		queries:         queries,
+		storageManager:  storageManager,
 		userLastUpdated: make(map[string]time.Time),
-		usersCache:      usersCache,
 	}
 	updater.connectXRPCClient()
 
@@ -78,17 +75,11 @@ func NewStatisticsUpdater(queries *db.Queries, usersCache *cache.UsersCache) (*S
 
 func (u *StatisticsUpdater) Run() {
 	for {
-		u.updateUsersStatistics()
+		dids := u.storageManager.GetOutdatedUserDids()
+		for _, did := range dids {
+			u.updateUserStatistics(did)
+		}
 	}
-}
-
-func (u *StatisticsUpdater) calculateEngagement(ctx context.Context, did string) float64 {
-	engagementFactor, err := u.queries.CalculateUserEngagement(ctx, did)
-	if err != nil {
-		log.Infof("Error while calculating engagement factor for user %s: %v", did, err)
-		return 0
-	}
-	return engagementFactor
 }
 
 func (u *StatisticsUpdater) connectXRPCClient() {
@@ -109,25 +100,13 @@ func (u *StatisticsUpdater) connectXRPCClient() {
 	u.client = client
 }
 
-func (u *StatisticsUpdater) deleteUser(ctx context.Context, did string) {
-	// Delete user
+func (u *StatisticsUpdater) deleteUser(did string) {
 	delete(u.userLastUpdated, did)
-	if err := u.queries.DeleteUser(ctx, did); err != nil {
-		log.Errorf("Error deleting user %s: %v", did, err)
-		return
-	}
-	// Delete user's posts
-	if err := u.queries.DeleteUserPosts(ctx, did); err != nil {
-		log.Errorf("Error deleting posts for user %s: %v", did, err)
-	}
-	// Delete user's interactions
-	if err := u.queries.DeleteUser(ctx, did); err != nil {
-		log.Errorf("Error deleting user %s: %v", did, err)
-	}
+	u.storageManager.DeleteUser(did)
 }
 
-func (u *StatisticsUpdater) updateUserStatistics(ctx context.Context, did string) {
-	profile, err := appbsky.ActorGetProfile(ctx, u.client, did)
+func (u *StatisticsUpdater) updateUserStatistics(did string) {
+	profile, err := appbsky.ActorGetProfile(context.Background(), u.client, did)
 	if err != nil {
 		log.Errorf("Error getting profile for user %s: %v", did, err)
 
@@ -141,7 +120,7 @@ func (u *StatisticsUpdater) updateUserStatistics(ctx context.Context, did string
 					switch wrappedError.ErrStr {
 					case AccountDeactivatedError, InvalidRequestError:
 						// Delete user if profile does not exist anymore
-						u.deleteUser(ctx, did)
+						u.deleteUser(did)
 					case ExpiredToken:
 						u.connectXRPCClient()
 					}
@@ -158,44 +137,16 @@ func (u *StatisticsUpdater) updateUserStatistics(ctx context.Context, did string
 
 	engagementFactor := -1.0
 	if *profile.PostsCount > 0 && *profile.FollowersCount > EngagementMinFollowers {
-		engagementFactor = u.calculateEngagement(ctx, did)
+		engagementFactor = u.storageManager.CalculateUserEngagement(did)
 	}
 
-	// Update on cache
-	u.usersCache.AddUser(cache.User{
-		Did:              profile.Did,
-		FollowersCount:   *profile.FollowersCount,
-		EngagementFactor: engagementFactor,
-	})
-
-	// Update on DB
-	err = u.queries.UpdateUser(
-		ctx,
-		db.UpdateUserParams{
-			Did:              profile.Did,
-			Handle:           pgtype.Text{String: profile.Handle, Valid: true},
-			FollowersCount:   pgtype.Int4{Int32: int32(*profile.FollowersCount), Valid: true},
-			FollowsCount:     pgtype.Int4{Int32: int32(*profile.FollowsCount), Valid: true},
-			PostsCount:       pgtype.Int4{Int32: int32(*profile.PostsCount), Valid: true},
-			EngagementFactor: pgtype.Float8{Float64: engagementFactor, Valid: engagementFactor > 0},
-			LastUpdate:       pgtype.Timestamp{Time: time.Now(), Valid: true},
+	u.storageManager.UpdateUser(
+		models.User{
+			Did:              did,
+			FollowersCount:   *profile.FollowersCount,
+			FollowsCount:     *profile.FollowsCount,
+			PostsCount:       *profile.PostsCount,
+			EngagementFactor: engagementFactor,
 		},
 	)
-	if err != nil {
-		log.Errorf("Error updating user: %v", err)
-	}
-}
-
-func (u *StatisticsUpdater) updateUsersStatistics() {
-	ctx := context.Background()
-
-	dids, err := u.queries.GetUserDidsToRefreshStatistics(ctx)
-	if err != nil {
-		log.Errorf("Error getting user dids for update: %v", err)
-		return
-	}
-
-	for _, did := range dids {
-		u.updateUserStatistics(ctx, did)
-	}
 }

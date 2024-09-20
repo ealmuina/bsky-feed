@@ -1,10 +1,9 @@
 package server
 
 import (
-	"bsky/cache"
-	db "bsky/db/sqlc"
-	"bsky/feeds"
-	"bsky/feeds/algorithms"
+	"bsky/server/feeds"
+	"bsky/storage"
+	"bsky/storage/algorithms"
 	"bsky/utils"
 	"errors"
 	"fmt"
@@ -14,64 +13,19 @@ import (
 	"strings"
 )
 
-var LanguageFeeds = map[string]string{
-	"basque":     "eu",
-	"catalan":    "ca",
-	"galician":   "gl",
-	"portuguese": "pt",
-	"spanish":    "es",
-}
-var TopLanguageFeeds = map[string]string{
-	"top_spanish": "es",
-}
-
 type Server struct {
-	queries *db.Queries
-	feeds   map[string]*feeds.Feed
+	feeds map[string]feeds.Feed
 }
 
-func NewServer(
-	queries *db.Queries,
-	timelinesCache *cache.TimelinesCache,
-	usersCache *cache.UsersCache,
-) Server {
-	serverFeeds := make(map[string]*feeds.Feed)
-
-	// Populate language feeds
-	for language, languageCode := range LanguageFeeds {
-		serverFeeds[language] = feeds.NewFeed(
-			language,
-			queries,
-			timelinesCache,
-			usersCache,
-			algorithms.GetLanguageAlgorithm(languageCode),
-			algorithms.GetLanguageAlgorithmAcceptance(languageCode),
-		)
-	}
-	// Additional feeds
-	for feedName, languageCode := range TopLanguageFeeds {
-		serverFeeds[feedName] = feeds.NewFeed(
-			feedName,
-			queries,
-			timelinesCache,
-			usersCache,
-			algorithms.GetTopLanguageAlgorithm(languageCode),
-			algorithms.GetTopLanguageAlgorithmAcceptance(languageCode),
-		)
+func NewServer(storageManager *storage.Manager) Server {
+	serverFeeds := make(map[string]feeds.Feed)
+	for feedName := range algorithms.ImplementedAlgorithms {
+		serverFeeds[feedName] = feeds.NewFeed(feedName, storageManager)
 	}
 
 	return Server{
-		queries: queries,
-		feeds:   serverFeeds,
+		feeds: serverFeeds,
 	}
-}
-
-func (s *Server) GetFeeds() []*feeds.Feed {
-	result := make([]*feeds.Feed, 0, len(s.feeds))
-	for _, feed := range s.feeds {
-		result = append(result, feed)
-	}
-	return result
 }
 
 func (s *Server) Run() {
@@ -148,13 +102,13 @@ func (s *Server) getFeedSkeleton(w http.ResponseWriter, r *http.Request) {
 		limit = parsedLimit
 	}
 
-	feedName, err := s.parseUri(feedUri)
-	if err != nil || s.feeds[feedName] == nil {
+	feedName, err := s.parseUri(*feedUri)
+	requestedFeed, ok := s.feeds[feedName]
+	if err != nil || !ok {
 		sendError(w, http.StatusNotFound, "feed not found")
 		return
 	}
 
-	requestedFeed := s.feeds[feedName]
 	result := requestedFeed.GetTimeline(
 		feeds.QueryParams{
 			Limit:  int64(limit),
@@ -166,8 +120,8 @@ func (s *Server) getFeedSkeleton(w http.ResponseWriter, r *http.Request) {
 	w.Write(jsonResp)
 }
 
-func (s *Server) parseUri(uri *string) (string, error) {
-	components := strings.Split(*uri, "/")
+func (s *Server) parseUri(uri string) (string, error) {
+	components := strings.Split(uri, "/")
 	repo := strings.Join(components[:len(components)-2], "/")
 	entityType := components[len(components)-2]
 
