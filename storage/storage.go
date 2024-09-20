@@ -7,7 +7,6 @@ import (
 	"bsky/storage/models"
 	"context"
 	"fmt"
-	"github.com/bluesky-social/indigo/lex/util"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
@@ -142,14 +141,7 @@ func (m *Manager) CreateFollow(follow models.Follow) {
 	m.usersCache.UpdateUserFollowCounts(follow.SubjectDid, 0, 1)
 }
 
-func (m *Manager) CreateInteraction( // TODO Interaction model
-	authorDid string,
-	uri string,
-	cid *util.LexLink,
-	kind db.InteractionType,
-	createdAt time.Time,
-	postUri string,
-) error {
+func (m *Manager) CreateInteraction(interaction models.Interaction) error {
 	ctx := context.Background()
 
 	m.interactionsToCreateMutex.Lock()
@@ -158,12 +150,11 @@ func (m *Manager) CreateInteraction( // TODO Interaction model
 	m.interactionsToCreate = append(
 		m.interactionsToCreate,
 		db.BulkCreateInteractionsParams{
-			Uri:       uri,
-			Cid:       cid.String(),
-			Kind:      kind,
-			AuthorDid: authorDid,
-			PostUri:   postUri,
-			CreatedAt: pgtype.Timestamp{Time: createdAt, Valid: true},
+			Uri:       interaction.Uri,
+			Kind:      db.InteractionType(interaction.Kind),
+			AuthorDid: interaction.AuthorDid,
+			PostUri:   interaction.PostUri,
+			CreatedAt: pgtype.Timestamp{Time: interaction.CreatedAt, Valid: true},
 		},
 	)
 	if len(m.interactionsToCreate) >= InteractionsToCreateBulkSize {

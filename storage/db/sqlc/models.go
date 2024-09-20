@@ -63,7 +63,6 @@ type Follow struct {
 
 type Interaction struct {
 	Uri       string
-	Cid       string
 	Kind      InteractionType
 	AuthorDid string
 	PostUri   string

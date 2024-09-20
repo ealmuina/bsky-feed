@@ -30,7 +30,6 @@ func (r *iteratorForBulkCreateInteractions) Next() bool {
 func (r iteratorForBulkCreateInteractions) Values() ([]interface{}, error) {
 	return []interface{}{
 		r.rows[0].Uri,
-		r.rows[0].Cid,
 		r.rows[0].Kind,
 		r.rows[0].AuthorDid,
 		r.rows[0].PostUri,
@@ -43,7 +42,7 @@ func (r iteratorForBulkCreateInteractions) Err() error {
 }
 
 func (q *Queries) BulkCreateInteractions(ctx context.Context, arg []BulkCreateInteractionsParams) (int64, error) {
-	return q.db.CopyFrom(ctx, []string{"interactions"}, []string{"uri", "cid", "kind", "author_did", "post_uri", "created_at"}, &iteratorForBulkCreateInteractions{rows: arg})
+	return q.db.CopyFrom(ctx, []string{"interactions"}, []string{"uri", "kind", "author_did", "post_uri", "created_at"}, &iteratorForBulkCreateInteractions{rows: arg})
 }
 
 // iteratorForBulkCreatePosts implements pgx.CopyFromSource.

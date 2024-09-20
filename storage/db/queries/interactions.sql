@@ -1,6 +1,6 @@
 -- name: BulkCreateInteractions :copyfrom
-INSERT INTO interactions (uri, cid, kind, author_did, post_uri, created_at)
-VALUES ($1, $2, $3, $4, $5, $6);
+INSERT INTO interactions (uri, kind, author_did, post_uri, created_at)
+VALUES ($1, $2, $3, $4, $5);
 
 -- name: BulkDeleteInteractions :exec
 DELETE

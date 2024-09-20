@@ -2,7 +2,6 @@ package firehose
 
 import (
 	"bsky/storage"
-	db "bsky/storage/db/sqlc"
 	"bsky/storage/models"
 	"bsky/utils"
 	"bytes"
@@ -11,7 +10,6 @@ import (
 	appbsky "github.com/bluesky-social/indigo/api/bsky"
 	"github.com/bluesky-social/indigo/events"
 	"github.com/bluesky-social/indigo/events/schedulers/parallel"
-	"github.com/bluesky-social/indigo/lex/util"
 	"github.com/bluesky-social/indigo/repo"
 	"github.com/bluesky-social/indigo/repomgr"
 	"github.com/gorilla/websocket"
@@ -119,9 +117,7 @@ func (s *Subscription) getHandle() func(context.Context, *events.XRPCStreamEvent
 						return err
 					}
 
-					if err := s.handleRecordCreate(
-						commit.Repo, uri, op.Cid, record,
-					); err != nil {
+					if err := s.handleRecordCreate(commit.Repo, uri, record); err != nil {
 						log.Errorf("Error handling create record: %s", err)
 						return err
 					}
@@ -213,8 +209,7 @@ func (s *Subscription) handleGraphFollowCreate(
 func (s *Subscription) handleInteractionCreate(
 	repoDID string,
 	uri string,
-	cid *util.LexLink,
-	kind db.InteractionType,
+	kind models.InteractionType,
 	createdAtStr string,
 	postUri string,
 ) error {
@@ -229,7 +224,13 @@ func (s *Subscription) handleInteractionCreate(
 			repoDID,
 		)
 		s.storageManager.CreateInteraction(
-			repoDID, uri, cid, kind, createdAt, postUri,
+			models.Interaction{
+				Uri:       uri,
+				Kind:      kind,
+				AuthorDid: repoDID,
+				PostUri:   postUri,
+				CreatedAt: createdAt,
+			},
 		)
 	}()
 
@@ -239,7 +240,6 @@ func (s *Subscription) handleInteractionCreate(
 func (s *Subscription) handleRecordCreate(
 	repoDID string,
 	uri string,
-	cid *util.LexLink,
 	record typegen.CBORMarshaler,
 ) error {
 	var err error = nil
@@ -252,8 +252,7 @@ func (s *Subscription) handleRecordCreate(
 		err = s.handleInteractionCreate(
 			repoDID,
 			uri,
-			cid,
-			db.InteractionTypeLike,
+			models.Like,
 			data.CreatedAt,
 			data.Subject.Uri,
 		)
@@ -261,8 +260,7 @@ func (s *Subscription) handleRecordCreate(
 		err = s.handleInteractionCreate(
 			repoDID,
 			uri,
-			cid,
-			db.InteractionTypeRepost,
+			models.Repost,
 			data.CreatedAt,
 			data.Subject.Uri,
 		)

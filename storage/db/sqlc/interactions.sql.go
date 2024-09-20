@@ -13,7 +13,6 @@ import (
 
 type BulkCreateInteractionsParams struct {
 	Uri       string
-	Cid       string
 	Kind      InteractionType
 	AuthorDid string
 	PostUri   string
