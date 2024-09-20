@@ -53,6 +53,14 @@ func (ns NullInteractionType) Value() (driver.Value, error) {
 	return string(ns.InteractionType), nil
 }
 
+type Follow struct {
+	Uri        string
+	AuthorDid  string
+	SubjectDid string
+	IndexedAt  pgtype.Timestamp
+	CreatedAt  pgtype.Timestamp
+}
+
 type Interaction struct {
 	Uri       string
 	Cid       string

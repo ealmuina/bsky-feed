@@ -18,6 +18,16 @@ DELETE
 FROM users
 WHERE did = $1;
 
+-- name: AddUserFollowers :exec
+UPDATE users
+SET followers_count = followers_count + $2
+WHERE did = $1;
+
+-- name: AddUserFollows :exec
+UPDATE users
+SET follows_count = follows_count + $2
+WHERE did = $1;
+
 -- name: GetUser :one
 SELECT *
 FROM users

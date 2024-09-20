@@ -11,6 +11,38 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const addUserFollowers = `-- name: AddUserFollowers :exec
+UPDATE users
+SET followers_count = followers_count + $2
+WHERE did = $1
+`
+
+type AddUserFollowersParams struct {
+	Did            string
+	FollowersCount pgtype.Int4
+}
+
+func (q *Queries) AddUserFollowers(ctx context.Context, arg AddUserFollowersParams) error {
+	_, err := q.db.Exec(ctx, addUserFollowers, arg.Did, arg.FollowersCount)
+	return err
+}
+
+const addUserFollows = `-- name: AddUserFollows :exec
+UPDATE users
+SET follows_count = follows_count + $2
+WHERE did = $1
+`
+
+type AddUserFollowsParams struct {
+	Did          string
+	FollowsCount pgtype.Int4
+}
+
+func (q *Queries) AddUserFollows(ctx context.Context, arg AddUserFollowsParams) error {
+	_, err := q.db.Exec(ctx, addUserFollows, arg.Did, arg.FollowsCount)
+	return err
+}
+
 const calculateUserEngagement = `-- name: CalculateUserEngagement :one
 SELECT (
            ((count(i.uri) / count(DISTINCT i.post_uri)::float) * 100 / u.followers_count) / (5 / log(u.followers_count))

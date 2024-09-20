@@ -67,44 +67,6 @@ func NewManager(dbConnection *pgxpool.Pool, redisConnection *redis.Client) *Mana
 	return &storageManager
 }
 
-func (m *Manager) CreateInteraction(
-	authorDid string,
-	uri string,
-	cid *util.LexLink,
-	kind db.InteractionType,
-	createdAt time.Time,
-	postUri string,
-) error {
-	ctx := context.Background()
-
-	m.interactionsToCreateMutex.Lock()
-	defer m.interactionsToCreateMutex.Unlock()
-
-	m.interactionsToCreate = append(
-		m.interactionsToCreate,
-		db.BulkCreateInteractionsParams{
-			Uri:       uri,
-			Cid:       cid.String(),
-			Kind:      kind,
-			AuthorDid: authorDid,
-			PostUri:   postUri,
-			CreatedAt: pgtype.Timestamp{Time: createdAt, Valid: true},
-		},
-	)
-	if len(m.interactionsToCreate) >= InteractionsToCreateBulkSize {
-		// Clone buffer and exec bulk insert
-		go func(interactions []db.BulkCreateInteractionsParams) {
-			if _, err := m.queries.BulkCreateInteractions(ctx, interactions); err != nil {
-				log.Errorf("Error creating interactions: %m", err)
-			}
-		}(m.interactionsToCreate)
-		// Clear buffer
-		m.interactionsToCreate = make([]db.BulkCreateInteractionsParams, 0, InteractionsToCreateBulkSize)
-	}
-
-	return nil
-}
-
 func (m *Manager) AddPostToTimeline(timelineName string, post models.Post) {
 	timeline, ok := m.timelines[timelineName]
 	if ok {
@@ -137,6 +99,85 @@ func (m *Manager) CleanOldData() {
 	for _, timeline := range m.timelines {
 		timeline.DeleteExpiredPosts(time.Now().Add(-7 * 24 * time.Hour))
 	}
+}
+
+func (m *Manager) CreateFollow(follow models.Follow) {
+	ctx := context.Background()
+
+	// Start transaction
+	tx, err := m.dbConnection.Begin(ctx)
+	if err != nil {
+		log.Warningf("Error creating transaction: %v", err)
+	}
+	defer tx.Rollback(ctx) // Rollback on error
+	qtx := m.queries.WithTx(tx)
+
+	// Create follow
+	err = qtx.CreateFollow(ctx, db.CreateFollowParams{
+		Uri:        follow.Uri,
+		AuthorDid:  follow.AuthorDid,
+		SubjectDid: follow.SubjectDid,
+		CreatedAt:  pgtype.Timestamp{Time: follow.CreatedAt, Valid: true},
+	})
+	if err != nil {
+		log.Warningf("Error creating follow: %v", err)
+		return
+	}
+
+	// Add follow to users statistics
+	_ = qtx.AddUserFollows(ctx, db.AddUserFollowsParams{
+		Did:          follow.AuthorDid,
+		FollowsCount: pgtype.Int4{Int32: 1, Valid: true},
+	})
+	_ = qtx.AddUserFollowers(ctx, db.AddUserFollowersParams{
+		Did:            follow.SubjectDid,
+		FollowersCount: pgtype.Int4{Int32: 1, Valid: true},
+	})
+
+	// Finish transaction
+	tx.Commit(ctx)
+
+	// Update cache
+	m.usersCache.UpdateUserFollowCounts(follow.AuthorDid, 1, 0)
+	m.usersCache.UpdateUserFollowCounts(follow.SubjectDid, 0, 1)
+}
+
+func (m *Manager) CreateInteraction( // TODO Interaction model
+	authorDid string,
+	uri string,
+	cid *util.LexLink,
+	kind db.InteractionType,
+	createdAt time.Time,
+	postUri string,
+) error {
+	ctx := context.Background()
+
+	m.interactionsToCreateMutex.Lock()
+	defer m.interactionsToCreateMutex.Unlock()
+
+	m.interactionsToCreate = append(
+		m.interactionsToCreate,
+		db.BulkCreateInteractionsParams{
+			Uri:       uri,
+			Cid:       cid.String(),
+			Kind:      kind,
+			AuthorDid: authorDid,
+			PostUri:   postUri,
+			CreatedAt: pgtype.Timestamp{Time: createdAt, Valid: true},
+		},
+	)
+	if len(m.interactionsToCreate) >= InteractionsToCreateBulkSize {
+		// Clone buffer and exec bulk insert
+		go func(interactions []db.BulkCreateInteractionsParams) {
+			if _, err := m.queries.BulkCreateInteractions(ctx, interactions); err != nil {
+				log.Errorf("Error creating interactions: %v", err)
+			}
+		}(m.interactionsToCreate)
+		// Clear buffer
+		m.interactionsToCreate = make([]db.BulkCreateInteractionsParams, 0, InteractionsToCreateBulkSize)
+	}
+
+	return nil
 }
 
 func (m *Manager) CreatePost(post models.Post) {
@@ -190,6 +231,42 @@ func (m *Manager) CreateUser(did string) {
 		return
 	}
 	m.usersCreated.Store(did, true)
+}
+
+func (m *Manager) DeleteFollow(uri string) {
+	ctx := context.Background()
+
+	// Start transaction
+	tx, err := m.dbConnection.Begin(ctx)
+	if err != nil {
+		log.Warningf("Error creating transaction: %v", err)
+	}
+	defer tx.Rollback(ctx) // Rollback on error
+	qtx := m.queries.WithTx(tx)
+
+	// Create follow
+	follow, err := qtx.DeleteFollow(ctx, uri)
+	if err != nil {
+		log.Infof("Error deleting follow: %v", err)
+		return
+	}
+
+	// Remove follow from users statistics
+	_ = qtx.AddUserFollows(ctx, db.AddUserFollowsParams{
+		Did:          follow.AuthorDid,
+		FollowsCount: pgtype.Int4{Int32: -1, Valid: true},
+	})
+	_ = qtx.AddUserFollowers(ctx, db.AddUserFollowersParams{
+		Did:            follow.SubjectDid,
+		FollowersCount: pgtype.Int4{Int32: -1, Valid: true},
+	})
+
+	// Finish transaction
+	tx.Commit(ctx)
+
+	// Update cache
+	m.usersCache.UpdateUserFollowCounts(follow.AuthorDid, -1, 0)
+	m.usersCache.UpdateUserFollowCounts(follow.SubjectDid, 0, -1)
 }
 
 func (m *Manager) DeleteInteraction(uri string) {

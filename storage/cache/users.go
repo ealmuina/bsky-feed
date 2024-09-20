@@ -54,3 +54,13 @@ func (c *UsersCache) GetUser(did string) (bool, models.User) {
 	}
 	return true, user
 }
+
+func (c *UsersCache) UpdateUserFollowCounts(did string, followsDelta int64, followersDelta int64) {
+	ok, user := c.GetUser(did)
+	if !ok {
+		return
+	}
+	user.FollowsCount += followsDelta
+	user.FollowersCount += followersDelta
+	c.AddUser(user)
+}

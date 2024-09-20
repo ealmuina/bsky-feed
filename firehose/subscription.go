@@ -179,8 +179,33 @@ func (s *Subscription) handleFeedPostCreate(
 		Rank:        rank,
 	}
 
-	s.storageManager.CreateUser(repoDID)
-	go s.storageManager.CreatePost(post)
+	go func() {
+		s.storageManager.CreateUser(repoDID)
+		s.storageManager.CreatePost(post)
+	}()
+
+	return nil
+}
+
+func (s *Subscription) handleGraphFollowCreate(
+	repoDID string,
+	uri string,
+	data *appbsky.GraphFollow,
+) error {
+	createdAt, err := utils.ParseTime(data.CreatedAt)
+	if err != nil {
+		log.Errorf("Error parsing created at: %s", err)
+		return err
+	}
+
+	go s.storageManager.CreateFollow(
+		models.Follow{
+			Uri:        uri,
+			AuthorDid:  repoDID,
+			SubjectDid: data.Subject,
+			CreatedAt:  createdAt,
+		},
+	)
 
 	return nil
 }
@@ -199,12 +224,16 @@ func (s *Subscription) handleInteractionCreate(
 		return err
 	}
 
-	s.storageManager.CreateUser(
-		repoDID,
-	)
-	return s.storageManager.CreateInteraction(
-		repoDID, uri, cid, kind, createdAt, postUri,
-	)
+	go func() {
+		s.storageManager.CreateUser(
+			repoDID,
+		)
+		s.storageManager.CreateInteraction(
+			repoDID, uri, cid, kind, createdAt, postUri,
+		)
+	}()
+
+	return nil
 }
 
 func (s *Subscription) handleRecordCreate(
@@ -237,8 +266,11 @@ func (s *Subscription) handleRecordCreate(
 			data.CreatedAt,
 			data.Subject.Uri,
 		)
+	case *appbsky.GraphFollow:
+		err = s.handleGraphFollowCreate(
+			repoDID, uri, data,
+		)
 	}
-
 	return err
 }
 
@@ -248,6 +280,8 @@ func (s *Subscription) handleRecordDelete(uri string, recordType string) error {
 		s.storageManager.DeletePost(uri)
 	case "app.bsky.feeds.like", "app.bsky.feeds.repost":
 		s.storageManager.DeleteInteraction(uri)
+	case "app.bsky.graph.follow":
+		s.storageManager.DeleteFollow(uri)
 	}
 	return nil
 }
