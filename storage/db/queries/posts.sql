@@ -2,10 +2,11 @@
 INSERT INTO posts (uri, author_did, reply_parent, reply_root, created_at, language, rank)
 VALUES ($1, $2, $3, $4, $5, $6, $7);
 
--- name: BulkDeletePosts :exec
+-- name: BulkDeletePosts :many
 DELETE
 FROM posts
-WHERE uri = ANY ($1::VARCHAR[]);
+WHERE uri = ANY (@uris::VARCHAR[])
+RETURNING uri, author_did;
 
 -- name: DeleteOldPosts :exec
 DELETE

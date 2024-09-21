@@ -21,15 +21,36 @@ type BulkCreatePostsParams struct {
 	Rank        pgtype.Float8
 }
 
-const bulkDeletePosts = `-- name: BulkDeletePosts :exec
+const bulkDeletePosts = `-- name: BulkDeletePosts :many
 DELETE
 FROM posts
 WHERE uri = ANY ($1::VARCHAR[])
+RETURNING uri, author_did
 `
 
-func (q *Queries) BulkDeletePosts(ctx context.Context, dollar_1 []string) error {
-	_, err := q.db.Exec(ctx, bulkDeletePosts, dollar_1)
-	return err
+type BulkDeletePostsRow struct {
+	Uri       string
+	AuthorDid string
+}
+
+func (q *Queries) BulkDeletePosts(ctx context.Context, uris []string) ([]BulkDeletePostsRow, error) {
+	rows, err := q.db.Query(ctx, bulkDeletePosts, uris)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []BulkDeletePostsRow
+	for rows.Next() {
+		var i BulkDeletePostsRow
+		if err := rows.Scan(&i.Uri, &i.AuthorDid); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const deleteOldPosts = `-- name: DeleteOldPosts :exec

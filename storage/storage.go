@@ -124,21 +124,23 @@ func (m *Manager) CreateFollow(follow models.Follow) {
 	}
 
 	// Add follow to users statistics
-	_ = qtx.AddUserFollows(ctx, db.AddUserFollowsParams{
+	err = qtx.AddUserFollows(ctx, db.AddUserFollowsParams{
 		Did:          follow.AuthorDid,
 		FollowsCount: pgtype.Int4{Int32: 1, Valid: true},
 	})
-	_ = qtx.AddUserFollowers(ctx, db.AddUserFollowersParams{
+	if err == nil {
+		m.usersCache.UpdateUserCounts(follow.AuthorDid, 1, 0, 0)
+	}
+	err = qtx.AddUserFollowers(ctx, db.AddUserFollowersParams{
 		Did:            follow.SubjectDid,
 		FollowersCount: pgtype.Int4{Int32: 1, Valid: true},
 	})
+	if err == nil {
+		m.usersCache.UpdateUserCounts(follow.SubjectDid, 0, 1, 0)
+	}
 
 	// Finish transaction
 	tx.Commit(ctx)
-
-	// Update cache
-	m.usersCache.UpdateUserFollowCounts(follow.AuthorDid, 1, 0)
-	m.usersCache.UpdateUserFollowCounts(follow.SubjectDid, 0, 1)
 }
 
 func (m *Manager) CreateInteraction(interaction models.Interaction) error {
@@ -200,10 +202,40 @@ func (m *Manager) CreatePost(post models.Post) {
 	if len(m.postsToCreate) >= PostsToCreateBulkSize {
 		// Clone buffer and exec bulk insert
 		go func(posts []db.BulkCreatePostsParams) {
-			if _, err := m.queries.BulkCreatePosts(context.Background(), posts); err != nil {
-				log.Errorf("Error creating posts: %v", err)
+			ctx := context.Background()
+
+			// Start transaction
+			tx, err := m.dbConnection.Begin(ctx)
+			if err != nil {
+				log.Warningf("Error creating transaction: %v", err)
 			}
-		}(m.postsToCreate)
+			defer tx.Rollback(ctx) // Rollback on error
+			qtx := m.queries.WithTx(tx)
+
+			// Create posts
+			if _, err := qtx.BulkCreatePosts(context.Background(), posts); err != nil {
+				log.Errorf("Error creating posts: %v", err)
+				return
+			}
+
+			// Add post to user statistics
+			for _, post := range posts {
+				err = qtx.AddUserPosts(ctx, db.AddUserPostsParams{
+					Did:        post.AuthorDid,
+					PostsCount: pgtype.Int4{Int32: 1, Valid: true},
+				})
+				if err == nil {
+					// Update cache
+					m.usersCache.UpdateUserCounts(post.AuthorDid, 0, 0, 1)
+				}
+			}
+
+			// Finish transaction
+			tx.Commit(ctx)
+		}(
+			m.postsToCreate,
+		)
+
 		// Clear buffer
 		m.postsToCreate = make([]db.BulkCreatePostsParams, 0, PostsToCreateBulkSize)
 	}
@@ -243,21 +275,23 @@ func (m *Manager) DeleteFollow(uri string) {
 	}
 
 	// Remove follow from users statistics
-	_ = qtx.AddUserFollows(ctx, db.AddUserFollowsParams{
+	err = qtx.AddUserFollows(ctx, db.AddUserFollowsParams{
 		Did:          follow.AuthorDid,
 		FollowsCount: pgtype.Int4{Int32: -1, Valid: true},
 	})
-	_ = qtx.AddUserFollowers(ctx, db.AddUserFollowersParams{
+	if err == nil {
+		m.usersCache.UpdateUserCounts(follow.AuthorDid, -1, 0, 0)
+	}
+	err = qtx.AddUserFollowers(ctx, db.AddUserFollowersParams{
 		Did:            follow.SubjectDid,
 		FollowersCount: pgtype.Int4{Int32: -1, Valid: true},
 	})
+	if err == nil {
+		m.usersCache.UpdateUserCounts(follow.SubjectDid, 0, -1, 0)
+	}
 
 	// Finish transaction
 	tx.Commit(ctx)
-
-	// Update cache
-	m.usersCache.UpdateUserFollowCounts(follow.AuthorDid, -1, 0)
-	m.usersCache.UpdateUserFollowCounts(follow.SubjectDid, 0, -1)
 }
 
 func (m *Manager) DeleteInteraction(uri string) {
@@ -291,10 +325,38 @@ func (m *Manager) DeletePost(uri string) {
 	if len(m.postsToDelete) >= PostsToDeleteBulkSize {
 		// Copy buffer and exec bulk delete
 		go func(uris []string) {
-			if err := m.queries.BulkDeletePosts(ctx, uris); err != nil {
-				log.Errorf("Error deleting posts: %m", err)
+			// Start transaction
+			tx, err := m.dbConnection.Begin(ctx)
+			if err != nil {
+				log.Warningf("Error creating transaction: %v", err)
 			}
-		}(m.postsToDelete)
+			defer tx.Rollback(ctx) // Rollback on error
+			qtx := m.queries.WithTx(tx)
+
+			// Delete posts
+			posts, err := qtx.BulkDeletePosts(ctx, uris)
+			if err != nil {
+				log.Errorf("Error deleting posts: %m", err)
+				return
+			}
+
+			// Remove post from user statistics
+			for _, post := range posts {
+				err = qtx.AddUserPosts(ctx, db.AddUserPostsParams{
+					Did:        post.AuthorDid,
+					PostsCount: pgtype.Int4{Int32: -1, Valid: true},
+				})
+				if err == nil {
+					// Update cache
+					m.usersCache.UpdateUserCounts(post.AuthorDid, 0, 0, -1)
+				}
+			}
+
+			// Finish transaction
+			tx.Commit(ctx)
+		}(
+			m.postsToDelete,
+		)
 		// Clear buffer
 		m.postsToDelete = make([]string, 0, PostsToDeleteBulkSize)
 	}

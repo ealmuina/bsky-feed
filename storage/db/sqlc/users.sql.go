@@ -43,6 +43,22 @@ func (q *Queries) AddUserFollows(ctx context.Context, arg AddUserFollowsParams) 
 	return err
 }
 
+const addUserPosts = `-- name: AddUserPosts :exec
+UPDATE users
+SET posts_count = users.posts_count + $2
+WHERE did = $1
+`
+
+type AddUserPostsParams struct {
+	Did        string
+	PostsCount pgtype.Int4
+}
+
+func (q *Queries) AddUserPosts(ctx context.Context, arg AddUserPostsParams) error {
+	_, err := q.db.Exec(ctx, addUserPosts, arg.Did, arg.PostsCount)
+	return err
+}
+
 const calculateUserEngagement = `-- name: CalculateUserEngagement :one
 SELECT (
            ((count(i.uri) / count(DISTINCT i.post_uri)::float) * 100 / u.followers_count) / (5 / log(u.followers_count))
@@ -154,7 +170,7 @@ const getUserDidsToRefreshStatistics = `-- name: GetUserDidsToRefreshStatistics 
 SELECT users.did
 FROM users
 WHERE last_update IS NULL
-   OR last_update < current_timestamp - interval '1 week'
+   OR last_update < current_timestamp - interval '30 days'
 `
 
 func (q *Queries) GetUserDidsToRefreshStatistics(ctx context.Context) ([]string, error) {

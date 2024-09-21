@@ -28,6 +28,11 @@ UPDATE users
 SET follows_count = follows_count + $2
 WHERE did = $1;
 
+-- name: AddUserPosts :exec
+UPDATE users
+SET posts_count = users.posts_count + $2
+WHERE did = $1;
+
 -- name: GetUser :one
 SELECT *
 FROM users
