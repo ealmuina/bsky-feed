@@ -60,6 +60,7 @@ func (c *UsersCache) GetUser(did string) (models.User, bool) {
 }
 
 func (c *UsersCache) UpdateUserCounts(did string, followsDelta int64, followersDelta int64, postsDelta int64) {
+	// TODO Deal with race conditions... (HINCRBY?)
 	user, ok := c.GetUser(did)
 	if !ok {
 		return
