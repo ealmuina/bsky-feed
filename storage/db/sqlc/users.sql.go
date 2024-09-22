@@ -150,6 +150,7 @@ SELECT DISTINCT u.did
 FROM users u
          INNER JOIN posts p ON u.did = p.author_did
 WHERE u.followers_count > 300
+  AND p.reply_root IS NULL
   AND p.created_at <= current_timestamp - interval '1 day'
   AND p.created_at > current_timestamp - interval '2 days'
 `
@@ -207,11 +208,13 @@ WITH engagement_data AS (SELECT u1.did,
                                  FROM interactions i
                                           INNER JOIN posts p ON p.uri = i.post_uri
                                  WHERE p.author_did = u1.did
+                                   AND p.reply_root IS NULL
                                    AND i.created_at > now() - interval '7 days'
                                    AND p.created_at < now() - interval '1 day') AS count_interactions,
                                 (SELECT COUNT(DISTINCT p.uri)
                                  FROM posts p
                                  WHERE p.author_did = u1.did
+                                   AND p.reply_root IS NULL
                                    AND p.created_at < now() - interval '1 day') AS count_posts
                          FROM users u1
                          WHERE u1.did = $1)
