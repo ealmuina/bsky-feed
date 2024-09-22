@@ -49,15 +49,31 @@ FROM users
 WHERE last_update IS NULL
    OR last_update < current_timestamp - interval '30 days';
 
--- name: CalculateUserEngagement :one
-SELECT (
-           ((count(i.uri) / count(DISTINCT i.post_uri)::float) * 100 / u.followers_count) / (5 / log(u.followers_count))
-           )::float
-FROM interactions i
-         INNER JOIN posts p ON i.post_uri = p.uri
-         INNER JOIN users u ON u.did = p.author_did
-WHERE p.author_did = $1
-  AND p.reply_root IS NULL
-  AND p.created_at < now() - interval '1 day'
-  AND i.created_at > now() - interval '7 days'
-GROUP BY u.followers_count;
+-- name: GetUserDidsToRefreshEngagement :many
+SELECT DISTINCT u.did
+FROM users u
+         INNER JOIN posts p ON u.did = p.author_did
+WHERE u.followers_count > 300
+  AND p.created_at <= current_timestamp - interval '1 day'
+  AND p.created_at > current_timestamp - interval '2 days';
+
+-- name: RefreshUserEngagement :one
+WITH engagement_data AS (SELECT u1.did,
+                                (SELECT COUNT(i.uri)
+                                 FROM interactions i
+                                          INNER JOIN posts p ON p.uri = i.post_uri
+                                 WHERE p.author_did = u1.did
+                                   AND i.created_at > now() - interval '7 days'
+                                   AND p.created_at < now() - interval '1 day') AS count_interactions,
+                                (SELECT COUNT(DISTINCT p.uri)
+                                 FROM posts p
+                                 WHERE p.author_did = u1.did
+                                   AND p.created_at < now() - interval '1 day') AS count_posts
+                         FROM users u1
+                         WHERE u1.did = $1)
+UPDATE users u
+SET engagement_factor = ((q.count_interactions / NULLIF(q.count_posts::float, 0)) * 100 / u.followers_count) /
+                        (5 / log(NULLIF(u.followers_count, 0)))
+FROM engagement_data q
+WHERE u.did = q.did
+RETURNING u.did, u.followers_count, u.follows_count, u.posts_count, u.engagement_factor;

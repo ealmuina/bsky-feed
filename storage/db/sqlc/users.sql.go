@@ -59,27 +59,6 @@ func (q *Queries) AddUserPosts(ctx context.Context, arg AddUserPostsParams) erro
 	return err
 }
 
-const calculateUserEngagement = `-- name: CalculateUserEngagement :one
-SELECT (
-           ((count(i.uri) / count(DISTINCT i.post_uri)::float) * 100 / u.followers_count) / (5 / log(u.followers_count))
-           )::float
-FROM interactions i
-         INNER JOIN posts p ON i.post_uri = p.uri
-         INNER JOIN users u ON u.did = p.author_did
-WHERE p.author_did = $1
-  AND p.reply_root IS NULL
-  AND p.created_at < now() - interval '1 day'
-  AND i.created_at > now() - interval '7 days'
-GROUP BY u.followers_count
-`
-
-func (q *Queries) CalculateUserEngagement(ctx context.Context, authorDid string) (float64, error) {
-	row := q.db.QueryRow(ctx, calculateUserEngagement, authorDid)
-	var column_1 float64
-	err := row.Scan(&column_1)
-	return column_1, err
-}
-
 const createUser = `-- name: CreateUser :exec
 INSERT INTO users (did, handle, followers_count, follows_count, posts_count, last_update)
 VALUES ($1, $2, $3, $4, $5, $6)
@@ -166,6 +145,35 @@ func (q *Queries) GetUserDids(ctx context.Context) ([]string, error) {
 	return items, nil
 }
 
+const getUserDidsToRefreshEngagement = `-- name: GetUserDidsToRefreshEngagement :many
+SELECT DISTINCT u.did
+FROM users u
+         INNER JOIN posts p ON u.did = p.author_did
+WHERE u.followers_count > 300
+  AND p.created_at <= current_timestamp - interval '1 day'
+  AND p.created_at > current_timestamp - interval '2 days'
+`
+
+func (q *Queries) GetUserDidsToRefreshEngagement(ctx context.Context) ([]string, error) {
+	rows, err := q.db.Query(ctx, getUserDidsToRefreshEngagement)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []string
+	for rows.Next() {
+		var did string
+		if err := rows.Scan(&did); err != nil {
+			return nil, err
+		}
+		items = append(items, did)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getUserDidsToRefreshStatistics = `-- name: GetUserDidsToRefreshStatistics :many
 SELECT users.did
 FROM users
@@ -191,6 +199,49 @@ func (q *Queries) GetUserDidsToRefreshStatistics(ctx context.Context) ([]string,
 		return nil, err
 	}
 	return items, nil
+}
+
+const refreshUserEngagement = `-- name: RefreshUserEngagement :one
+WITH engagement_data AS (SELECT u1.did,
+                                (SELECT COUNT(i.uri)
+                                 FROM interactions i
+                                          INNER JOIN posts p ON p.uri = i.post_uri
+                                 WHERE p.author_did = u1.did
+                                   AND i.created_at > now() - interval '7 days'
+                                   AND p.created_at < now() - interval '1 day') AS count_interactions,
+                                (SELECT COUNT(DISTINCT p.uri)
+                                 FROM posts p
+                                 WHERE p.author_did = u1.did
+                                   AND p.created_at < now() - interval '1 day') AS count_posts
+                         FROM users u1
+                         WHERE u1.did = $1)
+UPDATE users u
+SET engagement_factor = ((q.count_interactions / NULLIF(q.count_posts::float, 0)) * 100 / u.followers_count) /
+                        (5 / log(NULLIF(u.followers_count, 0)))
+FROM engagement_data q
+WHERE u.did = q.did
+RETURNING u.did, u.followers_count, u.follows_count, u.posts_count, u.engagement_factor
+`
+
+type RefreshUserEngagementRow struct {
+	Did              string
+	FollowersCount   pgtype.Int4
+	FollowsCount     pgtype.Int4
+	PostsCount       pgtype.Int4
+	EngagementFactor pgtype.Float8
+}
+
+func (q *Queries) RefreshUserEngagement(ctx context.Context, did string) (RefreshUserEngagementRow, error) {
+	row := q.db.QueryRow(ctx, refreshUserEngagement, did)
+	var i RefreshUserEngagementRow
+	err := row.Scan(
+		&i.Did,
+		&i.FollowersCount,
+		&i.FollowsCount,
+		&i.PostsCount,
+		&i.EngagementFactor,
+	)
+	return i, err
 }
 
 const updateUser = `-- name: UpdateUser :exec

@@ -23,3 +23,7 @@ var ImplementedAlgorithms = map[string]Algorithm{
 		minEngagement: 1.0,
 	},
 }
+
+var EngagementBasedAlgorithms = map[string]bool{
+	"top_spanish": true,
+}

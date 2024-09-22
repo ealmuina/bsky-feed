@@ -11,6 +11,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
 	log "github.com/sirupsen/logrus"
+	"math"
 	"sync"
 	"time"
 )
@@ -19,6 +20,7 @@ const PostsToCreateBulkSize = 100
 const InteractionsToCreateBulkSize = 100
 const PostsToDeleteBulkSize = 100
 const InteractionsToDeleteBulkSize = 100
+const RefreshEngagementsBatchSize = 100
 
 type Manager struct {
 	redisConnection *redis.Client
@@ -46,7 +48,10 @@ func NewManager(dbConnection *pgxpool.Pool, redisConnection *redis.Client) *Mana
 		dbConnection:    dbConnection,
 		queries:         db.New(dbConnection),
 
-		usersCache: cache.NewUsersCache(redisConnection),
+		usersCache: cache.NewUsersCache(
+			redisConnection,
+			7*24*time.Hour, // expire entries after 1 week
+		),
 		timelines:  make(map[string]cache.Timeline),
 		algorithms: make(map[string]algorithms.Algorithm),
 
@@ -73,15 +78,6 @@ func (m *Manager) AddPostToTimeline(timelineName string, post models.Post) {
 	} else {
 		log.Errorf("Could not find timeline for feed name: %s", timelineName)
 	}
-}
-
-func (m *Manager) CalculateUserEngagement(did string) float64 {
-	engagementFactor, err := m.queries.CalculateUserEngagement(context.Background(), did)
-	if err != nil {
-		log.Infof("Error while calculating engagement factor for user %s: %v", did, err)
-		return 0
-	}
-	return engagementFactor
 }
 
 func (m *Manager) CleanOldData() {
@@ -175,7 +171,7 @@ func (m *Manager) CreateInteraction(interaction models.Interaction) error {
 
 func (m *Manager) CreatePost(post models.Post) {
 	// Add post to corresponding timelines
-	_, author := m.GetUser(post.AuthorDid)
+	author, _ := m.GetUser(post.AuthorDid)
 	for timelineName, algorithm := range m.algorithms {
 		if ok, reason := algorithm.AcceptsPost(post, author); ok {
 			post.Reason = reason
@@ -424,20 +420,22 @@ func (m *Manager) GetTimeline(timelineName string, maxRank float64, limit int64)
 	return posts
 }
 
-func (m *Manager) GetUser(did string) (ok bool, user models.User) {
+func (m *Manager) GetUser(did string) (user models.User, ok bool) {
 	// Check cache
-	ok, cacheUser := m.usersCache.GetUser(did)
+	cacheUser, ok := m.usersCache.GetUser(did)
 	if !ok {
 		// Not in cache. Get it from DB
 		dbUser, err := m.queries.GetUser(context.Background(), did)
 		if err != nil {
 			// Not in DB either
-			return false, models.User{}
+			return models.User{}, false
 		}
+
 		if !dbUser.FollowersCount.Valid || !dbUser.EngagementFactor.Valid {
 			// No statistics from user in DB
-			return false, models.User{}
+			return models.User{}, false
 		}
+
 		// Fill cacheUser and store it in cache for future requests
 		cacheUser = models.User{
 			Did:              dbUser.Did,
@@ -446,7 +444,48 @@ func (m *Manager) GetUser(did string) (ok bool, user models.User) {
 		}
 		m.usersCache.AddUser(cacheUser)
 	}
-	return true, cacheUser
+
+	return cacheUser, true
+}
+
+func (m *Manager) RefreshEngagements() {
+	ctx := context.Background()
+
+	// Get dids that need refreshing
+	dids, err := m.queries.GetUserDidsToRefreshEngagement(ctx)
+	if err != nil {
+		log.Errorf("Error getting users to refresh engagements: %v", err)
+		return
+	}
+
+	var wg sync.WaitGroup
+	for i := 0; i < len(dids); i += RefreshEngagementsBatchSize {
+		end := int(math.Min(float64(i+RefreshEngagementsBatchSize), float64(len(dids))))
+		wg.Add(1)
+
+		// Refresh engagements in parallel
+		go func() {
+			defer wg.Done()
+			for j, did := range dids[i:end] {
+				// Update on DB
+				user, err := m.queries.RefreshUserEngagement(ctx, did)
+				if err != nil {
+					log.Errorf("%d", j)
+					log.Errorf("Error refreshing engagements: %v", err)
+					continue
+				}
+				// Update on cache
+				m.usersCache.AddUser(models.User{
+					Did:              user.Did,
+					FollowersCount:   int64(user.FollowersCount.Int32),
+					FollowsCount:     int64(user.FollowsCount.Int32),
+					PostsCount:       int64(user.PostsCount.Int32),
+					EngagementFactor: user.EngagementFactor.Float64,
+				})
+			}
+		}()
+	}
+	wg.Wait()
 }
 
 func (m *Manager) UpdateCursor(service string, cursor int64) {

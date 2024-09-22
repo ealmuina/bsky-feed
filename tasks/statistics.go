@@ -17,7 +17,7 @@ import (
 	"time"
 )
 
-const EngagementMinFollowers = 200
+const EngagementMinFollowers = 300
 const AccountDeactivatedError = "AccountDeactivated"
 const InvalidRequestError = "InvalidRequest" // Seen when profile is not found
 const ExpiredToken = "ExpiredToken"
@@ -74,7 +74,19 @@ func NewStatisticsUpdater(storageManager *storage.Manager) (*StatisticsUpdater, 
 }
 
 func (u *StatisticsUpdater) Run() {
+	u.storageManager.RefreshEngagements()
+
+	refreshEngagementsTicker := time.NewTicker(24 * time.Hour)
+
 	for {
+		select {
+		case <-refreshEngagementsTicker.C:
+			u.storageManager.RefreshEngagements()
+		default:
+			// Do nothing
+		}
+
+		// Update user statistics
 		dids := u.storageManager.GetOutdatedUserDids()
 		for _, did := range dids {
 			u.updateUserStatistics(did)
@@ -135,18 +147,13 @@ func (u *StatisticsUpdater) updateUserStatistics(did string) {
 		return
 	}
 
-	engagementFactor := -1.0
-	if *profile.PostsCount > 0 && *profile.FollowersCount > EngagementMinFollowers {
-		engagementFactor = u.storageManager.CalculateUserEngagement(did)
-	}
-
 	u.storageManager.UpdateUser(
 		models.User{
 			Did:              did,
 			FollowersCount:   *profile.FollowersCount,
 			FollowsCount:     *profile.FollowsCount,
 			PostsCount:       *profile.PostsCount,
-			EngagementFactor: engagementFactor,
+			EngagementFactor: -1,
 		},
 	)
 }
