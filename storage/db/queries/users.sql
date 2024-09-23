@@ -38,10 +38,6 @@ FROM users
 WHERE did = $1
 LIMIT 1;
 
--- name: GetUsersCount :one
-SELECT COUNT(*)
-FROM users;
-
 -- name: GetUserDids :many
 SELECT users.did
 FROM users;
@@ -52,8 +48,6 @@ FROM users
 WHERE last_update IS NULL
    OR last_update < current_timestamp - interval '30 days';
 
--- name: BatchGetUsersFollows :many
+-- name: GetUsersFollows :many
 SELECT did, followers_count, follows_count
-FROM users
-ORDER BY did
-OFFSET $1 LIMIT $2;
+FROM users;
