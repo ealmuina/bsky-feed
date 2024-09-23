@@ -2,10 +2,11 @@
 INSERT INTO interactions (uri, kind, author_did, post_uri, created_at)
 VALUES ($1, $2, $3, $4, $5);
 
--- name: BulkDeleteInteractions :exec
+-- name: BulkDeleteInteractions :many
 DELETE
 FROM interactions
-WHERE uri = ANY ($1::VARCHAR[]);
+WHERE uri = ANY ($1::VARCHAR[])
+RETURNING uri, post_uri;
 
 -- name: DeleteUserInteractions :exec
 DELETE

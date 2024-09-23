@@ -98,7 +98,7 @@ func (q *Queries) DeleteUser(ctx context.Context, did string) error {
 }
 
 const getUser = `-- name: GetUser :one
-SELECT did, handle, followers_count, follows_count, posts_count, indexed_at, last_update, engagement_factor
+SELECT did, handle, followers_count, follows_count, posts_count, indexed_at, last_update
 FROM users
 WHERE did = $1
 LIMIT 1
@@ -115,7 +115,6 @@ func (q *Queries) GetUser(ctx context.Context, did string) (User, error) {
 		&i.PostsCount,
 		&i.IndexedAt,
 		&i.LastUpdate,
-		&i.EngagementFactor,
 	)
 	return i, err
 }
@@ -127,36 +126,6 @@ FROM users
 
 func (q *Queries) GetUserDids(ctx context.Context) ([]string, error) {
 	rows, err := q.db.Query(ctx, getUserDids)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []string
-	for rows.Next() {
-		var did string
-		if err := rows.Scan(&did); err != nil {
-			return nil, err
-		}
-		items = append(items, did)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const getUserDidsToRefreshEngagement = `-- name: GetUserDidsToRefreshEngagement :many
-SELECT DISTINCT u.did
-FROM users u
-         INNER JOIN posts p ON u.did = p.author_did
-WHERE u.followers_count > 300
-  AND p.reply_root IS NULL
-  AND p.created_at <= current_timestamp - interval '1 day'
-  AND p.created_at > current_timestamp - interval '2 days'
-`
-
-func (q *Queries) GetUserDidsToRefreshEngagement(ctx context.Context) ([]string, error) {
-	rows, err := q.db.Query(ctx, getUserDidsToRefreshEngagement)
 	if err != nil {
 		return nil, err
 	}
@@ -202,70 +171,23 @@ func (q *Queries) GetUserDidsToRefreshStatistics(ctx context.Context) ([]string,
 	return items, nil
 }
 
-const refreshUserEngagement = `-- name: RefreshUserEngagement :one
-WITH engagement_data AS (SELECT u1.did,
-                                (SELECT COUNT(i.uri)
-                                 FROM interactions i
-                                          INNER JOIN posts p ON p.uri = i.post_uri
-                                 WHERE p.author_did = u1.did
-                                   AND p.reply_root IS NULL
-                                   AND i.created_at > now() - interval '7 days'
-                                   AND p.created_at < now() - interval '1 day') AS count_interactions,
-                                (SELECT COUNT(DISTINCT p.uri)
-                                 FROM posts p
-                                 WHERE p.author_did = u1.did
-                                   AND p.reply_root IS NULL
-                                   AND p.created_at < now() - interval '1 day') AS count_posts
-                         FROM users u1
-                         WHERE u1.did = $1)
-UPDATE users u
-SET engagement_factor = ((q.count_interactions / NULLIF(q.count_posts::float, 0)) * 100 / u.followers_count) /
-                        (5 / log(NULLIF(u.followers_count, 0)))
-FROM engagement_data q
-WHERE u.did = q.did
-RETURNING u.did, u.followers_count, u.follows_count, u.posts_count, u.engagement_factor
-`
-
-type RefreshUserEngagementRow struct {
-	Did              string
-	FollowersCount   pgtype.Int4
-	FollowsCount     pgtype.Int4
-	PostsCount       pgtype.Int4
-	EngagementFactor pgtype.Float8
-}
-
-func (q *Queries) RefreshUserEngagement(ctx context.Context, did string) (RefreshUserEngagementRow, error) {
-	row := q.db.QueryRow(ctx, refreshUserEngagement, did)
-	var i RefreshUserEngagementRow
-	err := row.Scan(
-		&i.Did,
-		&i.FollowersCount,
-		&i.FollowsCount,
-		&i.PostsCount,
-		&i.EngagementFactor,
-	)
-	return i, err
-}
-
 const updateUser = `-- name: UpdateUser :exec
 UPDATE users
 SET handle            = $2,
     followers_count   = $3,
     follows_count     = $4,
     posts_count       = $5,
-    engagement_factor = $6,
-    last_update       = $7
+    last_update       = $6
 WHERE did = $1
 `
 
 type UpdateUserParams struct {
-	Did              string
-	Handle           pgtype.Text
-	FollowersCount   pgtype.Int4
-	FollowsCount     pgtype.Int4
-	PostsCount       pgtype.Int4
-	EngagementFactor pgtype.Float8
-	LastUpdate       pgtype.Timestamp
+	Did            string
+	Handle         pgtype.Text
+	FollowersCount pgtype.Int4
+	FollowsCount   pgtype.Int4
+	PostsCount     pgtype.Int4
+	LastUpdate     pgtype.Timestamp
 }
 
 func (q *Queries) UpdateUser(ctx context.Context, arg UpdateUserParams) error {
@@ -275,7 +197,6 @@ func (q *Queries) UpdateUser(ctx context.Context, arg UpdateUserParams) error {
 		arg.FollowersCount,
 		arg.FollowsCount,
 		arg.PostsCount,
-		arg.EngagementFactor,
 		arg.LastUpdate,
 	)
 	return err

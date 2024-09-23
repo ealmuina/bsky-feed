@@ -1,6 +1,7 @@
 package algorithms
 
 import (
+	"bsky/storage/cache"
 	db "bsky/storage/db/sqlc"
 	"bsky/storage/models"
 	"context"
@@ -14,11 +15,14 @@ type TopLanguageAlgorithm struct {
 	minEngagement float64
 }
 
-func (a *TopLanguageAlgorithm) AcceptsPost(post models.Post, author models.User) (ok bool, reason map[string]string) {
+func (a *TopLanguageAlgorithm) AcceptsPost(
+	post models.Post,
+	authorStatistics cache.UserStatistics,
+) (ok bool, reason map[string]string) {
 	ok = post.Language == a.languageCode &&
 		post.ReplyRoot == "" &&
-		author.FollowersCount > a.minFollowers &&
-		author.EngagementFactor > a.minEngagement
+		authorStatistics.FollowersCount > a.minFollowers &&
+		authorStatistics.GetEngagementFactor() > a.minEngagement
 	reason = nil
 	return
 }

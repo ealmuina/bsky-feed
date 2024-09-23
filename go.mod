@@ -5,7 +5,7 @@ go 1.22.0
 toolchain go1.23.1
 
 require (
-	github.com/bluesky-social/indigo v0.0.0-20240913160200-430282698f28
+	github.com/bluesky-social/indigo v0.0.0-20240923000931-01a47d45f3ce
 	github.com/gorilla/websocket v1.5.3
 	github.com/jackc/pgx/v5 v5.7.1
 	github.com/pemistahl/lingua-go v1.4.0
@@ -49,7 +49,7 @@ require (
 	github.com/ipfs/go-metrics-interface v0.0.1 // indirect
 	github.com/ipfs/go-verifcid v0.0.3 // indirect
 	github.com/ipld/go-car v0.6.2 // indirect
-	github.com/ipld/go-car/v2 v2.14.0 // indirect
+	github.com/ipld/go-car/v2 v2.14.1 // indirect
 	github.com/ipld/go-codec-dagpb v1.6.0 // indirect
 	github.com/ipld/go-ipld-prime v0.21.0 // indirect
 	github.com/jackc/pgpassfile v1.0.0 // indirect
@@ -72,7 +72,7 @@ require (
 	github.com/opentracing/opentracing-go v1.2.0 // indirect
 	github.com/petar/GoLLRB v0.0.0-20210522233825-ae3b015fd3e9 // indirect
 	github.com/polydawn/refmt v0.89.1-0.20221221234430-40501e09de1f // indirect
-	github.com/prometheus/client_golang v1.20.3 // indirect
+	github.com/prometheus/client_golang v1.20.4 // indirect
 	github.com/prometheus/client_model v0.6.1 // indirect
 	github.com/prometheus/common v0.59.1 // indirect
 	github.com/prometheus/procfs v0.15.1 // indirect

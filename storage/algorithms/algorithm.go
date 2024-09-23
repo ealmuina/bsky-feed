@@ -1,12 +1,13 @@
 package algorithms
 
 import (
+	"bsky/storage/cache"
 	db "bsky/storage/db/sqlc"
 	"bsky/storage/models"
 )
 
 type Algorithm interface {
-	AcceptsPost(post models.Post, author models.User) (ok bool, reason map[string]string)
+	AcceptsPost(post models.Post, authorStatistics cache.UserStatistics) (ok bool, reason map[string]string)
 
 	GetPosts(queries *db.Queries, maxRank float64, limit int64) []models.Post
 }
@@ -19,7 +20,7 @@ var ImplementedAlgorithms = map[string]Algorithm{
 	"spanish":    &LanguageAlgorithm{"es"},
 	"top_spanish": &TopLanguageAlgorithm{
 		languageCode:  "es",
-		minFollowers:  300,
+		minFollowers:  500,
 		minEngagement: 1.0,
 	},
 }

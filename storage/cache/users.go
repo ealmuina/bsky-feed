@@ -1,15 +1,35 @@
 package cache
 
 import (
-	"bsky/storage/models"
 	"context"
-	"encoding/json"
 	"github.com/redis/go-redis/v9"
-	log "github.com/sirupsen/logrus"
+	"math"
 	"time"
 )
 
-const UsersCacheRedisKey = "users"
+const UsersFollowersCountCacheRedisKey = "users_followers_count"
+const UsersFollowsCountCacheRedisKey = "users_follows_count"
+const UsersPostsCountCacheRedisKey = "users_posts_count"
+const UsersInteractionsCountCacheRedisKey = "users_interactions_count"
+
+type UserStatistics struct {
+	Did               string
+	FollowersCount    int64
+	FollowsCount      int64
+	PostsCount        int64
+	InteractionsCount int64
+}
+
+func (s *UserStatistics) GetEngagementFactor() float64 {
+	interactionsCount := float64(s.InteractionsCount)
+	postsCount := float64(s.PostsCount)
+	followersCount := float64(s.FollowersCount)
+
+	if postsCount == 0 || followersCount < 10 {
+		return -1
+	}
+	return ((interactionsCount / postsCount) * 100.0 / followersCount) / (5 / math.Log(followersCount))
+}
 
 type UsersCache struct {
 	redisClient *redis.Client
@@ -23,50 +43,57 @@ func NewUsersCache(redisConnection *redis.Client, expiration time.Duration) User
 	}
 }
 
-func (c *UsersCache) AddUser(user models.User) {
-	bytes, err := json.Marshal(user)
-	if err == nil {
-		ctx := context.Background()
-		c.redisClient.HSet(ctx, UsersCacheRedisKey, user.Did, bytes)
-		c.redisClient.HExpire(ctx, UsersCacheRedisKey, c.expiration, user.Did)
-	}
-}
-
 func (c *UsersCache) DeleteUser(did string) {
-	c.redisClient.HDel(context.Background(), UsersCacheRedisKey, did)
+	ctx := context.Background()
+	c.redisClient.HDel(ctx, UsersFollowersCountCacheRedisKey, did)
+	c.redisClient.HDel(ctx, UsersFollowsCountCacheRedisKey, did)
+	c.redisClient.HDel(ctx, UsersPostsCountCacheRedisKey, did)
+	c.redisClient.HDel(ctx, UsersInteractionsCountCacheRedisKey, did)
 }
 
 func (c *UsersCache) DeleteUsers(dids []string) {
-	c.redisClient.HDel(context.Background(), UsersCacheRedisKey, dids...)
+	ctx := context.Background()
+	c.redisClient.HDel(ctx, UsersFollowersCountCacheRedisKey, dids...)
+	c.redisClient.HDel(ctx, UsersFollowsCountCacheRedisKey, dids...)
+	c.redisClient.HDel(ctx, UsersPostsCountCacheRedisKey, dids...)
+	c.redisClient.HDel(ctx, UsersInteractionsCountCacheRedisKey, dids...)
 }
 
-func (c *UsersCache) GetUser(did string) (models.User, bool) {
-	val, err := c.redisClient.HGet(
-		context.Background(),
-		UsersCacheRedisKey,
-		did,
-	).Result()
-	if err != nil {
-		return models.User{}, false
-	}
+func (c *UsersCache) GetUserStatistics(did string) UserStatistics {
+	ctx := context.Background()
 
-	var user models.User
-	err = json.Unmarshal([]byte(val), &user)
-	if err != nil {
-		log.Errorf("Error unmarshalling post: %s", err)
-		return models.User{}, false
+	followersCount, _ := c.redisClient.HGet(ctx, UsersFollowersCountCacheRedisKey, did).Int64()
+	followsCount, _ := c.redisClient.HGet(ctx, UsersFollowsCountCacheRedisKey, did).Int64()
+	postsCount, _ := c.redisClient.HGet(ctx, UsersPostsCountCacheRedisKey, did).Int64()
+	interactionsCount, _ := c.redisClient.HGet(ctx, UsersInteractionsCountCacheRedisKey, did).Int64()
+
+	return UserStatistics{
+		Did:               did,
+		FollowersCount:    followersCount,
+		FollowsCount:      followsCount,
+		PostsCount:        postsCount,
+		InteractionsCount: interactionsCount,
 	}
-	return user, false
 }
 
-func (c *UsersCache) UpdateUserCounts(did string, followsDelta int64, followersDelta int64, postsDelta int64) {
-	// TODO Deal with race conditions... (HINCRBY?)
-	user, ok := c.GetUser(did)
-	if !ok {
-		return
+func (c *UsersCache) UpdateUserStatistics(
+	did string,
+	followsDelta int64,
+	followersDelta int64,
+	postsDelta int64,
+	interactionsDelta int64,
+) {
+	ctx := context.Background()
+
+	for redisKey, delta := range map[string]int64{
+		UsersFollowersCountCacheRedisKey:    followersDelta,
+		UsersFollowsCountCacheRedisKey:      followsDelta,
+		UsersPostsCountCacheRedisKey:        postsDelta,
+		UsersInteractionsCountCacheRedisKey: interactionsDelta,
+	} {
+		if delta != 0 {
+			c.redisClient.HIncrBy(ctx, redisKey, did, delta)
+			c.redisClient.HExpire(ctx, redisKey, c.expiration, did)
+		}
 	}
-	user.FollowsCount += followsDelta
-	user.FollowersCount += followersDelta
-	user.PostsCount += postsDelta
-	c.AddUser(user)
 }

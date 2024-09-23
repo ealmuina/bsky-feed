@@ -1,6 +1,7 @@
 package algorithms
 
 import (
+	"bsky/storage/cache"
 	db "bsky/storage/db/sqlc"
 	"bsky/storage/models"
 	"context"
@@ -12,7 +13,7 @@ type LanguageAlgorithm struct {
 	languageCode string
 }
 
-func (a *LanguageAlgorithm) AcceptsPost(post models.Post, _ models.User) (ok bool, reason map[string]string) {
+func (a *LanguageAlgorithm) AcceptsPost(post models.Post, _ cache.UserStatistics) (ok bool, reason map[string]string) {
 	return post.Language == a.languageCode && post.ReplyRoot == "", nil
 }
 

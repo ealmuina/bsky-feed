@@ -129,8 +129,7 @@ FROM posts
          INNER JOIN users u ON posts.author_did = u.did
 WHERE language = $1
   AND reply_root IS NULL
-  AND u.followers_count > 300
-  AND u.engagement_factor > 1
+  AND u.followers_count > 1000
   AND rank < $2
 ORDER BY rank DESC
 LIMIT $3

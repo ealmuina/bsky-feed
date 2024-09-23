@@ -19,15 +19,36 @@ type BulkCreateInteractionsParams struct {
 	CreatedAt pgtype.Timestamp
 }
 
-const bulkDeleteInteractions = `-- name: BulkDeleteInteractions :exec
+const bulkDeleteInteractions = `-- name: BulkDeleteInteractions :many
 DELETE
 FROM interactions
 WHERE uri = ANY ($1::VARCHAR[])
+RETURNING uri, post_uri
 `
 
-func (q *Queries) BulkDeleteInteractions(ctx context.Context, dollar_1 []string) error {
-	_, err := q.db.Exec(ctx, bulkDeleteInteractions, dollar_1)
-	return err
+type BulkDeleteInteractionsRow struct {
+	Uri     string
+	PostUri string
+}
+
+func (q *Queries) BulkDeleteInteractions(ctx context.Context, dollar_1 []string) ([]BulkDeleteInteractionsRow, error) {
+	rows, err := q.db.Query(ctx, bulkDeleteInteractions, dollar_1)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []BulkDeleteInteractionsRow
+	for rows.Next() {
+		var i BulkDeleteInteractionsRow
+		if err := rows.Scan(&i.Uri, &i.PostUri); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const deleteOldInteractions = `-- name: DeleteOldInteractions :exec
