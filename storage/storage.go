@@ -70,7 +70,7 @@ func NewManager(dbConnection *pgxpool.Pool, redisConnection *redis.Client) *Mana
 		interactionsToDelete:      make([]string, 0, InteractionsToDeleteBulkSize),
 	}
 	storageManager.loadUsersCreated()
-	go storageManager.loadUsersFollows()
+	storageManager.loadUsersFollows()
 	storageManager.initializeTimelines()
 	storageManager.initializeAlgorithms()
 	return &storageManager
