@@ -537,14 +537,8 @@ func (m *Manager) loadUsersFollows() {
 		return
 	}
 
-	var wg sync.WaitGroup
-
 	for i := int64(0); i < totalUsers; i += batchSize {
-		wg.Add(1)
-
 		go func() {
-			defer wg.Done()
-
 			// Get batch of counts
 			counts, err := m.queries.BatchGetUsersFollows(ctx, db.BatchGetUsersFollowsParams{
 				Offset: int32(i),
@@ -565,6 +559,4 @@ func (m *Manager) loadUsersFollows() {
 			}
 		}()
 	}
-
-	wg.Wait()
 }
