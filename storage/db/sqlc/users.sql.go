@@ -173,11 +173,11 @@ func (q *Queries) GetUserDidsToRefreshStatistics(ctx context.Context) ([]string,
 
 const updateUser = `-- name: UpdateUser :exec
 UPDATE users
-SET handle            = $2,
-    followers_count   = $3,
-    follows_count     = $4,
-    posts_count       = $5,
-    last_update       = $6
+SET handle          = $2,
+    followers_count = $3,
+    follows_count   = $4,
+    posts_count     = $5,
+    last_update     = $6
 WHERE did = $1
 `
 
