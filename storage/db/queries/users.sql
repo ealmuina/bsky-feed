@@ -47,3 +47,7 @@ SELECT users.did
 FROM users
 WHERE last_update IS NULL
    OR last_update < current_timestamp - interval '30 days';
+
+-- name: GetUsersFollows :many
+SELECT did, followers_count, follows_count
+FROM users;

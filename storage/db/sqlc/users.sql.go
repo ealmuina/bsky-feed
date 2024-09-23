@@ -171,6 +171,37 @@ func (q *Queries) GetUserDidsToRefreshStatistics(ctx context.Context) ([]string,
 	return items, nil
 }
 
+const getUsersFollows = `-- name: GetUsersFollows :many
+SELECT did, followers_count, follows_count
+FROM users
+`
+
+type GetUsersFollowsRow struct {
+	Did            string
+	FollowersCount pgtype.Int4
+	FollowsCount   pgtype.Int4
+}
+
+func (q *Queries) GetUsersFollows(ctx context.Context) ([]GetUsersFollowsRow, error) {
+	rows, err := q.db.Query(ctx, getUsersFollows)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetUsersFollowsRow
+	for rows.Next() {
+		var i GetUsersFollowsRow
+		if err := rows.Scan(&i.Did, &i.FollowersCount, &i.FollowsCount); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const updateUser = `-- name: UpdateUser :exec
 UPDATE users
 SET handle          = $2,

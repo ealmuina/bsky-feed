@@ -76,6 +76,12 @@ func (c *UsersCache) GetUserStatistics(did string) UserStatistics {
 	}
 }
 
+func (c *UsersCache) SetUserFollows(did string, followersCount int64, followsCount int64) {
+	ctx := context.Background()
+	c.redisClient.HSet(ctx, UsersFollowersCountCacheRedisKey, did, followersCount)
+	c.redisClient.HSet(ctx, UsersFollowsCountCacheRedisKey, did, followsCount)
+}
+
 func (c *UsersCache) UpdateUserStatistics(
 	did string,
 	followsDelta int64,

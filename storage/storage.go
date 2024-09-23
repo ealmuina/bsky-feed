@@ -70,6 +70,7 @@ func NewManager(dbConnection *pgxpool.Pool, redisConnection *redis.Client) *Mana
 		interactionsToDelete:      make([]string, 0, InteractionsToDeleteBulkSize),
 	}
 	storageManager.loadUsersCreated()
+	storageManager.loadUsersFollows()
 	storageManager.initializeTimelines()
 	storageManager.initializeAlgorithms()
 	return &storageManager
@@ -523,5 +524,21 @@ func (m *Manager) loadUsersCreated() {
 
 	for _, did := range dids {
 		m.usersCreated.Store(did, true)
+	}
+}
+
+func (m *Manager) loadUsersFollows() {
+	counts, err := m.queries.GetUsersFollows(context.Background())
+	if err != nil {
+		log.Error(err)
+		return
+	}
+
+	for _, userCounts := range counts {
+		m.usersCache.SetUserFollows(
+			userCounts.Did,
+			int64(userCounts.FollowersCount.Int32),
+			int64(userCounts.FollowsCount.Int32),
+		)
 	}
 }
