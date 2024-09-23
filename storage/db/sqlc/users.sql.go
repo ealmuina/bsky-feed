@@ -59,6 +59,44 @@ func (q *Queries) AddUserPosts(ctx context.Context, arg AddUserPostsParams) erro
 	return err
 }
 
+const batchGetUsersFollows = `-- name: BatchGetUsersFollows :many
+SELECT did, followers_count, follows_count
+FROM users
+ORDER BY did
+OFFSET $1 LIMIT $2
+`
+
+type BatchGetUsersFollowsParams struct {
+	Offset int32
+	Limit  int32
+}
+
+type BatchGetUsersFollowsRow struct {
+	Did            string
+	FollowersCount pgtype.Int4
+	FollowsCount   pgtype.Int4
+}
+
+func (q *Queries) BatchGetUsersFollows(ctx context.Context, arg BatchGetUsersFollowsParams) ([]BatchGetUsersFollowsRow, error) {
+	rows, err := q.db.Query(ctx, batchGetUsersFollows, arg.Offset, arg.Limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []BatchGetUsersFollowsRow
+	for rows.Next() {
+		var i BatchGetUsersFollowsRow
+		if err := rows.Scan(&i.Did, &i.FollowersCount, &i.FollowsCount); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const createUser = `-- name: CreateUser :exec
 INSERT INTO users (did, handle, followers_count, follows_count, posts_count, last_update)
 VALUES ($1, $2, $3, $4, $5, $6)
@@ -171,35 +209,16 @@ func (q *Queries) GetUserDidsToRefreshStatistics(ctx context.Context) ([]string,
 	return items, nil
 }
 
-const getUsersFollows = `-- name: GetUsersFollows :many
-SELECT did, followers_count, follows_count
+const getUsersCount = `-- name: GetUsersCount :one
+SELECT COUNT(*)
 FROM users
 `
 
-type GetUsersFollowsRow struct {
-	Did            string
-	FollowersCount pgtype.Int4
-	FollowsCount   pgtype.Int4
-}
-
-func (q *Queries) GetUsersFollows(ctx context.Context) ([]GetUsersFollowsRow, error) {
-	rows, err := q.db.Query(ctx, getUsersFollows)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []GetUsersFollowsRow
-	for rows.Next() {
-		var i GetUsersFollowsRow
-		if err := rows.Scan(&i.Did, &i.FollowersCount, &i.FollowsCount); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
+func (q *Queries) GetUsersCount(ctx context.Context) (int64, error) {
+	row := q.db.QueryRow(ctx, getUsersCount)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
 }
 
 const updateUser = `-- name: UpdateUser :exec

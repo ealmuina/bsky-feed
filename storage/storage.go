@@ -528,17 +528,43 @@ func (m *Manager) loadUsersCreated() {
 }
 
 func (m *Manager) loadUsersFollows() {
-	counts, err := m.queries.GetUsersFollows(context.Background())
+	batchSize := int64(1000)
+	ctx := context.Background()
+
+	totalUsers, err := m.queries.GetUsersCount(ctx)
 	if err != nil {
-		log.Error(err)
+		log.Errorf("Error getting users count: %v", err)
 		return
 	}
 
-	for _, userCounts := range counts {
-		m.usersCache.SetUserFollows(
-			userCounts.Did,
-			int64(userCounts.FollowersCount.Int32),
-			int64(userCounts.FollowsCount.Int32),
-		)
+	var wg sync.WaitGroup
+
+	for i := int64(0); i < totalUsers; i += batchSize {
+		wg.Add(1)
+
+		go func() {
+			defer wg.Done()
+
+			// Get batch of counts
+			counts, err := m.queries.BatchGetUsersFollows(ctx, db.BatchGetUsersFollowsParams{
+				Offset: int32(i),
+				Limit:  int32(batchSize),
+			})
+			if err != nil {
+				log.Errorf("Error getting users follows: %v", err)
+				return
+			}
+
+			// Process batch
+			for _, userCounts := range counts {
+				m.usersCache.SetUserFollows(
+					userCounts.Did,
+					int64(userCounts.FollowersCount.Int32),
+					int64(userCounts.FollowsCount.Int32),
+				)
+			}
+		}()
 	}
+
+	wg.Wait()
 }
