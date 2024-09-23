@@ -531,11 +531,6 @@ func (m *Manager) loadUsersCreated() {
 }
 
 func (m *Manager) loadUsersFollows() {
-	// Execute only when counts have not been gathered before
-	if !m.usersCache.RequiresReload() {
-		return
-	}
-
 	counts, err := m.queries.GetUsersFollows(context.Background())
 	if err != nil {
 		log.Errorf("Error getting users follows: %v", err)
