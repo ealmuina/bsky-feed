@@ -486,6 +486,9 @@ func (m *Manager) UpdateCursor(service string, cursor int64) {
 }
 
 func (m *Manager) UpdateUser(updatedUser models.User) {
+	// Update on cache
+	m.usersCache.SetUserFollows(updatedUser.Did, updatedUser.FollowersCount, updatedUser.FollowsCount)
+
 	// Update on DB
 	err := m.queries.UpdateUser(
 		context.Background(),
