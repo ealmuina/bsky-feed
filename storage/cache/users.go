@@ -76,6 +76,10 @@ func (c *UsersCache) GetUserStatistics(did string) UserStatistics {
 	}
 }
 
+func (c *UsersCache) RequiresReload() bool {
+	return c.redisClient.Exists(context.Background(), UsersFollowersCountCacheRedisKey).Val() > 0
+}
+
 func (c *UsersCache) SetUserFollows(did string, followersCount int64, followsCount int64) {
 	ctx := context.Background()
 	c.redisClient.HSet(ctx, UsersFollowersCountCacheRedisKey, did, followersCount)

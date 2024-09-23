@@ -531,6 +531,11 @@ func (m *Manager) loadUsersCreated() {
 }
 
 func (m *Manager) loadUsersFollows() {
+	// Execute only when counts have not been gathered before
+	if !m.usersCache.RequiresReload() {
+		return
+	}
+
 	batchSize := int64(1000)
 	ctx := context.Background()
 
