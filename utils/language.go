@@ -8,9 +8,10 @@ import (
 )
 
 const UserLanguageConfidenceThreshold = 0.15
-const ModelLanguageConfidenceThreshold = 0.7
+const ModelLanguageConfidenceThreshold = 0.85
 
 var RestrictedLanguages = []string{
+	"ca",
 	"eu",
 	"gl",
 }
