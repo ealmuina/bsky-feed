@@ -10,6 +10,7 @@ var detectTests = []struct {
 	languages []string
 	expected  string
 }{
+	{"a próxima lata vo ver se abro com a garganta 😃", []string{"pt"}, ""},
 	{"voz #457: GENTE BORA MALDADY\n\nvoz #618: calma véi qué isso tá maluca?", []string{"pt"}, ""},
 	{"Hola mundo!", []string{"es"}, "es"},
 	{"A hipocrisia e a corrupçãp andam de mãos dadas. O pecuarista destrói o Pantanal para criar gado que é comprado por grandes frigoríficos. E seguem todos enriquecendo!", []string{"pt"}, "pt"},
