@@ -6,9 +6,9 @@ toolchain go1.23.1
 
 require (
 	github.com/bluesky-social/indigo v0.0.0-20240923000931-01a47d45f3ce
+	github.com/bountylabs/go-fasttext v0.0.0-20200219204537-fd0526b7cfcc
 	github.com/gorilla/websocket v1.5.3
 	github.com/jackc/pgx/v5 v5.7.1
-	github.com/pemistahl/lingua-go v1.4.0
 	github.com/redis/go-redis/v9 v9.6.1
 	github.com/sirupsen/logrus v1.9.3
 	github.com/whyrusleeping/cbor-gen v0.1.3-0.20240904181319-8dc02b38228c
@@ -76,7 +76,6 @@ require (
 	github.com/prometheus/client_model v0.6.1 // indirect
 	github.com/prometheus/common v0.59.1 // indirect
 	github.com/prometheus/procfs v0.15.1 // indirect
-	github.com/shopspring/decimal v1.4.0 // indirect
 	github.com/spaolacci/murmur3 v1.1.0 // indirect
 	github.com/whyrusleeping/cbor v0.0.0-20171005072247-63513f603b11 // indirect
 	gitlab.com/yawning/secp256k1-voi v0.0.0-20230925100816-f2616030848b // indirect

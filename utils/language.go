@@ -1,13 +1,13 @@
 package utils
 
 import (
-	"github.com/pemistahl/lingua-go"
+	"github.com/bountylabs/go-fasttext"
 	"regexp"
 	"slices"
 	"strings"
 )
 
-const UserLanguageConfidenceThreshold = 0.1
+const UserLanguageConfidenceThreshold = 0.15
 const ModelLanguageConfidenceThreshold = 0.7
 
 var RestrictedLanguages = []string{
@@ -16,15 +16,12 @@ var RestrictedLanguages = []string{
 }
 
 type LanguageDetector struct {
-	model *lingua.LanguageDetector
+	model *fasttext.Model
 }
 
 func NewLanguageDetector() *LanguageDetector {
-	model := lingua.NewLanguageDetectorBuilder().
-		FromAllLanguages().
-		WithPreloadedLanguageModels().
-		Build()
-	return &LanguageDetector{&model}
+	model := fasttext.Open("utils/lid.176.bin")
+	return &LanguageDetector{model}
 }
 
 func (d *LanguageDetector) DetectLanguage(text string, userLanguages []string) string {
@@ -48,14 +45,20 @@ func (d *LanguageDetector) DetectLanguage(text string, userLanguages []string) s
 	}
 
 	// Compute language confidence values
-	confidenceValues := (*d.model).ComputeLanguageConfidenceValues(text)
-	languageConfidence := make(map[string]float64)
-	for _, elem := range confidenceValues {
-		langCode := strings.ToLower(elem.Language().IsoCode639_1().String())
-		languageConfidence[langCode] = elem.Value()
+	confidenceValues, err := d.model.Predict(text)
+	if err != nil {
+		return ""
 	}
+
+	languageConfidence := make(map[string]float32)
+	for _, elem := range confidenceValues {
+		langCode := strings.ToLower(elem.Label)
+		langCode = langCode[len(langCode)-2:]
+		languageConfidence[langCode] = elem.Probability
+	}
+
 	bestMatch := confidenceValues[0]
-	bestMatchIso := strings.ToLower(bestMatch.Language().IsoCode639_1().String())
+	bestMatchIso := strings.ToLower(bestMatch.Label[len(bestMatch.Label)-2:])
 
 	// Confirm user tag if one of these is met:
 	// - user only tagged one language, and it's the one with the highest confidence
@@ -75,7 +78,7 @@ func (d *LanguageDetector) DetectLanguage(text string, userLanguages []string) s
 	// No user language was confirmed
 	// Set model-detected language if confidence is higher than ModelLanguageConfidenceThreshold
 	// Do not accept results from RestrictedLanguages
-	if bestMatch.Value() > ModelLanguageConfidenceThreshold && !slices.Contains(RestrictedLanguages, bestMatchIso) {
+	if bestMatch.Probability > ModelLanguageConfidenceThreshold && !slices.Contains(RestrictedLanguages, bestMatchIso) {
 		return bestMatchIso
 	}
 
