@@ -7,8 +7,8 @@ import (
 	"strings"
 )
 
-const UserLanguageConfidenceThreshold = 0.1
-const ModelLanguageConfidenceThreshold = 0.85
+const UserLanguageConfidenceThreshold = 0.15
+const ModelLanguageConfidenceThreshold = 0.95
 
 var RestrictedLanguages = []string{
 	"ca",
