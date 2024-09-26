@@ -9,6 +9,7 @@ require (
 	github.com/bountylabs/go-fasttext v0.0.0-20200219204537-fd0526b7cfcc
 	github.com/gorilla/websocket v1.5.3
 	github.com/jackc/pgx/v5 v5.7.1
+	github.com/prometheus/client_golang v1.20.4
 	github.com/redis/go-redis/v9 v9.6.1
 	github.com/sirupsen/logrus v1.9.3
 	github.com/whyrusleeping/cbor-gen v0.1.3-0.20240904181319-8dc02b38228c
@@ -58,6 +59,7 @@ require (
 	github.com/jbenet/goprocess v0.1.4 // indirect
 	github.com/jinzhu/inflection v1.0.0 // indirect
 	github.com/jinzhu/now v1.1.5 // indirect
+	github.com/klauspost/compress v1.17.9 // indirect
 	github.com/klauspost/cpuid/v2 v2.2.8 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
 	github.com/minio/sha256-simd v1.0.1 // indirect
@@ -72,7 +74,6 @@ require (
 	github.com/opentracing/opentracing-go v1.2.0 // indirect
 	github.com/petar/GoLLRB v0.0.0-20210522233825-ae3b015fd3e9 // indirect
 	github.com/polydawn/refmt v0.89.1-0.20221221234430-40501e09de1f // indirect
-	github.com/prometheus/client_golang v1.20.4 // indirect
 	github.com/prometheus/client_model v0.6.1 // indirect
 	github.com/prometheus/common v0.59.1 // indirect
 	github.com/prometheus/procfs v0.15.1 // indirect

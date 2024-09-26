@@ -2,6 +2,7 @@ package main
 
 import (
 	"bsky/firehose"
+	"bsky/monitoring"
 	"bsky/server"
 	"bsky/storage"
 	"bsky/tasks"
@@ -9,6 +10,7 @@ import (
 	"context"
 	"fmt"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/redis/go-redis/v9"
 	log "github.com/sirupsen/logrus"
 	"math"
@@ -16,34 +18,13 @@ import (
 	"os"
 )
 
-func runBackgroundTasks(storageManager *storage.Manager) {
-	// DB cleanup
-	go utils.Recoverer(math.MaxInt, 1, func() {
-		tasks.CleanOldData(storageManager)
-	})
-
-	// Firehose consumer
-	go utils.Recoverer(math.MaxInt, 1, func() {
-		subscription := firehose.NewSubscription(
-			"bsky_feeds",
-			url.URL{
-				Scheme: "wss",
-				Host:   "bsky.network",
-				Path:   "/xrpc/com.atproto.sync.subscribeRepos",
-			},
-			storageManager,
-		)
-		subscription.Run()
-	})
-
-	// Statistics updater
-	go utils.Recoverer(math.MaxInt, 1, func() {
-		statisticsUpdater, err := tasks.NewStatisticsUpdater(storageManager)
-		if err != nil {
-			panic(err)
-		}
-		statisticsUpdater.Run()
-	})
+func init() {
+	// Register Prometheus metrics
+	prometheus.MustRegister(
+		monitoring.HttpRequestsTotal,
+		monitoring.HttpRequestDuration,
+		monitoring.ActiveConnections,
+	)
 }
 
 func main() {
@@ -81,4 +62,34 @@ func main() {
 	// Run server
 	s := server.NewServer(storageManager)
 	s.Run()
+}
+
+func runBackgroundTasks(storageManager *storage.Manager) {
+	// DB cleanup
+	go utils.Recoverer(math.MaxInt, 1, func() {
+		tasks.CleanOldData(storageManager)
+	})
+
+	// Firehose consumer
+	go utils.Recoverer(math.MaxInt, 1, func() {
+		subscription := firehose.NewSubscription(
+			"bsky_feeds",
+			url.URL{
+				Scheme: "wss",
+				Host:   "bsky.network",
+				Path:   "/xrpc/com.atproto.sync.subscribeRepos",
+			},
+			storageManager,
+		)
+		subscription.Run()
+	})
+
+	// Statistics updater
+	go utils.Recoverer(math.MaxInt, 1, func() {
+		statisticsUpdater, err := tasks.NewStatisticsUpdater(storageManager)
+		if err != nil {
+			panic(err)
+		}
+		statisticsUpdater.Run()
+	})
 }

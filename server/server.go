@@ -1,12 +1,14 @@
 package server
 
 import (
+	"bsky/monitoring"
 	"bsky/server/feeds"
 	"bsky/storage"
 	"bsky/storage/algorithms"
 	"bsky/utils"
 	"errors"
 	"fmt"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"net/http"
 	"os"
 	"strconv"
@@ -29,11 +31,16 @@ func NewServer(storageManager *storage.Manager) Server {
 }
 
 func (s *Server) Run() {
-	http.HandleFunc("/.well-known/did.json", s.getDidJson)
-	http.HandleFunc("/xrpc/app.bsky.feed.describeFeedGenerator", s.getDescribeFeedGenerator)
-	http.HandleFunc("/xrpc/app.bsky.feed.getFeedSkeleton", s.getFeedSkeleton)
+	mux := http.NewServeMux()
 
-	err := http.ListenAndServe(":3333", nil)
+	mux.HandleFunc("/.well-known/did.json", s.getDidJson)
+	mux.HandleFunc("/xrpc/app.bsky.feed.describeFeedGenerator", s.getDescribeFeedGenerator)
+	mux.HandleFunc("/xrpc/app.bsky.feed.getFeedSkeleton", s.getFeedSkeleton)
+	mux.Handle("/metrics", promhttp.Handler())
+
+	wrappedMux := monitoring.NewPrometheusMiddleware(mux)
+
+	err := http.ListenAndServe(":3333", wrappedMux)
 	if errors.Is(err, http.ErrServerClosed) {
 		fmt.Printf("server closed\n")
 	} else if err != nil {
