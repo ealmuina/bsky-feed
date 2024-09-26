@@ -24,6 +24,8 @@ func init() {
 		monitoring.HttpRequestsTotal,
 		monitoring.HttpRequestDuration,
 		monitoring.ActiveConnections,
+		monitoring.FirehoseEvents,
+		monitoring.FirehoseEventProcessingDuration,
 	)
 }
 

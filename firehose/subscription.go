@@ -1,12 +1,14 @@
 package firehose
 
 import (
+	"bsky/monitoring/middleware"
 	"bsky/storage"
 	"bsky/storage/models"
 	"bsky/utils"
 	"bytes"
 	"context"
 	"fmt"
+	"github.com/bluesky-social/indigo/api/atproto"
 	appbsky "github.com/bluesky-social/indigo/api/bsky"
 	"github.com/bluesky-social/indigo/events"
 	"github.com/bluesky-social/indigo/events/schedulers/parallel"
@@ -25,12 +27,13 @@ import (
 const SchedulerMaxConcurrency = 8
 
 type Subscription struct {
-	serviceName      string
-	url              url.URL
-	connection       *websocket.Conn
-	languageDetector *utils.LanguageDetector
-	hasher           hash.Hash32
-	storageManager   *storage.Manager
+	serviceName       string
+	url               url.URL
+	connection        *websocket.Conn
+	languageDetector  *utils.LanguageDetector
+	hasher            hash.Hash32
+	storageManager    *storage.Manager
+	metricsMiddleware *middleware.FirehoseMiddleware
 }
 
 func getConnection(url url.URL) *websocket.Conn {
@@ -50,7 +53,7 @@ func NewSubscription(
 		url.RawQuery = fmt.Sprintf("cursor=%v", cursor)
 	}
 
-	return &Subscription{
+	s := &Subscription{
 		serviceName:      serviceName,
 		url:              url,
 		connection:       getConnection(url),
@@ -58,6 +61,8 @@ func NewSubscription(
 		hasher:           fnv.New32a(),
 		storageManager:   storageManager,
 	}
+	s.metricsMiddleware = middleware.NewFirehoseMiddleware(s.processOperation)
+	return s
 }
 
 func (s *Subscription) Run() {
@@ -107,26 +112,9 @@ func (s *Subscription) getHandle() func(context.Context, *events.XRPCStreamEvent
 			}
 
 			for _, op := range commit.Ops {
-				uri := fmt.Sprintf("at://%s/%s", commit.Repo, op.Path)
-
-				switch repomgr.EventKind(op.Action) {
-				case repomgr.EvtKindCreateRecord:
-					_, record, err := rr.GetRecord(ctx, op.Path)
-					if err != nil {
-						log.Errorf("Error getting record: %s", err)
-						return err
-					}
-
-					if err := s.handleRecordCreate(commit.Repo, uri, record); err != nil {
-						log.Errorf("Error handling create record: %s", err)
-						return err
-					}
-				case repomgr.EvtKindDeleteRecord:
-					recordType := strings.Split(op.Path, "/")[0]
-					if err := s.handleRecordDelete(uri, recordType); err != nil {
-						log.Errorf("Error handling delete record: %s", err)
-						return err
-					}
+				err = s.metricsMiddleware.HandleOperation(ctx, rr, op, commit.Repo)
+				if err != nil {
+					return err
 				}
 			}
 		}
@@ -281,5 +269,36 @@ func (s *Subscription) handleRecordDelete(uri string, recordType string) error {
 	case "app.bsky.graph.follow":
 		s.storageManager.DeleteFollow(uri)
 	}
+	return nil
+}
+
+func (s *Subscription) processOperation(
+	ctx context.Context,
+	rr *repo.Repo,
+	op *atproto.SyncSubscribeRepos_RepoOp,
+	commitRepo string,
+) error {
+	uri := fmt.Sprintf("at://%s/%s", commitRepo, op.Path)
+
+	switch repomgr.EventKind(op.Action) {
+	case repomgr.EvtKindCreateRecord:
+		_, record, err := rr.GetRecord(ctx, op.Path)
+		if err != nil {
+			log.Errorf("Error getting record: %s", err)
+			return err
+		}
+
+		if err := s.handleRecordCreate(commitRepo, uri, record); err != nil {
+			log.Errorf("Error handling create record: %s", err)
+			return err
+		}
+	case repomgr.EvtKindDeleteRecord:
+		recordType := strings.Split(op.Path, "/")[0]
+		if err := s.handleRecordDelete(uri, recordType); err != nil {
+			log.Errorf("Error handling delete record: %s", err)
+			return err
+		}
+	}
+
 	return nil
 }

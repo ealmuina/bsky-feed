@@ -1,7 +1,7 @@
 package server
 
 import (
-	"bsky/monitoring"
+	"bsky/monitoring/middleware"
 	"bsky/server/feeds"
 	"bsky/storage"
 	"bsky/storage/algorithms"
@@ -38,7 +38,7 @@ func (s *Server) Run() {
 	mux.HandleFunc("/xrpc/app.bsky.feed.getFeedSkeleton", s.getFeedSkeleton)
 	mux.Handle("/metrics", promhttp.Handler())
 
-	wrappedMux := monitoring.NewPrometheusMiddleware(mux)
+	wrappedMux := middleware.NewServerMiddleware(mux)
 
 	err := http.ListenAndServe(":3333", wrappedMux)
 	if errors.Is(err, http.ErrServerClosed) {
