@@ -202,6 +202,8 @@ func (m *Manager) CreatePost(post models.Post) {
 	}
 
 	// Store in cache (exclude replies)
+	// *Done at this step so the post is available in cache as soon as possible
+	// instead of waiting until bulk creation
 	if post.ReplyRoot == "" {
 		m.postsCache.AddPost(post)
 	}
@@ -248,10 +250,12 @@ func (m *Manager) CreatePost(post models.Post) {
 					PostsCount: pgtype.Int4{Int32: 1, Valid: true},
 				})
 				if err == nil {
-					// Update cache
-					m.usersCache.UpdateUserStatistics(
-						post.AuthorDid, 0, 0, 1, 0,
-					)
+					// Update cache (exclude replies)
+					if !post.ReplyRoot.Valid {
+						m.usersCache.UpdateUserStatistics(
+							post.AuthorDid, 0, 0, 1, 0,
+						)
+					}
 				}
 			}
 
@@ -359,9 +363,6 @@ func (m *Manager) DeleteInteraction(uri string) {
 func (m *Manager) DeletePost(uri string) {
 	ctx := context.Background()
 
-	// Delete from cache
-	m.postsCache.DeletePost(uri)
-
 	m.postsToDeleteMutex.Lock()
 	defer m.postsToDeleteMutex.Unlock()
 
@@ -393,10 +394,13 @@ func (m *Manager) DeletePost(uri string) {
 				})
 				if err == nil {
 					// Update caches
-					postInteractions := m.postsCache.GetPostInteractions(post.AuthorDid)
-					m.usersCache.UpdateUserStatistics(
-						post.AuthorDid, 0, 0, -1, -postInteractions,
-					)
+					deleted := m.postsCache.DeletePost(uri)
+					if deleted {
+						postInteractions := m.postsCache.GetPostInteractions(post.AuthorDid)
+						m.usersCache.UpdateUserStatistics(
+							post.AuthorDid, 0, 0, -1, -postInteractions,
+						)
+					}
 				}
 			}
 

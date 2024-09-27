@@ -41,9 +41,10 @@ func (c *PostsCache) DeleteInteraction(postUri string) {
 	c.redisClient.HIncrBy(ctx, PostInteractionsCountCacheRedisKey, postUri, -1)
 }
 
-func (c *PostsCache) DeletePost(uri string) {
-	c.redisClient.HDel(context.Background(), PostAuthorCacheRedisKey, uri)
+func (c *PostsCache) DeletePost(uri string) bool {
+	result := c.redisClient.HDel(context.Background(), PostAuthorCacheRedisKey, uri)
 	c.redisClient.HDel(context.Background(), PostInteractionsCountCacheRedisKey, uri)
+	return result.Val() != 0
 }
 
 func (c *PostsCache) DeletePosts(uris []string) {
