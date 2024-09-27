@@ -88,9 +88,8 @@ func (d *LanguageDetector) DetectLanguage(text string, userLanguages []string) s
 
 func cleanup(text string) string {
 	patterns := [][]string{
+		{`[\(\)\!¡\?¿]+`, ""},   // remove unnecessary symbols
 		{`\.[\.\!\?\s]+`, ". "}, //collapse consecutive dots
-		{`\?[\.\!\?\s]+`, ". "}, //collapse consecutive ?
-		{`\![\.\!\?\s]+`, ". "}, //collapse consecutive !
 		{`\S+\.\S+`, ""},        // remove urls
 		{`@(\S*)`, ""},          // remove handles
 		{`#(\S*)`, ""},          // remove hashtags
