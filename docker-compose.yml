@@ -10,24 +10,49 @@ services:
     env_file:
       - .env
     depends_on:
-      - db
-      - redis
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
+
   db:
     image: postgres:latest
     environment:
       - POSTGRES_USER=postgres
       - POSTGRES_PASSWORD=postgres
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -d postgres -U postgres" ]
+      interval: 5s
+      timeout: 5s
+      retries: 5
     ports:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./storage/db/db_init:/docker-entrypoint-initdb.d
+    restart: unless-stopped
+
+  db-exporter:
+    image: prometheuscommunity/postgres-exporter
+    ports:
+      - "9187:9187"
+    environment:
+      DATA_SOURCE_NAME: "postgres://postgres:postgres@db/bsky_feeds?sslmode=disable"
+    depends_on:
+      prometheus:
+        condition: service_started
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+
   redis:
     image: redis:latest
     ports:
       - "6379:6379"
     volumes:
       - redis_data:/data
+    restart: unless-stopped
+
   prometheus:
     image: prom/prometheus:latest
     command:
@@ -40,7 +65,8 @@ services:
     volumes:
       - ./prometheus.yml:/etc/prometheus/prometheus.yml
       - prometheus_data:/prometheus
-    restart: always
+    restart: unless-stopped
+
   grafana:
     image: grafana/grafana:latest
     container_name: grafana
@@ -49,6 +75,7 @@ services:
     volumes:
       - grafana_data:/var/lib/grafana
       - ./grafana.ini:/etc/grafana/grafana.ini
+    restart: unless-stopped
 
 volumes:
   postgres_data:
