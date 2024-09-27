@@ -5,6 +5,7 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+	"unicode"
 )
 
 const UserLanguageConfidenceThreshold = 0.15
@@ -37,6 +38,7 @@ func (d *LanguageDetector) DetectLanguage(text string, userLanguages []string) s
 	text = removeEmoji(text)
 	text = cleanup(text)
 	text = strings.TrimSpace(text)
+	text = strings.ToLower(text)
 
 	if text == "" {
 		if len(userLanguages) > 0 {
@@ -88,15 +90,29 @@ func (d *LanguageDetector) DetectLanguage(text string, userLanguages []string) s
 
 func cleanup(text string) string {
 	patterns := [][]string{
-		{`[\(\)\!¡\?¿]+`, ""},   // remove unnecessary symbols
-		{`\.[\.\!\?\s]+`, ". "}, //collapse consecutive dots
-		{`\S+\.\S+`, ""},        // remove urls
-		{`@(\S*)`, ""},          // remove handles
-		{`#(\S*)`, ""},          // remove hashtags
+		{`\.(\.+)`, ". "}, // collapse consecutive dots
+		{`\S+\.\S+`, ""},  // remove urls
+		{`@(\S*)`, ""},    // remove handles
+		{`#(\S*)`, ""},    // remove hashtags
 	}
 	for _, pattern := range patterns {
 		text = regexp.MustCompile(pattern[0]).ReplaceAllString(text, pattern[1])
 	}
+
+	// Remove non-alphabetic characters
+	var sb strings.Builder
+	for _, r := range text {
+		if unicode.IsLetter(r) {
+			sb.WriteRune(r)
+		} else {
+			sb.WriteRune(' ')
+		}
+	}
+	text = sb.String()
+
+	// Collapse consecutive spaces
+	text = regexp.MustCompile(`\s+`).ReplaceAllString(text, " ")
+
 	return text
 }
 
