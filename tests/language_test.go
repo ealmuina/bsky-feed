@@ -10,7 +10,7 @@ var detectTests = []struct {
 	languages []string
 	expected  string
 }{
-	//{"냥🐾 (멍!)\n\n#JAEMIN #NCT #NCTDREAM\n\nvm.tiktok.com/ZMh6aJ6dh/.", []string{"pt"}, ""},
+	{"냥🐾 (멍!)\n\n#JAEMIN #NCT #NCTDREAM\n\nvm.tiktok.com/ZMh6aJ6dh/.", []string{"pt"}, ""},
 	{"Desde sempre..", []string{"pt"}, "pt"},
 	{"Caso isolado N° etc", []string{"pt"}, ""},
 	{"a próxima lata vo ver se abro com a garganta 😃", []string{"pt"}, ""},
