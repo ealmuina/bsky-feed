@@ -10,6 +10,7 @@ var detectTests = []struct {
 	languages []string
 	expected  string
 }{
+	{"Desde sempre..", []string{"pt"}, "pt"},
 	{"Caso isolado N° etc", []string{"pt"}, ""},
 	{"a próxima lata vo ver se abro com a garganta 😃", []string{"pt"}, ""},
 	{"voz #457: GENTE BORA MALDADY\n\nvoz #618: calma véi qué isso tá maluca?", []string{"pt"}, ""},

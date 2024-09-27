@@ -35,7 +35,7 @@ func (d *LanguageDetector) DetectLanguage(text string, userLanguages []string) s
 
 	text = strings.Replace(text, "\n", ". ", -1)
 	text = removeEmoji(text)
-	text = removeLinks(text)
+	text = cleanup(text)
 	text = strings.TrimSpace(text)
 
 	if text == "" {
@@ -86,6 +86,21 @@ func (d *LanguageDetector) DetectLanguage(text string, userLanguages []string) s
 	return ""
 }
 
+func cleanup(text string) string {
+	patterns := [][]string{
+		{`\.[\.\!\?\s]+`, ". "}, //collapse consecutive dots
+		{`\?[\.\!\?\s]+`, ". "}, //collapse consecutive ?
+		{`\![\.\!\?\s]+`, ". "}, //collapse consecutive !
+		{`\S+\.\S+`, ""},        // remove urls
+		{`@(\S*)`, ""},          // remove handles
+		{`#(\S*)`, ""},          // remove hashtags
+	}
+	for _, pattern := range patterns {
+		text = regexp.MustCompile(pattern[0]).ReplaceAllString(text, pattern[1])
+	}
+	return text
+}
+
 func removeEmoji(text string) string {
 	// Define a regex pattern that matches emojis
 	emojiPattern := "[" +
@@ -114,17 +129,4 @@ func removeEmoji(text string) string {
 
 	// Replace all emojis with an empty string
 	return re.ReplaceAllString(text, "")
-}
-
-func removeLinks(text string) string {
-	patterns := [][]string{
-		{`\.[\s]+`, ". "}, //collapse consecutive dots
-		{`\S+\.\S+`, ""},  // remove urls
-		{`@(\S*)`, ""},    // remove handles
-		{`#(\S*)`, ""},    // remove hashtags
-	}
-	for _, pattern := range patterns {
-		text = regexp.MustCompile(pattern[0]).ReplaceAllString(text, pattern[1])
-	}
-	return text
 }
