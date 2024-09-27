@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"net/http"
+	_ "net/http/pprof"
 	"os"
 	"strconv"
 	"strings"
@@ -36,7 +37,9 @@ func (s *Server) Run() {
 	mux.HandleFunc("/.well-known/did.json", s.getDidJson)
 	mux.HandleFunc("/xrpc/app.bsky.feed.describeFeedGenerator", s.getDescribeFeedGenerator)
 	mux.HandleFunc("/xrpc/app.bsky.feed.getFeedSkeleton", s.getFeedSkeleton)
+
 	mux.Handle("/metrics", promhttp.Handler())
+	mux.Handle("/debug/", http.DefaultServeMux)
 
 	wrappedMux := middleware.NewServerMiddleware(mux)
 
