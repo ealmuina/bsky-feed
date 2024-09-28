@@ -53,15 +53,36 @@ func (q *Queries) BulkDeletePosts(ctx context.Context, uris []string) ([]BulkDel
 	return items, nil
 }
 
-const deleteOldPosts = `-- name: DeleteOldPosts :exec
+const deleteOldPosts = `-- name: DeleteOldPosts :many
 DELETE
 FROM posts
 WHERE posts.created_at < current_timestamp - interval '10 days'
+RETURNING uri, author_did
 `
 
-func (q *Queries) DeleteOldPosts(ctx context.Context) error {
-	_, err := q.db.Exec(ctx, deleteOldPosts)
-	return err
+type DeleteOldPostsRow struct {
+	Uri       string
+	AuthorDid string
+}
+
+func (q *Queries) DeleteOldPosts(ctx context.Context) ([]DeleteOldPostsRow, error) {
+	rows, err := q.db.Query(ctx, deleteOldPosts)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []DeleteOldPostsRow
+	for rows.Next() {
+		var i DeleteOldPostsRow
+		if err := rows.Scan(&i.Uri, &i.AuthorDid); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const deleteUserPosts = `-- name: DeleteUserPosts :exec

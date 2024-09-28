@@ -19,7 +19,6 @@ const PostsToCreateBulkSize = 100
 const InteractionsToCreateBulkSize = 100
 const PostsToDeleteBulkSize = 100
 const InteractionsToDeleteBulkSize = 100
-const DataLifespanDays = 7
 
 type Manager struct {
 	redisConnection *redis.Client
@@ -54,7 +53,7 @@ func NewManager(dbConnection *pgxpool.Pool, redisConnection *redis.Client) *Mana
 		),
 		postsCache: cache.NewPostsCache(
 			redisConnection,
-			7*24*time.Hour, // expire entries after 7 days
+			10*24*time.Hour, // expire entries after 10 days
 		),
 		timelines:  make(map[string]cache.Timeline),
 		algorithms: make(map[string]algorithms.Algorithm),
@@ -88,7 +87,8 @@ func (m *Manager) AddPostToTimeline(timelineName string, post models.Post) {
 func (m *Manager) CleanOldData() {
 	// Clean DB
 	ctx := context.Background()
-	if err := m.queries.DeleteOldPosts(ctx); err != nil {
+	deletedPosts, err := m.queries.DeleteOldPosts(ctx)
+	if err != nil {
 		log.Errorf("Error cleaning old posts: %m", err)
 	}
 	if err := m.queries.DeleteOldInteractions(ctx); err != nil {
@@ -97,8 +97,20 @@ func (m *Manager) CleanOldData() {
 
 	// Clean timelines
 	for _, timeline := range m.timelines {
-		timeline.DeleteExpiredPosts(time.Now().Add(-DataLifespanDays * 24 * time.Hour))
+		timeline.DeleteExpiredPosts(time.Now().Add(-7 * 24 * time.Hour)) // Timelines lifespan of 7 days
 	}
+
+	// Clean caches
+	postUris := make([]string, 0, len(deletedPosts))
+	for _, deletedPost := range deletedPosts {
+		postUris = append(postUris, deletedPost.Uri)
+
+		// Discount from user statistics
+		postInteractions := m.postsCache.GetPostInteractions(deletedPost.Uri)
+		m.usersCache.UpdateUserStatistics(deletedPost.AuthorDid, 0, 0, -1, -postInteractions)
+	}
+	// Delete from posts cache
+	m.postsCache.DeletePosts(postUris)
 }
 
 func (m *Manager) CreateFollow(follow models.Follow) {
