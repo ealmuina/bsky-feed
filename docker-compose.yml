@@ -16,7 +16,7 @@ services:
         condition: service_started
 
   db:
-    image: postgres:latest
+    image: postgres:17
     environment:
       - POSTGRES_USER=postgres
       - POSTGRES_PASSWORD=postgres
