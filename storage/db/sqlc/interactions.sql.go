@@ -54,7 +54,7 @@ func (q *Queries) BulkDeleteInteractions(ctx context.Context, dollar_1 []string)
 const deleteOldInteractions = `-- name: DeleteOldInteractions :exec
 DELETE
 FROM interactions
-WHERE indexed_at < current_timestamp - interval '10 days'
+WHERE created_at < current_timestamp - interval '10 days'
 `
 
 func (q *Queries) DeleteOldInteractions(ctx context.Context) error {
