@@ -23,8 +23,9 @@ var ImplementedAlgorithms = map[string]Algorithm{
 		minFollowers:  500,
 		minEngagement: 1.0,
 	},
-}
-
-var EngagementBasedAlgorithms = map[string]bool{
-	"top_spanish": true,
+	"top_portuguese": &TopLanguageAlgorithm{
+		languageCode:  "pt",
+		minFollowers:  10000,
+		minEngagement: 1.0,
+	},
 }
