@@ -11,6 +11,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
 	log "github.com/sirupsen/logrus"
+	"slices"
 	"sync"
 	"time"
 )
@@ -477,11 +478,20 @@ func (m *Manager) GetTimeline(timelineName string, maxRank float64, limit int64)
 		if !ok {
 			panic(fmt.Sprintf("Could not find algorithm for feed: %s", timelineName))
 		}
-		posts = algorithm.GetPosts(m.queries, maxRank, limit)
-
-		// Add to cache
-		for _, post := range posts {
-			timeline.AddPost(post)
+		dbPosts := algorithm.GetPosts(m.queries, maxRank, limit)
+		for _, post := range dbPosts {
+			if !slices.ContainsFunc(posts, func(post models.Post) bool {
+				for _, p := range posts {
+					if p.Uri == post.Uri {
+						return true
+					}
+				}
+				return false
+			}) {
+				posts = append(posts, post)
+				// Add to cache
+				timeline.AddPost(post)
+			}
 		}
 	}
 
