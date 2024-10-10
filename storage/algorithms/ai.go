@@ -24,12 +24,12 @@ func (a *AiAlgorithm) aiAccepted(text string) bool {
 	aiPassword := os.Getenv("AI_PASSWORD")
 
 	prompt := fmt.Sprintf(
-		"Answer '1' if true or '0' if false, without any further explanation.\n%s: \"%s\"?",
+		"Answer '1' if true or '0' if false, without anything else.\n%s: \"%s\"?",
 		a.prompt,
 		text,
 	)
 	payload, err := json.Marshal(map[string]any{
-		"model":  "phi3.5",
+		"model":  "gemma2",
 		"prompt": prompt,
 		"stream": false,
 		"options": map[string]any{
