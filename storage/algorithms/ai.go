@@ -75,7 +75,7 @@ func (a *AiAlgorithm) aiAccepted(text string) bool {
 		log.Errorf("Error unmarshalling response for AI: %v", err)
 	}
 
-	return bodyMap["response"] == "1"
+	return bodyMap["response"].(string) == "1"
 }
 
 func (a *AiAlgorithm) AcceptsPost(post models.Post, _ cache.UserStatistics) (ok bool, reason map[string]string) {
