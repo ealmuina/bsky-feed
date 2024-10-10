@@ -161,6 +161,7 @@ func (s *Subscription) handleFeedPostCreate(
 		CreatedAt:   createdAt,
 		Language:    language,
 		Rank:        rank,
+		Text:        data.Text,
 	}
 
 	go func() {

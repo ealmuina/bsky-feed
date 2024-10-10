@@ -13,4 +13,5 @@ type Post struct {
 	ReplyParent string
 	ReplyRoot   string
 	Language    string
+	Text        string
 }
