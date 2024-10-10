@@ -30,6 +30,6 @@ var ImplementedAlgorithms = map[string]Algorithm{
 	},
 	"us_election_es": &AiAlgorithm{
 		languageCode: "es",
-		prompt:       "Is this tweet related to the US 2024 election",
+		prompt:       "Is this tweet related to the US 2024 election with a high probability",
 	},
 }
