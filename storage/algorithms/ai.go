@@ -35,6 +35,7 @@ func (a *AiAlgorithm) aiAccepted(text string) bool {
 		"options": map[string]any{
 			"seed": 2024,
 		},
+		"keep_alive": -1, // persist indefinitely in memory
 	})
 	if err != nil {
 		log.Errorf("Error serializing payload for AI: %v", err)
