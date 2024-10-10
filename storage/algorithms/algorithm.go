@@ -28,7 +28,7 @@ var ImplementedAlgorithms = map[string]Algorithm{
 		minFollowers:  10000,
 		minEngagement: 1.0,
 	},
-	"us_election_24_es": &AiAlgorithm{
+	"us_election_es": &AiAlgorithm{
 		languageCode: "es",
 		prompt:       "Is this tweet related to the US 2024 election",
 	},
