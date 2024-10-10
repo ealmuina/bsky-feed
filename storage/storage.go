@@ -53,7 +53,7 @@ func NewManager(dbConnection *pgxpool.Pool, redisConnection *redis.Client) *Mana
 		),
 		postsCache: cache.NewPostsCache(
 			redisConnection,
-			10*24*time.Hour, // expire entries after 10 days
+			7*24*time.Hour, // expire entries after 7 days
 		),
 		timelines:  make(map[string]cache.Timeline),
 		algorithms: make(map[string]algorithms.Algorithm),
@@ -97,7 +97,7 @@ func (m *Manager) CleanOldData() {
 
 	// Clean timelines
 	for _, timeline := range m.timelines {
-		timeline.DeleteExpiredPosts(time.Now().Add(-7 * 24 * time.Hour)) // Timelines lifespan of 7 days
+		timeline.DeleteExpiredPosts(time.Now().Add(-3 * 24 * time.Hour)) // Timelines lifespan of 3 days
 	}
 
 	// Clean caches

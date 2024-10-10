@@ -56,7 +56,7 @@ func (q *Queries) BulkDeletePosts(ctx context.Context, uris []string) ([]BulkDel
 const deleteOldPosts = `-- name: DeleteOldPosts :many
 DELETE
 FROM posts
-WHERE posts.created_at < current_timestamp - interval '10 days'
+WHERE posts.created_at < current_timestamp - interval '7 days'
 RETURNING uri, author_did
 `
 
