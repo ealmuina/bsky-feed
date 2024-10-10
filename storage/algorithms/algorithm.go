@@ -32,4 +32,8 @@ var ImplementedAlgorithms = map[string]Algorithm{
 		languageCode: "es",
 		prompt:       "Is this tweet related to the US 2024 election with a high probability",
 	},
+	"us_election_en": &AiAlgorithm{
+		languageCode: "en",
+		prompt:       "Is this tweet related to the US 2024 election with a high probability",
+	},
 }
