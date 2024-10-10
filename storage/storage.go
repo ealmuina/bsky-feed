@@ -207,12 +207,14 @@ func (m *Manager) CreateInteraction(interaction models.Interaction) error {
 func (m *Manager) CreatePost(post models.Post) {
 	// Add post to corresponding timelines
 	authorStatistics := m.usersCache.GetUserStatistics(post.AuthorDid)
-	for timelineName, algorithm := range m.algorithms {
-		if ok, reason := algorithm.AcceptsPost(post, authorStatistics); ok {
-			post.Reason = reason
-			m.AddPostToTimeline(timelineName, post)
+	go func() {
+		for timelineName, algorithm := range m.algorithms {
+			if ok, reason := algorithm.AcceptsPost(post, authorStatistics); ok {
+				post.Reason = reason
+				m.AddPostToTimeline(timelineName, post)
+			}
 		}
-	}
+	}()
 
 	// Store in cache (exclude replies)
 	// *Done at this step so the post is available in cache as soon as possible
