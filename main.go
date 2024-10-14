@@ -78,8 +78,8 @@ func runBackgroundTasks(storageManager *storage.Manager) {
 			"bsky_feeds",
 			url.URL{
 				Scheme: "wss",
-				Host:   "bsky.network",
-				Path:   "/xrpc/com.atproto.sync.subscribeRepos",
+				Host:   "jetstream1.us-east.bsky.network",
+				Path:   "/subscribe",
 			},
 			storageManager,
 		)

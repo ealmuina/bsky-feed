@@ -5,43 +5,28 @@ import (
 	"bsky/storage"
 	"bsky/storage/models"
 	"bsky/utils"
-	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
-	"github.com/bluesky-social/indigo/api/atproto"
 	appbsky "github.com/bluesky-social/indigo/api/bsky"
-	"github.com/bluesky-social/indigo/events"
-	"github.com/bluesky-social/indigo/events/schedulers/parallel"
-	"github.com/bluesky-social/indigo/repo"
-	"github.com/bluesky-social/indigo/repomgr"
-	"github.com/gorilla/websocket"
+	jsclient "github.com/bluesky-social/jetstream/pkg/client"
+	jsscheduler "github.com/bluesky-social/jetstream/pkg/client/schedulers/sequential"
+	jsmodels "github.com/bluesky-social/jetstream/pkg/models"
 	log "github.com/sirupsen/logrus"
-	typegen "github.com/whyrusleeping/cbor-gen"
 	"hash"
 	"hash/fnv"
+	"log/slog"
 	"math"
 	"net/url"
-	"strings"
 )
-
-const SchedulerMaxConcurrency = 8
 
 type Subscription struct {
 	serviceName       string
 	url               url.URL
-	connection        *websocket.Conn
 	languageDetector  *utils.LanguageDetector
 	hasher            hash.Hash32
 	storageManager    *storage.Manager
 	metricsMiddleware *middleware.FirehoseMiddleware
-}
-
-func getConnection(url url.URL) *websocket.Conn {
-	c, _, err := websocket.DefaultDialer.Dial(url.String(), nil)
-	if err != nil {
-		log.Error(err)
-	}
-	return c
 }
 
 func NewSubscription(
@@ -49,14 +34,9 @@ func NewSubscription(
 	url url.URL,
 	storageManager *storage.Manager,
 ) *Subscription {
-	if cursor := storageManager.GetCursor(serviceName); cursor != 0 {
-		url.RawQuery = fmt.Sprintf("cursor=%v", cursor)
-	}
-
 	s := &Subscription{
 		serviceName:      serviceName,
 		url:              url,
-		connection:       getConnection(url),
 		languageDetector: utils.NewLanguageDetector(),
 		hasher:           fnv.New32a(),
 		storageManager:   storageManager,
@@ -66,84 +46,74 @@ func NewSubscription(
 }
 
 func (s *Subscription) Run() {
-	defer s.close()
-
-	scheduler := parallel.NewScheduler(
-		SchedulerMaxConcurrency,
-		1000,
-		"data_stream",
-		s.getHandle(),
+	client, err := jsclient.NewClient(
+		&jsclient.ClientConfig{
+			Compress:          false,
+			WebsocketURL:      s.url.String(),
+			WantedDids:        []string{},
+			WantedCollections: []string{},
+		},
+		slog.Default(),
+		jsscheduler.NewScheduler("data_stream", slog.Default(), s.getHandle()),
 	)
-
-	for {
-		err := events.HandleRepoStream(
-			context.Background(),
-			s.connection,
-			scheduler,
-		)
-		if err != nil {
-			log.Panic(err)
-		}
-		if recover() != nil {
-			// Reset connection
-			s.connection = getConnection(s.url)
-		}
-	}
-}
-
-func (s *Subscription) close() {
-	err := s.connection.Close()
 	if err != nil {
-		log.Error(err)
+		log.Errorf("Error creating Jetstream client: %v", err)
+	}
+
+	cursor := s.storageManager.GetCursor(s.serviceName)
+	cursorPointer := &cursor
+	if cursor == 0 {
+		cursorPointer = nil
+	}
+	if err := client.ConnectAndRead(context.Background(), cursorPointer); err != nil {
+		log.Errorf("Error connecting to Jetstream client: %v", err)
 	}
 }
 
-func (s *Subscription) getHandle() func(context.Context, *events.XRPCStreamEvent) error {
-	return func(ctx context.Context, evt *events.XRPCStreamEvent) error {
-		if commit := evt.RepoCommit; commit != nil {
-			if commit.Seq%100 == 0 {
-				go s.storageManager.UpdateCursor(s.serviceName, commit.Seq)
-			}
+func (s *Subscription) calculateUri(evt *jsmodels.Event) string {
+	return fmt.Sprintf("at://%s/%s/%s", evt.Did, evt.Commit.Collection, evt.Commit.RKey)
+}
 
-			rr, err := repo.ReadRepoFromCar(ctx, bytes.NewReader(commit.Blocks))
-			if err != nil {
-				log.Errorf("Error getting repo from car: %s", err)
-				return err
-			}
-
-			for _, op := range commit.Ops {
-				err = s.metricsMiddleware.HandleOperation(ctx, rr, op, commit.Repo)
-				if err != nil {
-					return err
-				}
-			}
+func (s *Subscription) getHandle() func(context.Context, *jsmodels.Event) error {
+	var seq uint64 = 0
+	return func(ctx context.Context, evt *jsmodels.Event) error {
+		if evt.EventType != jsmodels.EventCommit {
+			return nil
 		}
-		return nil
+		cursor := evt.TimeUS
+		seq++
+		if seq%100 == 0 {
+			go s.storageManager.UpdateCursor(s.serviceName, cursor)
+		}
+		return s.metricsMiddleware.HandleOperation(evt)
 	}
 }
 
-func (s *Subscription) handleFeedPostCreate(
-	repoDID string,
-	uri string,
-	data *appbsky.FeedPost,
-) error {
-	createdAt, err := utils.ParseTime(data.CreatedAt)
+func (s *Subscription) handleFeedPostCreate(evt *jsmodels.Event) error {
+	var post appbsky.FeedPost
+	if err := json.Unmarshal(evt.Commit.Record, &post); err != nil {
+		return fmt.Errorf("failed to unmarshal post: %w", err)
+	}
+
+	uri := s.calculateUri(evt)
+
+	createdAt, err := utils.ParseTime(post.CreatedAt)
 	if err != nil {
 		log.Errorf("Error parsing created at: %s", err)
 		return err
 	}
 
 	replyParent, replyRoot := "", ""
-	if data.Reply != nil {
-		if data.Reply.Parent != nil {
-			replyParent = data.Reply.Parent.Uri
+	if post.Reply != nil {
+		if post.Reply.Parent != nil {
+			replyParent = post.Reply.Parent.Uri
 		}
-		if data.Reply.Root != nil {
-			replyRoot = data.Reply.Root.Uri
+		if post.Reply.Root != nil {
+			replyRoot = post.Reply.Root.Uri
 		}
 	}
 
-	language := s.languageDetector.DetectLanguage(data.Text, data.Langs)
+	language := s.languageDetector.DetectLanguage(post.Text, post.Langs)
 
 	// Calculate rank
 	s.hasher.Write([]byte(uri))
@@ -153,31 +123,32 @@ func (s *Subscription) handleFeedPostCreate(
 	divisor := math.Pow10(decimalPlaces)
 	rank := float64(createdAt.Unix()) + float64(hash)/divisor
 
-	post := models.Post{
-		Uri:         uri,
-		AuthorDid:   repoDID,
-		ReplyParent: replyParent,
-		ReplyRoot:   replyRoot,
-		CreatedAt:   createdAt,
-		Language:    language,
-		Rank:        rank,
-		Text:        data.Text,
-	}
-
 	go func() {
-		s.storageManager.CreateUser(repoDID)
-		s.storageManager.CreatePost(post)
+		s.storageManager.CreateUser(evt.Did)
+		s.storageManager.CreatePost(
+			models.Post{
+				Uri:         uri,
+				AuthorDid:   evt.Did,
+				ReplyParent: replyParent,
+				ReplyRoot:   replyRoot,
+				CreatedAt:   createdAt,
+				Language:    language,
+				Rank:        rank,
+				Text:        post.Text,
+			})
+
 	}()
 
 	return nil
 }
 
-func (s *Subscription) handleGraphFollowCreate(
-	repoDID string,
-	uri string,
-	data *appbsky.GraphFollow,
-) error {
-	createdAt, err := utils.ParseTime(data.CreatedAt)
+func (s *Subscription) handleGraphFollowCreate(evt *jsmodels.Event) error {
+	var follow appbsky.GraphFollow
+	if err := json.Unmarshal(evt.Commit.Record, &follow); err != nil {
+		return fmt.Errorf("failed to unmarshal follow: %w", err)
+	}
+
+	createdAt, err := utils.ParseTime(follow.CreatedAt)
 	if err != nil {
 		log.Errorf("Error parsing created at: %s", err)
 		return err
@@ -185,9 +156,9 @@ func (s *Subscription) handleGraphFollowCreate(
 
 	go s.storageManager.CreateFollow(
 		models.Follow{
-			Uri:        uri,
-			AuthorDid:  repoDID,
-			SubjectDid: data.Subject,
+			Uri:        s.calculateUri(evt),
+			AuthorDid:  evt.Did,
+			SubjectDid: follow.Subject,
 			CreatedAt:  createdAt,
 		},
 	)
@@ -195,13 +166,31 @@ func (s *Subscription) handleGraphFollowCreate(
 	return nil
 }
 
-func (s *Subscription) handleInteractionCreate(
-	repoDID string,
-	uri string,
-	kind models.InteractionType,
-	createdAtStr string,
-	postUri string,
-) error {
+func (s *Subscription) handleInteractionCreate(evt *jsmodels.Event) error {
+	var createdAtStr string
+	var postUri string
+	var kind models.InteractionType
+
+	switch evt.Commit.Collection {
+	case "app.bsky.feed.like":
+		var like appbsky.FeedLike
+		if err := json.Unmarshal(evt.Commit.Record, &like); err != nil {
+			return fmt.Errorf("failed to unmarshal like: %w", err)
+		}
+		createdAtStr = like.CreatedAt
+		postUri = like.Subject.Uri
+		kind = models.Like
+
+	case "app.bsky.feed.repost":
+		var repost appbsky.FeedRepost
+		if err := json.Unmarshal(evt.Commit.Record, &repost); err != nil {
+			return fmt.Errorf("failed to unmarshal repost: %w", err)
+		}
+		createdAtStr = repost.CreatedAt
+		postUri = repost.Subject.Uri
+		kind = models.Repost
+	}
+
 	createdAt, err := utils.ParseTime(createdAtStr)
 	if err != nil {
 		log.Errorf("Error parsing created at: %s", err)
@@ -209,14 +198,12 @@ func (s *Subscription) handleInteractionCreate(
 	}
 
 	go func() {
-		s.storageManager.CreateUser(
-			repoDID,
-		)
+		s.storageManager.CreateUser(evt.Did)
 		s.storageManager.CreateInteraction(
 			models.Interaction{
-				Uri:       uri,
+				Uri:       s.calculateUri(evt),
 				Kind:      kind,
-				AuthorDid: repoDID,
+				AuthorDid: evt.Did,
 				PostUri:   postUri,
 				CreatedAt: createdAt,
 			},
@@ -226,43 +213,28 @@ func (s *Subscription) handleInteractionCreate(
 	return nil
 }
 
-func (s *Subscription) handleRecordCreate(
-	repoDID string,
-	uri string,
-	record typegen.CBORMarshaler,
-) error {
-	var err error = nil
-	switch data := record.(type) {
-	case *appbsky.FeedPost:
-		err = s.handleFeedPostCreate(
-			repoDID, uri, data,
-		)
-	case *appbsky.FeedLike:
-		err = s.handleInteractionCreate(
-			repoDID,
-			uri,
-			models.Like,
-			data.CreatedAt,
-			data.Subject.Uri,
-		)
-	case *appbsky.FeedRepost:
-		err = s.handleInteractionCreate(
-			repoDID,
-			uri,
-			models.Repost,
-			data.CreatedAt,
-			data.Subject.Uri,
-		)
-	case *appbsky.GraphFollow:
-		err = s.handleGraphFollowCreate(
-			repoDID, uri, data,
-		)
+func (s *Subscription) handleRecordCreate(evt *jsmodels.Event) error {
+	var handleFunc func(evt *jsmodels.Event) error
+
+	switch evt.Commit.Collection {
+	case "app.bsky.feed.post":
+		handleFunc = s.handleFeedPostCreate
+	case "app.bsky.feed.like", "app.bsky.feed.repost":
+		handleFunc = s.handleInteractionCreate
+	case "app.bsky.graph.follow":
+		handleFunc = s.handleGraphFollowCreate
 	}
-	return err
+
+	if handleFunc == nil {
+		return nil
+	}
+	return handleFunc(evt)
 }
 
-func (s *Subscription) handleRecordDelete(uri string, recordType string) error {
-	switch recordType {
+func (s *Subscription) handleRecordDelete(evt *jsmodels.Event) error {
+	uri := s.calculateUri(evt)
+
+	switch evt.Commit.Collection {
 	case "app.bsky.feeds.post":
 		s.storageManager.DeletePost(uri)
 	case "app.bsky.feeds.like", "app.bsky.feeds.repost":
@@ -270,32 +242,19 @@ func (s *Subscription) handleRecordDelete(uri string, recordType string) error {
 	case "app.bsky.graph.follow":
 		s.storageManager.DeleteFollow(uri)
 	}
+
 	return nil
 }
 
-func (s *Subscription) processOperation(
-	ctx context.Context,
-	rr *repo.Repo,
-	op *atproto.SyncSubscribeRepos_RepoOp,
-	commitRepo string,
-) error {
-	uri := fmt.Sprintf("at://%s/%s", commitRepo, op.Path)
-
-	switch repomgr.EventKind(op.Action) {
-	case repomgr.EvtKindCreateRecord:
-		_, record, err := rr.GetRecord(ctx, op.Path)
-		if err != nil {
-			log.Errorf("Error getting record: %s", err)
-			return err
-		}
-
-		if err := s.handleRecordCreate(commitRepo, uri, record); err != nil {
+func (s *Subscription) processOperation(evt *jsmodels.Event) error {
+	switch evt.Commit.OpType {
+	case jsmodels.CommitCreateRecord:
+		if err := s.handleRecordCreate(evt); err != nil {
 			log.Errorf("Error handling create record: %s", err)
 			return err
 		}
-	case repomgr.EvtKindDeleteRecord:
-		recordType := strings.Split(op.Path, "/")[0]
-		if err := s.handleRecordDelete(uri, recordType); err != nil {
+	case jsmodels.CommitDeleteRecord:
+		if err := s.handleRecordDelete(evt); err != nil {
 			log.Errorf("Error handling delete record: %s", err)
 			return err
 		}

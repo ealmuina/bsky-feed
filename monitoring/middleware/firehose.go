@@ -2,36 +2,21 @@ package middleware
 
 import (
 	"bsky/monitoring"
-	"context"
-	"github.com/bluesky-social/indigo/api/atproto"
-	"github.com/bluesky-social/indigo/repo"
+	jsmodels "github.com/bluesky-social/jetstream/pkg/models"
 	"github.com/prometheus/client_golang/prometheus"
-	"strings"
 )
 
-type OperationHandler func(
-	context.Context,
-	*repo.Repo,
-	*atproto.SyncSubscribeRepos_RepoOp,
-	string,
-) error
+type OperationHandler func(*jsmodels.Event) error
 
 type FirehoseMiddleware struct {
 	handler OperationHandler
 }
 
-func (m *FirehoseMiddleware) HandleOperation(
-	ctx context.Context,
-	rr *repo.Repo,
-	op *atproto.SyncSubscribeRepos_RepoOp,
-	commitRepo string,
-) error {
-	recordType := strings.Split(op.Path, "/")[0]
+func (m *FirehoseMiddleware) HandleOperation(evt *jsmodels.Event) error {
+	monitoring.FirehoseEvents.WithLabelValues(evt.Commit.Collection).Inc()
 
-	monitoring.FirehoseEvents.WithLabelValues(recordType).Inc()
-
-	timer := prometheus.NewTimer(monitoring.FirehoseEventProcessingDuration.WithLabelValues(recordType))
-	err := m.handler(ctx, rr, op, commitRepo)
+	timer := prometheus.NewTimer(monitoring.FirehoseEventProcessingDuration.WithLabelValues(evt.Commit.Collection))
+	err := m.handler(evt)
 	timer.ObserveDuration()
 
 	return err
