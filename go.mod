@@ -6,11 +6,11 @@ toolchain go1.23.1
 
 require (
 	github.com/bluesky-social/indigo v0.0.0-20241008040750-06bacb465af7
-	github.com/bluesky-social/jetstream v0.0.0-20241010171125-dc1735204c48
+	github.com/bluesky-social/jetstream v0.0.0-20241022030937-75fdbaa83787
 	github.com/bountylabs/go-fasttext v0.0.0-20200219204537-fd0526b7cfcc
 	github.com/jackc/pgx/v5 v5.7.1
-	github.com/prometheus/client_golang v1.20.4
-	github.com/redis/go-redis/v9 v9.6.2
+	github.com/prometheus/client_golang v1.20.5
+	github.com/redis/go-redis/v9 v9.7.0
 	github.com/sirupsen/logrus v1.9.3
 )
 

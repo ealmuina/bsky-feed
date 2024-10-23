@@ -77,7 +77,7 @@ func (s *Subscription) calculateUri(evt *jsmodels.Event) string {
 func (s *Subscription) getHandle() func(context.Context, *jsmodels.Event) error {
 	var seq uint64 = 0
 	return func(ctx context.Context, evt *jsmodels.Event) error {
-		if evt.EventType != jsmodels.EventCommit {
+		if evt.Kind != jsmodels.EventKindCommit {
 			return nil
 		}
 		cursor := evt.TimeUS
@@ -247,13 +247,13 @@ func (s *Subscription) handleRecordDelete(evt *jsmodels.Event) error {
 }
 
 func (s *Subscription) processOperation(evt *jsmodels.Event) error {
-	switch evt.Commit.OpType {
-	case jsmodels.CommitCreateRecord:
+	switch evt.Commit.Operation {
+	case jsmodels.CommitOperationCreate:
 		if err := s.handleRecordCreate(evt); err != nil {
 			log.Errorf("Error handling create record: %s", err)
 			return err
 		}
-	case jsmodels.CommitDeleteRecord:
+	case jsmodels.CommitOperationDelete:
 		if err := s.handleRecordDelete(evt); err != nil {
 			log.Errorf("Error handling delete record: %s", err)
 			return err
