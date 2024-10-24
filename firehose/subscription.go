@@ -87,7 +87,10 @@ func (s *Subscription) getHandle() func(context.Context, *jsmodels.Event) error 
 		if seq%100 == 0 {
 			go s.storageManager.UpdateCursor(s.serviceName, cursor)
 		}
-		return s.metricsMiddleware.HandleOperation(evt)
+		if err := s.metricsMiddleware.HandleOperation(evt); err != nil {
+			log.Errorf("Error handling operation: %v", err)
+		}
+		return nil
 	}
 }
 
