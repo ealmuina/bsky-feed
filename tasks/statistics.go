@@ -108,8 +108,6 @@ func (u *StatisticsUpdater) deleteUser(did string) {
 func (u *StatisticsUpdater) updateUserStatistics(did string) {
 	profile, err := appbsky.ActorGetProfile(context.Background(), u.client, did)
 	if err != nil {
-		log.Errorf("Error getting profile for user %s: %v", did, err)
-
 		var bskyErr *xrpc.Error
 
 		if errors.As(err, &bskyErr) {
@@ -125,6 +123,8 @@ func (u *StatisticsUpdater) updateUserStatistics(did string) {
 						u.connectXRPCClient()
 					}
 				}
+			} else {
+				log.Errorf("Error getting profile for user %s: %v", did, err)
 			}
 
 			// Sleep if API rate limit has been exceeded
