@@ -72,3 +72,12 @@ func (q *Queries) DeleteUserInteractions(ctx context.Context, authorDid string) 
 	_, err := q.db.Exec(ctx, deleteUserInteractions, authorDid)
 	return err
 }
+
+const vacuumInteractions = `-- name: VacuumInteractions :exec
+VACUUM interactions
+`
+
+func (q *Queries) VacuumInteractions(ctx context.Context) error {
+	_, err := q.db.Exec(ctx, vacuumInteractions)
+	return err
+}

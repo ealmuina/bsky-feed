@@ -14,6 +14,9 @@ FROM posts
 WHERE posts.created_at < current_timestamp - interval '7 days'
 RETURNING uri, author_did;
 
+-- name: VacuumPosts :exec
+VACUUM posts;
+
 -- name: DeleteUserPosts :exec
 DELETE
 FROM posts

@@ -193,3 +193,12 @@ func (q *Queries) GetLanguageTopPosts(ctx context.Context, arg GetLanguageTopPos
 	}
 	return items, nil
 }
+
+const vacuumPosts = `-- name: VacuumPosts :exec
+VACUUM posts
+`
+
+func (q *Queries) VacuumPosts(ctx context.Context) error {
+	_, err := q.db.Exec(ctx, vacuumPosts)
+	return err
+}
