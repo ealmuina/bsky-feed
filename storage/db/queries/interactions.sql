@@ -17,3 +17,6 @@ WHERE author_did = $1;
 DELETE
 FROM interactions
 WHERE created_at < current_timestamp - interval '7 days';
+
+-- name: VacuumInteractions :exec
+VACUUM interactions;

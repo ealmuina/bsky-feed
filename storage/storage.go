@@ -90,10 +90,16 @@ func (m *Manager) CleanOldData() {
 	ctx := context.Background()
 	deletedPosts, err := m.queries.DeleteOldPosts(ctx)
 	if err != nil {
-		log.Errorf("Error cleaning old posts: %m", err)
+		log.Errorf("Error cleaning old posts: %v", err)
+	}
+	if err := m.queries.VacuumPosts(ctx); err != nil {
+		log.Errorf("Error vacuuming posts table: %v", err)
 	}
 	if err := m.queries.DeleteOldInteractions(ctx); err != nil {
-		log.Errorf("Error cleaning old interactions: %m", err)
+		log.Errorf("Error cleaning old interactions: %v", err)
+	}
+	if err := m.queries.VacuumInteractions(ctx); err != nil {
+		log.Errorf("Error vacuuming interactions: %v", err)
 	}
 
 	// Clean timelines
