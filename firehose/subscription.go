@@ -68,6 +68,8 @@ func (s *Subscription) Run() {
 	if err := client.ConnectAndRead(context.Background(), cursorPointer); err != nil {
 		log.Errorf("Error connecting to Jetstream client: %v", err)
 	}
+
+	log.Info("Started consuming from Jetstream")
 }
 
 func (s *Subscription) calculateUri(evt *jsmodels.Event) string {
