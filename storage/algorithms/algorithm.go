@@ -28,6 +28,7 @@ var ImplementedAlgorithms = map[string]Algorithm{
 		minFollowers:  10000,
 		minEngagement: 1.0,
 	},
+	"light_spanish": &LightLanguageAlgorithm{"es"},
 	"us_election_es": &KeywordsAlgorithm{
 		languageCode: "es",
 		keywords: map[string]float64{

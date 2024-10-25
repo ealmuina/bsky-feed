@@ -1,6 +1,7 @@
 package models
 
 import (
+	appbsky "github.com/bluesky-social/indigo/api/bsky"
 	"time"
 )
 
@@ -14,4 +15,5 @@ type Post struct {
 	ReplyRoot   string
 	Language    string
 	Text        string
+	Embed       *appbsky.FeedPost_Embed
 }

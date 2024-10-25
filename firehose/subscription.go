@@ -140,7 +140,8 @@ func (s *Subscription) handleFeedPostCreate(evt *jsmodels.Event) error {
 				Language:    language,
 				Rank:        rank,
 				Text:        post.Text,
-			})
+			Embed:       data.Embed,
+	})
 
 	}()
 
