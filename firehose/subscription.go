@@ -162,6 +162,7 @@ func (s *Subscription) handleFeedPostCreate(
 		Language:    language,
 		Rank:        rank,
 		Text:        data.Text,
+		Embed:       data.Embed,
 	}
 
 	go func() {
