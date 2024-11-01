@@ -18,6 +18,7 @@ import (
 	"log/slog"
 	"math"
 	"net/url"
+	"time"
 )
 
 type Subscription struct {
@@ -57,7 +58,7 @@ func (s *Subscription) Run() {
 		jsscheduler.NewScheduler("data_stream", slog.Default(), s.getHandle()),
 	)
 	if err != nil {
-		log.Errorf("Error creating Jetstream client: %v", err)
+		log.Fatalf("Error creating Jetstream client: %v", err)
 	}
 
 	cursor := s.storageManager.GetCursor(s.serviceName)
@@ -65,8 +66,14 @@ func (s *Subscription) Run() {
 	if cursor == 0 {
 		cursorPointer = nil
 	}
-	if err := client.ConnectAndRead(context.Background(), cursorPointer); err != nil {
-		log.Errorf("Error connecting to Jetstream client: %v", err)
+	for {
+		err = client.ConnectAndRead(context.Background(), cursorPointer)
+		if err != nil {
+			log.Errorf("Error connecting to Jetstream client: %v", err)
+			time.Sleep(1 * time.Minute)
+		} else {
+			break
+		}
 	}
 
 	log.Info("Started consuming from Jetstream")
