@@ -32,7 +32,7 @@ var (
 			Name: "firehose_events_total",
 			Help: "Total number of events consumed from firehose",
 		},
-		[]string{"recordType"},
+		[]string{"recordType", "operationType"},
 	)
 
 	FirehoseEventProcessingDuration = prometheus.NewHistogramVec(
@@ -41,6 +41,6 @@ var (
 			Help:    "Duration of firehose events processing",
 			Buckets: prometheus.DefBuckets,
 		},
-		[]string{"recordType"},
+		[]string{"recordType", "operationType"},
 	)
 )
