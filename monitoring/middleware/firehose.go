@@ -13,9 +13,11 @@ type FirehoseMiddleware struct {
 }
 
 func (m *FirehoseMiddleware) HandleOperation(evt *jsmodels.Event) error {
-	monitoring.FirehoseEvents.WithLabelValues(evt.Commit.Collection).Inc()
+	monitoring.FirehoseEvents.WithLabelValues(evt.Commit.Collection, evt.Commit.Operation).Inc()
 
-	timer := prometheus.NewTimer(monitoring.FirehoseEventProcessingDuration.WithLabelValues(evt.Commit.Collection))
+	timer := prometheus.NewTimer(
+		monitoring.FirehoseEventProcessingDuration.WithLabelValues(evt.Commit.Collection, evt.Commit.Operation),
+	)
 	err := m.handler(evt)
 	timer.ObserveDuration()
 
