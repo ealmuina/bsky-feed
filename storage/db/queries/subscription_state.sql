@@ -7,4 +7,4 @@ WHERE service = $1;
 INSERT INTO subscription_state (service, cursor)
 VALUES ($1, $2)
 ON CONFLICT (service)
-    DO UPDATE SET cursor = $2;
+    DO UPDATE SET cursor = GREATEST(subscription_state.cursor, excluded.cursor);
