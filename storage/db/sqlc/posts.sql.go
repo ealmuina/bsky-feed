@@ -209,8 +209,8 @@ func (q *Queries) GetLanguageTopPosts(ctx context.Context, arg GetLanguageTopPos
 }
 
 const insertFromTempToPosts = `-- name: InsertFromTempToPosts :many
-INSERT INTO posts
-SELECT uri, author_did, reply_parent, reply_root, indexed_at, created_at, language, rank
+INSERT INTO posts (uri, author_did, reply_parent, reply_root, created_at, language, rank)
+SELECT uri, author_did, reply_parent, reply_root, created_at, language, rank
 FROM tmp_posts
 ON CONFLICT DO NOTHING
 RETURNING uri, author_did, reply_root

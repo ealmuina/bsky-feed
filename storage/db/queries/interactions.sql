@@ -11,8 +11,8 @@ INSERT INTO tmp_interactions (uri, kind, author_did, post_uri, created_at)
 VALUES ($1, $2, $3, $4, $5);
 
 -- name: InsertFromTempToInteractions :many
-INSERT INTO interactions
-SELECT *
+INSERT INTO interactions (uri, kind, author_did, post_uri, created_at)
+SELECT uri, kind, author_did, post_uri, created_at
 FROM tmp_interactions
 ON CONFLICT DO NOTHING
 RETURNING uri, post_uri;

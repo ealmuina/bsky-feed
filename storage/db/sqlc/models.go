@@ -87,6 +87,14 @@ type SubscriptionState struct {
 	Cursor  int64
 }
 
+type TmpFollow struct {
+	Uri        string
+	AuthorDid  string
+	SubjectDid string
+	IndexedAt  pgtype.Timestamp
+	CreatedAt  pgtype.Timestamp
+}
+
 type TmpInteraction struct {
 	Uri       string
 	Kind      InteractionType

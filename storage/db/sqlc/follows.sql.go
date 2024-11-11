@@ -11,43 +11,89 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
-const createFollow = `-- name: CreateFollow :exec
-INSERT INTO follows (uri, author_did, subject_did, created_at)
-VALUES ($1, $2, $3, $4)
-`
-
-type CreateFollowParams struct {
+type BulkCreateFollowsParams struct {
 	Uri        string
 	AuthorDid  string
 	SubjectDid string
 	CreatedAt  pgtype.Timestamp
 }
 
-func (q *Queries) CreateFollow(ctx context.Context, arg CreateFollowParams) error {
-	_, err := q.db.Exec(ctx, createFollow,
-		arg.Uri,
-		arg.AuthorDid,
-		arg.SubjectDid,
-		arg.CreatedAt,
-	)
-	return err
-}
-
-const deleteFollow = `-- name: DeleteFollow :one
+const bulkDeleteFollows = `-- name: BulkDeleteFollows :many
 DELETE
 FROM follows
-WHERE uri = $1
+WHERE uri = ANY ($1::VARCHAR[])
 RETURNING author_did, subject_did
 `
 
-type DeleteFollowRow struct {
+type BulkDeleteFollowsRow struct {
 	AuthorDid  string
 	SubjectDid string
 }
 
-func (q *Queries) DeleteFollow(ctx context.Context, uri string) (DeleteFollowRow, error) {
-	row := q.db.QueryRow(ctx, deleteFollow, uri)
-	var i DeleteFollowRow
-	err := row.Scan(&i.AuthorDid, &i.SubjectDid)
-	return i, err
+func (q *Queries) BulkDeleteFollows(ctx context.Context, uris []string) ([]BulkDeleteFollowsRow, error) {
+	rows, err := q.db.Query(ctx, bulkDeleteFollows, uris)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []BulkDeleteFollowsRow
+	for rows.Next() {
+		var i BulkDeleteFollowsRow
+		if err := rows.Scan(&i.AuthorDid, &i.SubjectDid); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const createTempFollowsTable = `-- name: CreateTempFollowsTable :exec
+CREATE TEMPORARY TABLE tmp_follows
+    ON COMMIT DROP
+AS
+SELECT uri, author_did, subject_did, indexed_at, created_at
+FROM follows
+    WITH NO DATA
+`
+
+func (q *Queries) CreateTempFollowsTable(ctx context.Context) error {
+	_, err := q.db.Exec(ctx, createTempFollowsTable)
+	return err
+}
+
+const insertFromTempToFollows = `-- name: InsertFromTempToFollows :many
+INSERT INTO follows (uri, author_did, subject_did, created_at)
+SELECT uri, author_did, subject_did, created_at
+FROM tmp_follows
+ON CONFLICT DO NOTHING
+RETURNING uri, author_did, subject_did
+`
+
+type InsertFromTempToFollowsRow struct {
+	Uri        string
+	AuthorDid  string
+	SubjectDid string
+}
+
+func (q *Queries) InsertFromTempToFollows(ctx context.Context) ([]InsertFromTempToFollowsRow, error) {
+	rows, err := q.db.Query(ctx, insertFromTempToFollows)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []InsertFromTempToFollowsRow
+	for rows.Next() {
+		var i InsertFromTempToFollowsRow
+		if err := rows.Scan(&i.Uri, &i.AuthorDid, &i.SubjectDid); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }

@@ -88,8 +88,8 @@ func (q *Queries) DeleteUserInteractions(ctx context.Context, authorDid string) 
 }
 
 const insertFromTempToInteractions = `-- name: InsertFromTempToInteractions :many
-INSERT INTO interactions
-SELECT uri, kind, author_did, post_uri, indexed_at, created_at
+INSERT INTO interactions (uri, kind, author_did, post_uri, created_at)
+SELECT uri, kind, author_did, post_uri, created_at
 FROM tmp_interactions
 ON CONFLICT DO NOTHING
 RETURNING uri, post_uri

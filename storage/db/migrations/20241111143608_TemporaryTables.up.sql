@@ -11,3 +11,10 @@ AS
 SELECT *
 FROM posts
     WITH NO DATA;
+
+CREATE TEMPORARY TABLE tmp_follows
+    ON COMMIT DROP
+AS
+SELECT *
+FROM follows
+    WITH NO DATA;
