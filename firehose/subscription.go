@@ -71,7 +71,6 @@ func (s *Subscription) Run() {
 		err = client.ConnectAndRead(context.Background(), cursorPointer)
 		if err != nil {
 			log.Errorf("Error connecting to Jetstream client: %v", err)
-			time.Sleep(1 * time.Minute)
 		} else {
 			break
 		}
