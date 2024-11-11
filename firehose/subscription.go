@@ -114,6 +114,10 @@ func (s *Subscription) handleFeedPostCreate(evt *jsmodels.Event) error {
 		log.Errorf("Error parsing created at: %s", err)
 		return err
 	}
+	if now := time.Now(); now.Before(createdAt) {
+		// Created at set to the future. Replace by current time
+		createdAt = now
+	}
 
 	replyParent, replyRoot := "", ""
 	if post.Reply != nil {
