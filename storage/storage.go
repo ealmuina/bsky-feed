@@ -301,6 +301,8 @@ func (m *Manager) CreateInteraction(interaction models.Interaction) error {
 }
 
 func (m *Manager) CreatePost(post models.Post) {
+	ctx := context.Background()
+
 	// Add post to corresponding timelines
 	authorStatistics := m.usersCache.GetUserStatistics(post.AuthorDid)
 	go func() {
@@ -352,42 +354,47 @@ func (m *Manager) CreatePost(post models.Post) {
 	m.buffers.Store(event, buffer)
 
 	if len(buffer) >= BulkSize[event.Entity] {
-		go m.executeTransaction(
-			func(ctx context.Context, qtx *db.Queries) {
-				// Create temporary table
-				if err := qtx.CreateTempPostsTable(ctx); err != nil {
-					log.Infof("Error creating tmp_posts: %v", err)
-					return
-				}
-				// Copy data to temporary table
-				if _, err := qtx.BulkCreatePosts(context.Background(), buffer); err != nil {
-					log.Errorf("Error creating posts: %v", err)
-					return
-				}
-				// Move data from temporary table to posts
-				createdPosts, err := qtx.InsertFromTempToPosts(ctx)
-				if err != nil {
-					log.Errorf("Error persisting posts: %v", err)
-					return
-				}
+		go func() {
+			var createdPosts []db.InsertFromTempToPostsRow
 
-				// Add post to user statistics
-				for _, post := range createdPosts {
-					err = qtx.AddUserPosts(ctx, db.AddUserPostsParams{
-						Did:        post.AuthorDid,
-						PostsCount: pgtype.Int4{Int32: 1, Valid: true},
-					})
-					if err == nil {
-						// Update cache (exclude replies)
-						if !post.ReplyRoot.Valid {
-							m.usersCache.UpdateUserStatistics(
-								post.AuthorDid, 0, 0, 1, 0,
-							)
-						}
+			m.executeTransaction(
+				func(ctx context.Context, qtx *db.Queries) {
+					// Create temporary table
+					err := qtx.CreateTempPostsTable(ctx)
+					if err != nil {
+						log.Infof("Error creating tmp_posts: %v", err)
+						return
+					}
+					// Copy data to temporary table
+					if _, err := qtx.BulkCreatePosts(context.Background(), buffer); err != nil {
+						log.Errorf("Error creating posts: %v", err)
+						return
+					}
+					// Move data from temporary table to posts
+					createdPosts, err = qtx.InsertFromTempToPosts(ctx)
+					if err != nil {
+						log.Errorf("Error persisting posts: %v", err)
+						return
+					}
+				},
+			)
+
+			// Add post to user statistics
+			for _, post := range createdPosts {
+				err := m.queries.AddUserPosts(ctx, db.AddUserPostsParams{
+					Did:        post.AuthorDid,
+					PostsCount: pgtype.Int4{Int32: 1, Valid: true},
+				})
+				if err == nil {
+					// Update cache (exclude replies)
+					if !post.ReplyRoot.Valid {
+						m.usersCache.UpdateUserStatistics(
+							post.AuthorDid, 0, 0, 1, 0,
+						)
 					}
 				}
-			},
-		)
+			}
+		}()
 
 		// Clear buffer
 		m.buffers.Store(event, make([]db.BulkCreatePostsParams, 0, len(buffer)))
@@ -525,6 +532,8 @@ func (m *Manager) DeleteInteraction(uri string) {
 }
 
 func (m *Manager) DeletePost(uri string) {
+	ctx := context.Background()
+
 	event := Event{EntityPost, OperationDelete}
 	mutex := m.mutexes[event]
 	if mutex == nil {
@@ -546,34 +555,39 @@ func (m *Manager) DeletePost(uri string) {
 	m.buffers.Store(event, buffer)
 
 	if len(buffer) >= BulkSize[event.Entity] {
-		go m.executeTransaction(
-			func(ctx context.Context, qtx *db.Queries) {
-				// Delete posts
-				posts, err := qtx.BulkDeletePosts(ctx, buffer)
-				if err != nil {
-					log.Errorf("Error deleting posts: %m", err)
-					return
-				}
+		go func() {
+			var deletedPosts []db.BulkDeletePostsRow
 
-				// Remove post from user statistics
-				for _, post := range posts {
-					err = qtx.AddUserPosts(ctx, db.AddUserPostsParams{
-						Did:        post.AuthorDid,
-						PostsCount: pgtype.Int4{Int32: -1, Valid: true},
-					})
-					if err == nil {
-						// Update caches
-						deleted := m.postsCache.DeletePost(uri)
-						if deleted {
-							postInteractions := m.postsCache.GetPostInteractions(post.AuthorDid)
-							m.usersCache.UpdateUserStatistics(
-								post.AuthorDid, 0, 0, -1, -postInteractions,
-							)
-						}
+			m.executeTransaction(
+				func(ctx context.Context, qtx *db.Queries) {
+					// Delete posts
+					var err error
+					deletedPosts, err = qtx.BulkDeletePosts(ctx, buffer)
+					if err != nil {
+						log.Errorf("Error deleting posts: %m", err)
+						return
+					}
+				},
+			)
+
+			// Remove post from user statistics
+			for _, post := range deletedPosts {
+				err := m.queries.AddUserPosts(ctx, db.AddUserPostsParams{
+					Did:        post.AuthorDid,
+					PostsCount: pgtype.Int4{Int32: -1, Valid: true},
+				})
+				if err == nil {
+					// Update caches
+					deleted := m.postsCache.DeletePost(uri)
+					if deleted {
+						postInteractions := m.postsCache.GetPostInteractions(post.AuthorDid)
+						m.usersCache.UpdateUserStatistics(
+							post.AuthorDid, 0, 0, -1, -postInteractions,
+						)
 					}
 				}
-			},
-		)
+			}
+		}()
 
 		// Clear buffer
 		m.buffers.Store(event, make([]string, 0, len(buffer)))
