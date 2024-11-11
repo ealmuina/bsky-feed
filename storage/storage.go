@@ -16,10 +16,31 @@ import (
 	"time"
 )
 
-const PostsToCreateBulkSize = 100
-const InteractionsToCreateBulkSize = 100
-const PostsToDeleteBulkSize = 100
-const InteractionsToDeleteBulkSize = 100
+type Entity string
+type Operation string
+
+const (
+	EntityPost        Entity = "post"
+	EntityInteraction        = "interaction"
+	EntityFollow             = "follow"
+)
+
+const (
+	OperationCreate Operation = "create"
+	OperationUpdate           = "update"
+	OperationDelete           = "delete"
+)
+
+type Event struct {
+	Entity    Entity
+	Operation Operation
+}
+
+var BulkSize = map[Entity]int{
+	EntityPost:        100,
+	EntityInteraction: 100,
+	EntityFollow:      100,
+}
 
 type Manager struct {
 	redisConnection *redis.Client
@@ -31,18 +52,21 @@ type Manager struct {
 	timelines  map[string]cache.Timeline
 	algorithms map[string]algorithms.Algorithm
 
-	usersCreated              sync.Map
-	postsToCreateMutex        sync.Mutex
-	postsToCreate             []db.BulkCreatePostsParams
-	interactionsToCreateMutex sync.Mutex
-	interactionsToCreate      []db.BulkCreateInteractionsParams
-	postsToDeleteMutex        sync.Mutex
-	postsToDelete             []string
-	interactionsToDeleteMutex sync.Mutex
-	interactionsToDelete      []string
+	buffers      map[Event][]any
+	mutexes      map[Event]*sync.Mutex
+	usersCreated sync.Map
 }
 
 func NewManager(dbConnection *pgxpool.Pool, redisConnection *redis.Client) *Manager {
+	mutexes := map[Event]*sync.Mutex{
+		Event{EntityPost, OperationCreate}:        {},
+		Event{EntityPost, OperationDelete}:        {},
+		Event{EntityInteraction, OperationCreate}: {},
+		Event{EntityInteraction, OperationDelete}: {},
+		Event{EntityFollow, OperationCreate}:      {},
+		Event{EntityFollow, OperationDelete}:      {},
+	}
+
 	storageManager := Manager{
 		redisConnection: redisConnection,
 		dbConnection:    dbConnection,
@@ -59,15 +83,9 @@ func NewManager(dbConnection *pgxpool.Pool, redisConnection *redis.Client) *Mana
 		timelines:  make(map[string]cache.Timeline),
 		algorithms: make(map[string]algorithms.Algorithm),
 
-		usersCreated:              sync.Map{},
-		postsToCreateMutex:        sync.Mutex{},
-		postsToCreate:             make([]db.BulkCreatePostsParams, 0, PostsToCreateBulkSize),
-		interactionsToCreateMutex: sync.Mutex{},
-		interactionsToCreate:      make([]db.BulkCreateInteractionsParams, 0, InteractionsToCreateBulkSize),
-		postsToDeleteMutex:        sync.Mutex{},
-		postsToDelete:             make([]string, 0, PostsToDeleteBulkSize),
-		interactionsToDeleteMutex: sync.Mutex{},
-		interactionsToDelete:      make([]string, 0, InteractionsToDeleteBulkSize),
+		buffers:      make(map[Event][]any),
+		mutexes:      mutexes,
+		usersCreated: sync.Map{},
 	}
 	storageManager.loadUsersCreated()
 	go storageManager.loadUsersFollows()
@@ -168,13 +186,19 @@ func (m *Manager) CreateFollow(follow models.Follow) {
 }
 
 func (m *Manager) CreateInteraction(interaction models.Interaction) error {
-	ctx := context.Background()
+	event := Event{EntityInteraction, OperationCreate}
+	mutex := m.mutexes[event]
+	if mutex == nil {
+		err := fmt.Errorf("mutex for interactions create buffer not initialized")
+		log.Error(err)
+		return err
+	}
+	mutex.Lock()
+	defer mutex.Unlock()
 
-	m.interactionsToCreateMutex.Lock()
-	defer m.interactionsToCreateMutex.Unlock()
-
-	m.interactionsToCreate = append(
-		m.interactionsToCreate,
+	buffer := m.buffers[event]
+	buffer = append(
+		buffer,
 		db.BulkCreateInteractionsParams{
 			Uri:       interaction.Uri,
 			Kind:      db.InteractionType(interaction.Kind),
@@ -183,38 +207,39 @@ func (m *Manager) CreateInteraction(interaction models.Interaction) error {
 			CreatedAt: pgtype.Timestamp{Time: interaction.CreatedAt, Valid: true},
 		},
 	)
+	m.buffers[event] = buffer
 
-	if len(m.interactionsToCreate) >= InteractionsToCreateBulkSize {
+	if len(buffer) >= BulkSize[event.Entity] {
 		// Clone buffer and exec bulk insert
-		go func(interactions []db.BulkCreateInteractionsParams) {
-			// Start transaction
-			tx, err := m.dbConnection.Begin(ctx)
-			if err != nil {
-				log.Warningf("Error creating transaction: %v", err)
-				return
-			}
-			defer tx.Rollback(ctx) // Rollback on error
-			qtx := m.queries.WithTx(tx)
+		interactions := make([]db.BulkCreateInteractionsParams, 0, len(buffer))
+		for _, i := range buffer {
+			interactions = append(interactions, i.(db.BulkCreateInteractionsParams))
+		}
 
-			// Create temporary table
-			if err := qtx.CreateTempInteractionsTable(ctx); err != nil {
-				log.Infof("Error creating tmp_interactions: %v", err)
-				return
-			}
-			// Copy data to temporary table
-			if _, err := qtx.BulkCreateInteractions(ctx, interactions); err != nil {
-				log.Errorf("Error creating interactions: %v", err)
-				return
-			}
-			// Move data from temporary table to interactions
-			createdInteractions, err := qtx.InsertFromTempToInteractions(ctx)
-			if err != nil {
-				log.Errorf("Error persisting interactions: %v", err)
-				return
-			}
+		go func() {
+			var createdInteractions []db.InsertFromTempToInteractionsRow
 
-			// Finish transaction
-			tx.Commit(ctx)
+			m.executeTransaction(
+				func(ctx context.Context, qtx *db.Queries) {
+					// Create temporary table
+					err := qtx.CreateTempInteractionsTable(ctx)
+					if err != nil {
+						log.Infof("Error creating tmp_interactions: %v", err)
+						return
+					}
+					// Copy data to temporary table
+					if _, err := qtx.BulkCreateInteractions(ctx, interactions); err != nil {
+						log.Errorf("Error creating interactions: %v", err)
+						return
+					}
+					// Move data from temporary table to interactions
+					createdInteractions, err = qtx.InsertFromTempToInteractions(ctx)
+					if err != nil {
+						log.Errorf("Error persisting interactions: %v", err)
+						return
+					}
+				},
+			)
 
 			// Update caches
 			for _, interaction := range createdInteractions {
@@ -226,10 +251,10 @@ func (m *Manager) CreateInteraction(interaction models.Interaction) error {
 					)
 				}
 			}
-		}(m.interactionsToCreate)
+		}()
 
 		// Clear buffer
-		m.interactionsToCreate = make([]db.BulkCreateInteractionsParams, 0, InteractionsToCreateBulkSize)
+		m.buffers[event] = nil
 	}
 
 	return nil
@@ -255,11 +280,18 @@ func (m *Manager) CreatePost(post models.Post) {
 	}
 
 	// Store in DB
-	m.postsToCreateMutex.Lock()
-	defer m.postsToCreateMutex.Unlock()
+	event := Event{EntityPost, OperationCreate}
+	mutex := m.mutexes[event]
+	if mutex == nil {
+		log.Errorf("Mutex for posts create buffer not initialized")
+		return
+	}
+	mutex.Lock()
+	defer mutex.Unlock()
 
-	m.postsToCreate = append(
-		m.postsToCreate,
+	buffer := m.buffers[event]
+	buffer = append(
+		buffer,
 		db.BulkCreatePostsParams{
 			Uri:         post.Uri,
 			AuthorDid:   post.AuthorDid,
@@ -270,61 +302,54 @@ func (m *Manager) CreatePost(post models.Post) {
 			Rank:        pgtype.Float8{Float64: post.Rank, Valid: true},
 		},
 	)
-	if len(m.postsToCreate) >= PostsToCreateBulkSize {
+	m.buffers[event] = buffer
+
+	if len(buffer) >= BulkSize[event.Entity] {
 		// Clone buffer and exec bulk insert
-		go func(posts []db.BulkCreatePostsParams) {
-			ctx := context.Background()
+		posts := make([]db.BulkCreatePostsParams, 0, len(buffer))
+		for _, p := range buffer {
+			posts = append(posts, p.(db.BulkCreatePostsParams))
+		}
 
-			// Start transaction
-			tx, err := m.dbConnection.Begin(ctx)
-			if err != nil {
-				log.Warningf("Error creating transaction: %v", err)
-				return
-			}
-			defer tx.Rollback(ctx) // Rollback on error
-			qtx := m.queries.WithTx(tx)
+		go m.executeTransaction(
+			func(ctx context.Context, qtx *db.Queries) {
+				// Create temporary table
+				if err := qtx.CreateTempPostsTable(ctx); err != nil {
+					log.Infof("Error creating tmp_posts: %v", err)
+					return
+				}
+				// Copy data to temporary table
+				if _, err := qtx.BulkCreatePosts(context.Background(), posts); err != nil {
+					log.Errorf("Error creating posts: %v", err)
+					return
+				}
+				// Move data from temporary table to posts
+				createdPosts, err := qtx.InsertFromTempToPosts(ctx)
+				if err != nil {
+					log.Errorf("Error persisting posts: %v", err)
+					return
+				}
 
-			// Create temporary table
-			if err := qtx.CreateTempPostsTable(ctx); err != nil {
-				log.Infof("Error creating tmp_posts: %v", err)
-				return
-			}
-			// Copy data to temporary table
-			if _, err := qtx.BulkCreatePosts(context.Background(), posts); err != nil {
-				log.Errorf("Error creating posts: %v", err)
-				return
-			}
-			// Move data from temporary table to posts
-			createdPosts, err := qtx.InsertFromTempToPosts(ctx)
-			if err != nil {
-				log.Errorf("Error persisting posts: %v", err)
-				return
-			}
-
-			// Finish transaction
-			tx.Commit(ctx)
-
-			// Add post to user statistics
-			for _, post := range createdPosts {
-				err = qtx.AddUserPosts(ctx, db.AddUserPostsParams{
-					Did:        post.AuthorDid,
-					PostsCount: pgtype.Int4{Int32: 1, Valid: true},
-				})
-				if err == nil {
-					// Update cache (exclude replies)
-					if !post.ReplyRoot.Valid {
-						m.usersCache.UpdateUserStatistics(
-							post.AuthorDid, 0, 0, 1, 0,
-						)
+				// Add post to user statistics
+				for _, post := range createdPosts {
+					err = qtx.AddUserPosts(ctx, db.AddUserPostsParams{
+						Did:        post.AuthorDid,
+						PostsCount: pgtype.Int4{Int32: 1, Valid: true},
+					})
+					if err == nil {
+						// Update cache (exclude replies)
+						if !post.ReplyRoot.Valid {
+							m.usersCache.UpdateUserStatistics(
+								post.AuthorDid, 0, 0, 1, 0,
+							)
+						}
 					}
 				}
-			}
-		}(
-			m.postsToCreate,
+			},
 		)
 
 		// Clear buffer
-		m.postsToCreate = make([]db.BulkCreatePostsParams, 0, PostsToCreateBulkSize)
+		m.buffers[event] = nil
 	}
 }
 
@@ -388,17 +413,30 @@ func (m *Manager) DeleteFollow(uri string) {
 func (m *Manager) DeleteInteraction(uri string) {
 	ctx := context.Background()
 
-	m.interactionsToDeleteMutex.Lock()
-	defer m.interactionsToDeleteMutex.Unlock()
+	event := Event{EntityInteraction, OperationDelete}
+	mutex := m.mutexes[event]
+	if mutex == nil {
+		log.Errorf("Mutex for interactions delete buffer not initialized")
+		return
+	}
+	mutex.Lock()
+	defer mutex.Unlock()
 
-	m.interactionsToDelete = append(m.interactionsToDelete, uri)
+	buffer := m.buffers[event]
+	buffer = append(buffer, uri)
+	m.buffers[event] = buffer
 
-	if len(m.interactionsToDelete) >= InteractionsToDeleteBulkSize {
+	if len(buffer) >= BulkSize[event.Entity] {
 		// Copy buffer and exec bulk delete
-		go func(uris []string) {
+		uris := make([]string, 0, len(buffer))
+		for _, i := range buffer {
+			uris = append(uris, i.(string))
+		}
+
+		go func() {
 			deletedInteractions, err := m.queries.BulkDeleteInteractions(ctx, uris)
 			if err != nil {
-				log.Errorf("Error deleting interactions: %m", err)
+				log.Errorf("Error deleting interactions: %v", err)
 			}
 
 			// Update caches
@@ -411,64 +449,65 @@ func (m *Manager) DeleteInteraction(uri string) {
 					)
 				}
 			}
-		}(m.interactionsToDelete)
+		}()
 
 		// Clear buffer
-		m.interactionsToDelete = make([]string, 0, InteractionsToDeleteBulkSize)
+		m.buffers[event] = nil
 	}
 }
 
 func (m *Manager) DeletePost(uri string) {
-	ctx := context.Background()
+	event := Event{EntityPost, OperationDelete}
+	mutex := m.mutexes[event]
+	if mutex == nil {
+		log.Errorf("Mutex for posts create buffer not initialized")
+		return
+	}
+	mutex.Lock()
+	defer mutex.Unlock()
 
-	m.postsToDeleteMutex.Lock()
-	defer m.postsToDeleteMutex.Unlock()
+	buffer := m.buffers[event]
+	buffer = append(buffer, uri)
+	m.buffers[event] = buffer
 
-	m.postsToDelete = append(m.postsToDelete, uri)
-
-	if len(m.postsToDelete) >= PostsToDeleteBulkSize {
+	if len(buffer) >= BulkSize[event.Entity] {
 		// Copy buffer and exec bulk delete
-		go func(uris []string) {
-			// Start transaction
-			tx, err := m.dbConnection.Begin(ctx)
-			if err != nil {
-				log.Warningf("Error creating transaction: %v", err)
-			}
-			defer tx.Rollback(ctx) // Rollback on error
-			qtx := m.queries.WithTx(tx)
+		uris := make([]string, 0, len(buffer))
+		for _, p := range buffer {
+			uris = append(uris, p.(string))
+		}
 
-			// Delete posts
-			posts, err := qtx.BulkDeletePosts(ctx, uris)
-			if err != nil {
-				log.Errorf("Error deleting posts: %m", err)
-				return
-			}
+		go m.executeTransaction(
+			func(ctx context.Context, qtx *db.Queries) {
+				// Delete posts
+				posts, err := qtx.BulkDeletePosts(ctx, uris)
+				if err != nil {
+					log.Errorf("Error deleting posts: %m", err)
+					return
+				}
 
-			// Remove post from user statistics
-			for _, post := range posts {
-				err = qtx.AddUserPosts(ctx, db.AddUserPostsParams{
-					Did:        post.AuthorDid,
-					PostsCount: pgtype.Int4{Int32: -1, Valid: true},
-				})
-				if err == nil {
-					// Update caches
-					deleted := m.postsCache.DeletePost(uri)
-					if deleted {
-						postInteractions := m.postsCache.GetPostInteractions(post.AuthorDid)
-						m.usersCache.UpdateUserStatistics(
-							post.AuthorDid, 0, 0, -1, -postInteractions,
-						)
+				// Remove post from user statistics
+				for _, post := range posts {
+					err = qtx.AddUserPosts(ctx, db.AddUserPostsParams{
+						Did:        post.AuthorDid,
+						PostsCount: pgtype.Int4{Int32: -1, Valid: true},
+					})
+					if err == nil {
+						// Update caches
+						deleted := m.postsCache.DeletePost(uri)
+						if deleted {
+							postInteractions := m.postsCache.GetPostInteractions(post.AuthorDid)
+							m.usersCache.UpdateUserStatistics(
+								post.AuthorDid, 0, 0, -1, -postInteractions,
+							)
+						}
 					}
 				}
-			}
-
-			// Finish transaction
-			tx.Commit(ctx)
-		}(
-			m.postsToDelete,
+			},
 		)
+
 		// Clear buffer
-		m.postsToDelete = make([]string, 0, PostsToDeleteBulkSize)
+		m.buffers[event] = nil
 	}
 }
 
@@ -575,6 +614,26 @@ func (m *Manager) UpdateUser(updatedUser models.User) {
 	if err != nil {
 		log.Errorf("Error updating user: %v", err)
 	}
+}
+
+func (m *Manager) executeTransaction(
+	operation func(ctx context.Context, queries *db.Queries),
+) {
+	ctx := context.Background()
+
+	// Start transaction
+	tx, err := m.dbConnection.Begin(ctx)
+	if err != nil {
+		log.Warningf("Error creating transaction: %v", err)
+		return
+	}
+	defer tx.Rollback(ctx) // Rollback on error
+	qtx := m.queries.WithTx(tx)
+
+	operation(ctx, qtx)
+
+	// Finish transaction
+	tx.Commit(ctx)
 }
 
 func (m *Manager) initializeAlgorithms() {
