@@ -87,6 +87,26 @@ type SubscriptionState struct {
 	Cursor  int64
 }
 
+type TmpInteraction struct {
+	Uri       string
+	Kind      InteractionType
+	AuthorDid string
+	PostUri   string
+	IndexedAt pgtype.Timestamp
+	CreatedAt pgtype.Timestamp
+}
+
+type TmpPost struct {
+	Uri         string
+	AuthorDid   string
+	ReplyParent pgtype.Text
+	ReplyRoot   pgtype.Text
+	IndexedAt   pgtype.Timestamp
+	CreatedAt   pgtype.Timestamp
+	Language    pgtype.Text
+	Rank        pgtype.Float8
+}
+
 type User struct {
 	Did            string
 	Handle         pgtype.Text

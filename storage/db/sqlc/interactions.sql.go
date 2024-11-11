@@ -51,6 +51,20 @@ func (q *Queries) BulkDeleteInteractions(ctx context.Context, dollar_1 []string)
 	return items, nil
 }
 
+const createTempInteractionsTable = `-- name: CreateTempInteractionsTable :exec
+CREATE TEMPORARY TABLE tmp_interactions
+    ON COMMIT DROP
+AS
+SELECT uri, kind, author_did, post_uri, indexed_at, created_at
+FROM interactions
+    WITH NO DATA
+`
+
+func (q *Queries) CreateTempInteractionsTable(ctx context.Context) error {
+	_, err := q.db.Exec(ctx, createTempInteractionsTable)
+	return err
+}
+
 const deleteOldInteractions = `-- name: DeleteOldInteractions :exec
 DELETE
 FROM interactions
@@ -71,6 +85,39 @@ WHERE author_did = $1
 func (q *Queries) DeleteUserInteractions(ctx context.Context, authorDid string) error {
 	_, err := q.db.Exec(ctx, deleteUserInteractions, authorDid)
 	return err
+}
+
+const insertFromTempToInteractions = `-- name: InsertFromTempToInteractions :many
+INSERT INTO interactions
+SELECT uri, kind, author_did, post_uri, indexed_at, created_at
+FROM tmp_interactions
+ON CONFLICT DO NOTHING
+RETURNING uri, post_uri
+`
+
+type InsertFromTempToInteractionsRow struct {
+	Uri     string
+	PostUri string
+}
+
+func (q *Queries) InsertFromTempToInteractions(ctx context.Context) ([]InsertFromTempToInteractionsRow, error) {
+	rows, err := q.db.Query(ctx, insertFromTempToInteractions)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []InsertFromTempToInteractionsRow
+	for rows.Next() {
+		var i InsertFromTempToInteractionsRow
+		if err := rows.Scan(&i.Uri, &i.PostUri); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const vacuumInteractions = `-- name: VacuumInteractions :exec

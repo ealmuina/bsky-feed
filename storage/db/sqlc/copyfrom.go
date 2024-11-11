@@ -42,7 +42,7 @@ func (r iteratorForBulkCreateInteractions) Err() error {
 }
 
 func (q *Queries) BulkCreateInteractions(ctx context.Context, arg []BulkCreateInteractionsParams) (int64, error) {
-	return q.db.CopyFrom(ctx, []string{"interactions"}, []string{"uri", "kind", "author_did", "post_uri", "created_at"}, &iteratorForBulkCreateInteractions{rows: arg})
+	return q.db.CopyFrom(ctx, []string{"tmp_interactions"}, []string{"uri", "kind", "author_did", "post_uri", "created_at"}, &iteratorForBulkCreateInteractions{rows: arg})
 }
 
 // iteratorForBulkCreatePosts implements pgx.CopyFromSource.
@@ -80,5 +80,5 @@ func (r iteratorForBulkCreatePosts) Err() error {
 }
 
 func (q *Queries) BulkCreatePosts(ctx context.Context, arg []BulkCreatePostsParams) (int64, error) {
-	return q.db.CopyFrom(ctx, []string{"posts"}, []string{"uri", "author_did", "reply_parent", "reply_root", "created_at", "language", "rank"}, &iteratorForBulkCreatePosts{rows: arg})
+	return q.db.CopyFrom(ctx, []string{"tmp_posts"}, []string{"uri", "author_did", "reply_parent", "reply_root", "created_at", "language", "rank"}, &iteratorForBulkCreatePosts{rows: arg})
 }

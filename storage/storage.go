@@ -187,12 +187,37 @@ func (m *Manager) CreateInteraction(interaction models.Interaction) error {
 	if len(m.interactionsToCreate) >= InteractionsToCreateBulkSize {
 		// Clone buffer and exec bulk insert
 		go func(interactions []db.BulkCreateInteractionsParams) {
-			if _, err := m.queries.BulkCreateInteractions(ctx, interactions); err != nil {
+			// Start transaction
+			tx, err := m.dbConnection.Begin(ctx)
+			if err != nil {
+				log.Warningf("Error creating transaction: %v", err)
+				return
+			}
+			defer tx.Rollback(ctx) // Rollback on error
+			qtx := m.queries.WithTx(tx)
+
+			// Create temporary table
+			if err := qtx.CreateTempInteractionsTable(ctx); err != nil {
+				log.Infof("Error creating tmp_interactions: %v", err)
+				return
+			}
+			// Copy data to temporary table
+			if _, err := qtx.BulkCreateInteractions(ctx, interactions); err != nil {
 				log.Errorf("Error creating interactions: %v", err)
+				return
+			}
+			// Move data from temporary table to interactions
+			createdInteractions, err := qtx.InsertFromTempToInteractions(ctx)
+			if err != nil {
+				log.Errorf("Error persisting interactions: %v", err)
+				return
 			}
 
+			// Finish transaction
+			tx.Commit(ctx)
+
 			// Update caches
-			for _, interaction := range interactions {
+			for _, interaction := range createdInteractions {
 				postAuthor, ok := m.postsCache.GetPostAuthor(interaction.PostUri)
 				if ok {
 					m.postsCache.AddInteraction(interaction.PostUri)
@@ -254,18 +279,33 @@ func (m *Manager) CreatePost(post models.Post) {
 			tx, err := m.dbConnection.Begin(ctx)
 			if err != nil {
 				log.Warningf("Error creating transaction: %v", err)
+				return
 			}
 			defer tx.Rollback(ctx) // Rollback on error
 			qtx := m.queries.WithTx(tx)
 
-			// Create posts
+			// Create temporary table
+			if err := qtx.CreateTempPostsTable(ctx); err != nil {
+				log.Infof("Error creating tmp_posts: %v", err)
+				return
+			}
+			// Copy data to temporary table
 			if _, err := qtx.BulkCreatePosts(context.Background(), posts); err != nil {
 				log.Errorf("Error creating posts: %v", err)
 				return
 			}
+			// Move data from temporary table to posts
+			createdPosts, err := qtx.InsertFromTempToPosts(ctx)
+			if err != nil {
+				log.Errorf("Error persisting posts: %v", err)
+				return
+			}
+
+			// Finish transaction
+			tx.Commit(ctx)
 
 			// Add post to user statistics
-			for _, post := range posts {
+			for _, post := range createdPosts {
 				err = qtx.AddUserPosts(ctx, db.AddUserPostsParams{
 					Did:        post.AuthorDid,
 					PostsCount: pgtype.Int4{Int32: 1, Valid: true},
@@ -279,9 +319,6 @@ func (m *Manager) CreatePost(post models.Post) {
 					}
 				}
 			}
-
-			// Finish transaction
-			tx.Commit(ctx)
 		}(
 			m.postsToCreate,
 		)

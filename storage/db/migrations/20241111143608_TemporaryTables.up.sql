@@ -1,0 +1,13 @@
+CREATE TEMPORARY TABLE tmp_interactions
+    ON COMMIT DROP
+AS
+SELECT *
+FROM interactions
+    WITH NO DATA;
+
+CREATE TEMPORARY TABLE tmp_posts
+    ON COMMIT DROP
+AS
+SELECT *
+FROM posts
+    WITH NO DATA;

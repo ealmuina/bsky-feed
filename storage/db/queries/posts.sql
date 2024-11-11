@@ -1,6 +1,21 @@
+-- name: CreateTempPostsTable :exec
+CREATE TEMPORARY TABLE tmp_posts
+    ON COMMIT DROP
+AS
+SELECT *
+FROM posts
+    WITH NO DATA;
+
 -- name: BulkCreatePosts :copyfrom
-INSERT INTO posts (uri, author_did, reply_parent, reply_root, created_at, language, rank)
+INSERT INTO tmp_posts (uri, author_did, reply_parent, reply_root, created_at, language, rank)
 VALUES ($1, $2, $3, $4, $5, $6, $7);
+
+-- name: InsertFromTempToPosts :many
+INSERT INTO posts
+SELECT *
+FROM tmp_posts
+ON CONFLICT DO NOTHING
+RETURNING uri, author_did, reply_root;
 
 -- name: BulkDeletePosts :many
 DELETE

@@ -53,6 +53,20 @@ func (q *Queries) BulkDeletePosts(ctx context.Context, uris []string) ([]BulkDel
 	return items, nil
 }
 
+const createTempPostsTable = `-- name: CreateTempPostsTable :exec
+CREATE TEMPORARY TABLE tmp_posts
+    ON COMMIT DROP
+AS
+SELECT uri, author_did, reply_parent, reply_root, indexed_at, created_at, language, rank
+FROM posts
+    WITH NO DATA
+`
+
+func (q *Queries) CreateTempPostsTable(ctx context.Context) error {
+	_, err := q.db.Exec(ctx, createTempPostsTable)
+	return err
+}
+
 const deleteOldPosts = `-- name: DeleteOldPosts :many
 DELETE
 FROM posts
@@ -184,6 +198,40 @@ func (q *Queries) GetLanguageTopPosts(ctx context.Context, arg GetLanguageTopPos
 			&i.CreatedAt,
 			&i.Rank,
 		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const insertFromTempToPosts = `-- name: InsertFromTempToPosts :many
+INSERT INTO posts
+SELECT uri, author_did, reply_parent, reply_root, indexed_at, created_at, language, rank
+FROM tmp_posts
+ON CONFLICT DO NOTHING
+RETURNING uri, author_did, reply_root
+`
+
+type InsertFromTempToPostsRow struct {
+	Uri       string
+	AuthorDid string
+	ReplyRoot pgtype.Text
+}
+
+func (q *Queries) InsertFromTempToPosts(ctx context.Context) ([]InsertFromTempToPostsRow, error) {
+	rows, err := q.db.Query(ctx, insertFromTempToPosts)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []InsertFromTempToPostsRow
+	for rows.Next() {
+		var i InsertFromTempToPostsRow
+		if err := rows.Scan(&i.Uri, &i.AuthorDid, &i.ReplyRoot); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
