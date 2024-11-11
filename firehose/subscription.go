@@ -61,12 +61,13 @@ func (s *Subscription) Run() {
 		log.Fatalf("Error creating Jetstream client: %v", err)
 	}
 
-	cursor := s.storageManager.GetCursor(s.serviceName)
-	cursorPointer := &cursor
-	if cursor == 0 {
-		cursorPointer = nil
-	}
 	for {
+		cursor := s.storageManager.GetCursor(s.serviceName)
+		cursorPointer := &cursor
+		if cursor == 0 {
+			cursorPointer = nil
+		}
+
 		err = client.ConnectAndRead(context.Background(), cursorPointer)
 		if err != nil {
 			log.Errorf("Error connecting to Jetstream client: %v", err)
