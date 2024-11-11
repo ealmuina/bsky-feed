@@ -139,6 +139,8 @@ func (m *Manager) CleanOldData() {
 }
 
 func (m *Manager) CreateFollow(follow models.Follow) {
+	ctx := context.Background()
+
 	event := Event{EntityFollow, OperationCreate}
 	mutex := m.mutexes[event]
 	if mutex == nil {
@@ -168,48 +170,54 @@ func (m *Manager) CreateFollow(follow models.Follow) {
 	m.buffers.Store(event, buffer)
 
 	if len(buffer) >= BulkSize[event.Entity] {
-		go m.executeTransaction(
-			func(ctx context.Context, qtx *db.Queries) {
-				// Create temporary table
-				if err := qtx.CreateTempFollowsTable(ctx); err != nil {
-					log.Infof("Error creating tmp_follows: %v", err)
-					return
-				}
-				// Copy data to temporary table
-				if _, err := qtx.BulkCreateFollows(context.Background(), buffer); err != nil {
-					log.Errorf("Error creating follows: %v", err)
-					return
-				}
-				// Move data from temporary table to follows
-				createdFollows, err := qtx.InsertFromTempToFollows(ctx)
-				if err != nil {
-					log.Errorf("Error persisting follows: %v", err)
-					return
+		go func() {
+			var createdFollows []db.InsertFromTempToFollowsRow
+
+			m.executeTransaction(
+				func(ctx context.Context, qtx *db.Queries) {
+					// Create temporary table
+					err := qtx.CreateTempFollowsTable(ctx)
+					if err != nil {
+						log.Infof("Error creating tmp_follows: %v", err)
+						return
+					}
+					// Copy data to temporary table
+					if _, err := qtx.BulkCreateFollows(context.Background(), buffer); err != nil {
+						log.Errorf("Error creating follows: %v", err)
+						return
+					}
+					// Move data from temporary table to follows
+					createdFollows, err = qtx.InsertFromTempToFollows(ctx)
+					if err != nil {
+						log.Errorf("Error persisting follows: %v", err)
+						return
+					}
+				},
+			)
+
+			// Add follow to users statistics
+			for _, follow := range createdFollows {
+				err := m.queries.AddUserFollows(ctx, db.AddUserFollowsParams{
+					Did:          follow.AuthorDid,
+					FollowsCount: pgtype.Int4{Int32: 1, Valid: true},
+				})
+				if err == nil {
+					m.usersCache.UpdateUserStatistics(
+						follow.AuthorDid, 1, 0, 0, 0,
+					)
 				}
 
-				// Add follow to users statistics
-				for _, follow := range createdFollows {
-					err = qtx.AddUserFollows(ctx, db.AddUserFollowsParams{
-						Did:          follow.AuthorDid,
-						FollowsCount: pgtype.Int4{Int32: 1, Valid: true},
-					})
-					if err == nil {
-						m.usersCache.UpdateUserStatistics(
-							follow.AuthorDid, 1, 0, 0, 0,
-						)
-					}
-					err = qtx.AddUserFollowers(ctx, db.AddUserFollowersParams{
-						Did:            follow.SubjectDid,
-						FollowersCount: pgtype.Int4{Int32: 1, Valid: true},
-					})
-					if err == nil {
-						m.usersCache.UpdateUserStatistics(
-							follow.SubjectDid, 0, 1, 0, 0,
-						)
-					}
+				err = m.queries.AddUserFollowers(ctx, db.AddUserFollowersParams{
+					Did:            follow.SubjectDid,
+					FollowersCount: pgtype.Int4{Int32: 1, Valid: true},
+				})
+				if err == nil {
+					m.usersCache.UpdateUserStatistics(
+						follow.SubjectDid, 0, 1, 0, 0,
+					)
 				}
-			},
-		)
+			}
+		}()
 
 		// Clear buffer
 		m.buffers.Store(event, make([]db.BulkCreateFollowsParams, 0, len(buffer)))
@@ -402,6 +410,8 @@ func (m *Manager) CreateUser(did string) {
 }
 
 func (m *Manager) DeleteFollow(uri string) {
+	ctx := context.Background()
+
 	event := Event{EntityFollow, OperationDelete}
 	mutex := m.mutexes[event]
 	if mutex == nil {
@@ -423,38 +433,44 @@ func (m *Manager) DeleteFollow(uri string) {
 	m.buffers.Store(event, buffer)
 
 	if len(buffer) >= BulkSize[event.Entity] {
-		go m.executeTransaction(
-			func(ctx context.Context, qtx *db.Queries) {
-				// Delete follows
-				deletedFollows, err := qtx.BulkDeleteFollows(ctx, buffer)
-				if err != nil {
-					log.Infof("Error deleting follows: %v", err)
-					return
+		go func() {
+			var deletedFollows []db.BulkDeleteFollowsRow
+
+			m.executeTransaction(
+				func(ctx context.Context, qtx *db.Queries) {
+					// Delete follows
+					var err error
+					deletedFollows, err = qtx.BulkDeleteFollows(ctx, buffer)
+					if err != nil {
+						log.Infof("Error deleting follows: %v", err)
+						return
+					}
+				},
+			)
+
+			// Remove follow from users statistics
+			for _, follow := range deletedFollows {
+				err := m.queries.AddUserFollows(ctx, db.AddUserFollowsParams{
+					Did:          follow.AuthorDid,
+					FollowsCount: pgtype.Int4{Int32: -1, Valid: true},
+				})
+				if err == nil {
+					m.usersCache.UpdateUserStatistics(
+						follow.AuthorDid, -1, 0, 0, 0,
+					)
 				}
 
-				// Remove follow from users statistics
-				for _, follow := range deletedFollows {
-					err = qtx.AddUserFollows(ctx, db.AddUserFollowsParams{
-						Did:          follow.AuthorDid,
-						FollowsCount: pgtype.Int4{Int32: -1, Valid: true},
-					})
-					if err == nil {
-						m.usersCache.UpdateUserStatistics(
-							follow.AuthorDid, -1, 0, 0, 0,
-						)
-					}
-					err = qtx.AddUserFollowers(ctx, db.AddUserFollowersParams{
-						Did:            follow.SubjectDid,
-						FollowersCount: pgtype.Int4{Int32: -1, Valid: true},
-					})
-					if err == nil {
-						m.usersCache.UpdateUserStatistics(
-							follow.SubjectDid, 0, -1, 0, 0,
-						)
-					}
+				err = m.queries.AddUserFollowers(ctx, db.AddUserFollowersParams{
+					Did:            follow.SubjectDid,
+					FollowersCount: pgtype.Int4{Int32: -1, Valid: true},
+				})
+				if err == nil {
+					m.usersCache.UpdateUserStatistics(
+						follow.SubjectDid, 0, -1, 0, 0,
+					)
 				}
-			},
-		)
+			}
+		}()
 
 		// Clear buffer
 		m.buffers.Store(event, make([]string, 0, len(buffer)))
