@@ -7,18 +7,22 @@ import (
 	"bsky/storage"
 	"bsky/tasks"
 	"bsky/utils"
-	"context"
 	"fmt"
-	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/gocql/gocql"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/redis/go-redis/v9"
+	"github.com/scylladb/gocqlx/v3"
 	log "github.com/sirupsen/logrus"
+	"go.uber.org/zap"
 	"math"
 	"net/url"
 	"os"
+	"time"
 )
 
 func init() {
+	log.SetLevel(log.WarnLevel)
+
 	// Register Prometheus metrics
 	prometheus.MustRegister(
 		monitoring.HttpRequestsTotal,
@@ -30,23 +34,13 @@ func init() {
 }
 
 func main() {
-	log.SetLevel(log.WarnLevel)
-
-	ctx := context.Background()
-	connectionPool, err := pgxpool.New(
-		ctx,
-		fmt.Sprintf(
-			"user=%s password=%s dbname=%s sslmode=disable host=%s port=%s",
-			os.Getenv("DB_USERNAME"),
-			os.Getenv("DB_PASSWORD"),
-			"bsky_feeds",
-			os.Getenv("DB_HOST"),
-			os.Getenv("DB_PORT"),
-		),
-	)
+	cluster := createCluster(gocql.Quorum, "catalog", "db")
+	session, err := gocql.NewSession(*cluster)
 	if err != nil {
-		panic(err)
+		log.Fatal("unable to connect to scylla", zap.Error(err))
 	}
+	sessionx := gocqlx.NewSession(session)
+	defer sessionx.Close()
 
 	redisHost := os.Getenv("REDIS_HOST")
 	redisPort := os.Getenv("REDIS_PORT")
@@ -56,7 +50,7 @@ func main() {
 		DB:       0,  // use default DB
 	})
 
-	storageManager := storage.NewManager(connectionPool, redisClient)
+	storageManager := storage.NewManager(&sessionx, redisClient)
 
 	// Run background tasks
 	runBackgroundTasks(storageManager)
@@ -64,6 +58,21 @@ func main() {
 	// Run server
 	s := server.NewServer(storageManager)
 	s.Run()
+}
+
+func createCluster(consistency gocql.Consistency, keyspace string, hosts ...string) *gocql.ClusterConfig {
+	retryPolicy := &gocql.ExponentialBackoffRetryPolicy{
+		Min:        time.Second,
+		Max:        10 * time.Second,
+		NumRetries: 5,
+	}
+	cluster := gocql.NewCluster(hosts...)
+	cluster.Keyspace = keyspace
+	cluster.Timeout = 5 * time.Second
+	cluster.RetryPolicy = retryPolicy
+	cluster.Consistency = consistency
+	cluster.PoolConfig.HostSelectionPolicy = gocql.TokenAwareHostPolicy(gocql.RoundRobinHostPolicy())
+	return cluster
 }
 
 func runBackgroundTasks(storageManager *storage.Manager) {

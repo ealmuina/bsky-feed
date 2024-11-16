@@ -8,10 +8,13 @@ require (
 	github.com/bluesky-social/indigo v0.0.0-20241108221053-6e3c2e3e2dab
 	github.com/bluesky-social/jetstream v0.0.0-20241031234625-0ab10bd041fe
 	github.com/bountylabs/go-fasttext v0.0.0-20200219204537-fd0526b7cfcc
+	github.com/gocql/gocql v1.7.0
 	github.com/jackc/pgx/v5 v5.7.1
 	github.com/prometheus/client_golang v1.20.5
 	github.com/redis/go-redis/v9 v9.7.0
+	github.com/scylladb/gocqlx/v3 v3.0.1
 	github.com/sirupsen/logrus v1.9.3
+	go.uber.org/zap v1.27.0
 )
 
 require (
@@ -24,8 +27,10 @@ require (
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/goccy/go-json v0.10.3 // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
+	github.com/golang/snappy v0.0.4 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/gorilla/websocket v1.5.3 // indirect
+	github.com/hailocab/go-hostpool v0.0.0-20160125115350-e80d13ce29ed // indirect
 	github.com/hashicorp/go-cleanhttp v0.5.2 // indirect
 	github.com/hashicorp/go-retryablehttp v0.7.7 // indirect
 	github.com/hashicorp/golang-lru v1.0.2 // indirect
@@ -62,6 +67,7 @@ require (
 	github.com/prometheus/client_model v0.6.1 // indirect
 	github.com/prometheus/common v0.60.1 // indirect
 	github.com/prometheus/procfs v0.15.1 // indirect
+	github.com/scylladb/go-reflectx v1.0.1 // indirect
 	github.com/spaolacci/murmur3 v1.1.0 // indirect
 	github.com/whyrusleeping/cbor-gen v0.2.0 // indirect
 	gitlab.com/yawning/secp256k1-voi v0.0.0-20230925100816-f2616030848b // indirect
@@ -72,7 +78,6 @@ require (
 	go.opentelemetry.io/otel/trace v1.32.0 // indirect
 	go.uber.org/atomic v1.11.0 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
-	go.uber.org/zap v1.27.0 // indirect
 	golang.org/x/crypto v0.29.0 // indirect
 	golang.org/x/sync v0.9.0 // indirect
 	golang.org/x/sys v0.27.0 // indirect
@@ -80,5 +85,6 @@ require (
 	golang.org/x/time v0.8.0 // indirect
 	golang.org/x/xerrors v0.0.0-20240903120638-7835f813f4da // indirect
 	google.golang.org/protobuf v1.35.1 // indirect
+	gopkg.in/inf.v0 v0.9.1 // indirect
 	lukechampine.com/blake3 v1.3.0 // indirect
 )
