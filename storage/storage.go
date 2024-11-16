@@ -253,7 +253,7 @@ func (m *Manager) CreateInteraction(interaction models.Interaction) error {
 			CreatedAt: pgtype.Timestamp{Time: interaction.CreatedAt, Valid: true},
 		},
 	)
-	m.buffers.Store(event.Entity, buffer)
+	m.buffers.Store(event, buffer)
 
 	if len(buffer) >= BulkSize[event.Entity] {
 		go func() {
