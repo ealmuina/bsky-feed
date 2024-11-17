@@ -71,11 +71,10 @@ var (
 		Name: "subscription_state",
 		Columns: []string{
 			"cursor",
-			"id",
 			"service",
 		},
 		PartKey: []string{
-			"id",
+			"service",
 		},
 		SortKey: []string{},
 	})
@@ -84,12 +83,9 @@ var (
 		Name: "users",
 		Columns: []string{
 			"did",
-			"followers_count",
-			"follows_count",
 			"handle",
 			"indexed_at",
 			"last_update",
-			"posts_count",
 		},
 		PartKey: []string{
 			"did",
@@ -97,6 +93,20 @@ var (
 		SortKey: []string{
 			"last_update",
 		},
+	})
+
+	UsersCounters = table.New(table.Metadata{
+		Name: "users_counters",
+		Columns: []string{
+			"did",
+			"followers_count",
+			"follows_count",
+			"posts_count",
+		},
+		PartKey: []string{
+			"did",
+		},
+		SortKey: []string{},
 	})
 )
 
@@ -127,15 +137,17 @@ type PostsStruct struct {
 }
 type SubscriptionStateStruct struct {
 	Cursor  int64
-	Id      int32
 	Service string
 }
 type UsersStruct struct {
+	Did        string
+	Handle     string
+	IndexedAt  time.Time
+	LastUpdate time.Time
+}
+type UsersCountersStruct struct {
 	Did            string
-	FollowersCount int32
-	FollowsCount   int32
-	Handle         string
-	IndexedAt      time.Time
-	LastUpdate     time.Time
-	PostsCount     int32
+	FollowersCount int
+	FollowsCount   int
+	PostsCount     int
 }

@@ -184,7 +184,7 @@ func (m *Manager) DeleteFollow(uri string) {
 	// Get follow
 	follow, err := queries.GetFollow(m.dbSession, uri)
 	if err != nil {
-		log.Errorf("Error getting follow to delete: %v", err)
+		// Follow does not exist in DB
 		return
 	}
 
@@ -342,14 +342,21 @@ func (m *Manager) UpdateCursor(service string, cursor int64) {
 	}
 }
 
-func (m *Manager) UpdateUser(updatedUser models.UsersStruct) {
+func (m *Manager) UpdateUser(updatedUser models.UsersStruct, updatedUserCounters models.UsersCountersStruct) {
 	// Update on cache
-	m.usersCache.SetUserFollows(updatedUser.Did, updatedUser.FollowersCount, updatedUser.FollowsCount)
+	m.usersCache.SetUserFollows(
+		updatedUserCounters.Did,
+		int32(updatedUserCounters.FollowersCount),
+		int32(updatedUserCounters.FollowsCount),
+	)
 
 	// Update on DB
 	updatedUser.LastUpdate = time.Now()
 	if err := queries.UpdateUser(m.dbSession, updatedUser); err != nil {
-		log.Errorf("Error updating user: %v", err)
+		log.Errorf("Error updating user '%s': %v", updatedUser.Handle, err)
+	}
+	if err := queries.UpdateUserCounters(m.dbSession, updatedUserCounters); err != nil {
+		log.Errorf("Error updating user '%s' counters: %v", updatedUser.Handle, err)
 	}
 }
 

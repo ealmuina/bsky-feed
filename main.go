@@ -34,13 +34,14 @@ func init() {
 }
 
 func main() {
-	cluster := createCluster(gocql.Quorum, "catalog", "db")
-	session, err := gocql.NewSession(*cluster)
+	dbHost := os.Getenv("DB_HOST")
+	cluster := gocql.NewCluster(dbHost)
+	cluster.Keyspace = "bsky"
+	session, err := gocqlx.WrapSession(cluster.CreateSession())
 	if err != nil {
 		log.Fatal("unable to connect to scylla", zap.Error(err))
 	}
-	sessionx := gocqlx.NewSession(session)
-	defer sessionx.Close()
+	defer session.Close()
 
 	redisHost := os.Getenv("REDIS_HOST")
 	redisPort := os.Getenv("REDIS_PORT")
@@ -50,7 +51,7 @@ func main() {
 		DB:       0,  // use default DB
 	})
 
-	storageManager := storage.NewManager(&sessionx, redisClient)
+	storageManager := storage.NewManager(&session, redisClient)
 
 	// Run background tasks
 	runBackgroundTasks(storageManager)

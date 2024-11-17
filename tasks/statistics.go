@@ -137,11 +137,14 @@ func (u *StatisticsUpdater) updateUserStatistics(did string) {
 
 	u.storageManager.UpdateUser(
 		models.UsersStruct{
+			Did:    did,
+			Handle: profile.Handle,
+		},
+		models.UsersCountersStruct{
 			Did:            did,
-			Handle:         profile.Handle,
-			FollowersCount: int32(*profile.FollowersCount),
-			FollowsCount:   int32(*profile.FollowsCount),
-			PostsCount:     int32(*profile.PostsCount),
+			FollowersCount: int(*profile.FollowersCount),
+			FollowsCount:   int(*profile.FollowsCount),
+			PostsCount:     int(*profile.PostsCount),
 		},
 	)
 }

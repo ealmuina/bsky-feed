@@ -19,13 +19,11 @@ func GetSubscriptionState(session *gocqlx.Session, service string) (models.Subsc
 
 func UpdateSubscriptionStateCursor(session *gocqlx.Session, service string, cursor int64) error {
 	return session.Query(
-		models.Users.
+		models.SubscriptionState.
 			UpdateBuilder().
 			Set("cursor").
-			Where(qb.Eq("service")).
 			ToCql(),
 	).Bind(
-		cursor,
-		service,
+		cursor, service,
 	).Exec()
 }

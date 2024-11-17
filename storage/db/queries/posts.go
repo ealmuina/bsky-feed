@@ -17,8 +17,8 @@ func CreatePost(session *gocqlx.Session, post models.PostsStruct) error {
 func DeleteOldPosts(session *gocqlx.Session) ([]models.PostsStruct, error) {
 	// Retrieve posts
 	query := session.Query(
-		models.Posts.
-			SelectBuilder("uri", "author_did", "created_at").
+		qb.Select("posts").
+			Columns("uri", "author_id", "created_at").
 			Where(qb.Lt("created_at")).
 			ToCql(),
 	).Bind(
@@ -35,8 +35,7 @@ func DeleteOldPosts(session *gocqlx.Session) ([]models.PostsStruct, error) {
 
 	// Delete posts
 	query = session.Query(
-		models.Posts.
-			DeleteBuilder().
+		qb.Delete("posts").
 			Where(qb.In("uri")).
 			ToCql(),
 	).Bind(
@@ -58,8 +57,12 @@ func DeletePost(session *gocqlx.Session, uri string) error {
 
 func DeletePostsFromUser(session *gocqlx.Session, authorDid string) error {
 	return session.
-		Query(models.Posts.Delete()).
-		BindMap(qb.M{"author_did": authorDid}).
+		Query(
+			qb.Delete("posts").
+				Where(qb.Eq("author_did")).
+				ToCql(),
+		).
+		Bind(authorDid).
 		Exec()
 }
 
@@ -72,8 +75,7 @@ func GetLanguagePosts(
 	var posts []models.PostsStruct
 
 	query := session.Query(
-		models.Posts.
-			SelectBuilder().
+		qb.Select("posts").
 			Where(
 				qb.Eq("language"),
 				qb.Eq("reply_root"),

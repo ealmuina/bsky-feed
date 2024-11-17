@@ -1,7 +1,7 @@
 package cache
 
 import (
-	"bsky/storage/models"
+	"bsky/storage/db/models"
 	"context"
 	"github.com/redis/go-redis/v9"
 	log "github.com/sirupsen/logrus"
@@ -24,7 +24,7 @@ func NewPostsCache(redisConnection *redis.Client, expiration time.Duration) Post
 	}
 }
 
-func (c *PostsCache) AddPost(post models.Post) {
+func (c *PostsCache) AddPost(post models.PostsStruct) {
 	ctx := context.Background()
 	c.redisClient.HSet(ctx, PostAuthorCacheRedisKey, post.Uri, post.AuthorDid)
 	c.redisClient.HExpire(ctx, PostAuthorCacheRedisKey, c.expiration, post.Uri)

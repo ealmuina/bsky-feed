@@ -23,15 +23,18 @@ func DeleteInteraction(session *gocqlx.Session, uri string) error {
 
 func DeleteInteractionsFromUser(session *gocqlx.Session, authorDid string) error {
 	return session.
-		Query(models.Interactions.Delete()).
-		BindMap(qb.M{"author_did": authorDid}).
+		Query(
+			qb.Delete("interactions").
+				Where(qb.Eq("author_did")).
+				ToCql(),
+		).
+		Bind(authorDid).
 		Exec()
 }
 
 func DeleteOldInteractions(session *gocqlx.Session) error {
 	query := session.Query(
-		models.Interactions.
-			DeleteBuilder().
+		qb.Delete("interactions").
 			Where(qb.Lt("created_at")).
 			ToCql(),
 	).Bind(

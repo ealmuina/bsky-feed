@@ -22,8 +22,12 @@ func DeleteFollow(session *gocqlx.Session, uri string) error {
 
 func DeleteFollowsFromUser(session *gocqlx.Session, authorDid string) error {
 	return session.
-		Query(models.Follows.Delete()).
-		BindMap(qb.M{"author_did": authorDid}).
+		Query(
+			qb.Delete("follows").
+				Where(qb.Eq("author_did")).
+				ToCql(),
+		).
+		Bind(authorDid).
 		Exec()
 }
 

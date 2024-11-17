@@ -9,10 +9,9 @@ import (
 
 func ApplyFollowToUsers(session *gocqlx.Session, follow models.FollowsStruct, delta int) error {
 	query := session.Query(
-		models.Users.
+		models.UsersCounters.
 			UpdateBuilder().
 			Add("follows_count").
-			Where(qb.Eq("did")).
 			ToCql(),
 	).Bind(
 		delta,
@@ -23,10 +22,9 @@ func ApplyFollowToUsers(session *gocqlx.Session, follow models.FollowsStruct, de
 	}
 
 	query = session.Query(
-		models.Users.
+		models.UsersCounters.
 			UpdateBuilder().
 			Add("followers_count").
-			Where(qb.Eq("did")).
 			ToCql(),
 	).Bind(
 		delta,
@@ -37,10 +35,9 @@ func ApplyFollowToUsers(session *gocqlx.Session, follow models.FollowsStruct, de
 
 func ApplyPostToUser(session *gocqlx.Session, post models.PostsStruct, delta int) error {
 	return session.Query(
-		models.Users.
+		models.UsersCounters.
 			UpdateBuilder().
 			Add("posts_count").
-			Where(qb.Eq("did")).
 			ToCql(),
 	).Bind(
 		delta,
@@ -78,8 +75,8 @@ func GetUserDids(session *gocqlx.Session) ([]string, error) {
 
 func GetUserDidsToRefreshStatistics(session *gocqlx.Session) ([]string, error) {
 	query := session.Query(
-		models.Users.
-			SelectBuilder("did").
+		qb.Select("users").
+			Columns("did").
 			Where(qb.Lt("last_update")).
 			ToCql(),
 	).Bind(
@@ -99,13 +96,33 @@ func GetUserDidsToRefreshStatistics(session *gocqlx.Session) ([]string, error) {
 }
 
 func UpdateUser(session *gocqlx.Session, updatedUser models.UsersStruct) error {
+	// Delete if exists
+	_ = DeleteUser(session, updatedUser.Did)
+
+	return CreateUser(session, updatedUser)
+}
+
+func UpdateUserCounters(session *gocqlx.Session, updatedUserCounters models.UsersCountersStruct) error {
+	// Delete previous entry from DB
+	query := session.Query(
+		models.UsersCounters.Delete(),
+	).BindStruct(updatedUserCounters)
+
+	if err := query.Exec(); err != nil {
+		return err
+	}
+
+	// Add new entry
 	return session.Query(
-		models.Users.Update(
-			"handle",
-			"followers_count",
-			"follows_count",
-			"posts_count",
-			"last_update",
-		),
-	).BindStruct(updatedUser).Exec()
+		models.UsersCounters.UpdateBuilder().
+			Add("follows_count").
+			Add("followers_count").
+			Add("posts_count").
+			ToCql(),
+	).Bind(
+		updatedUserCounters.FollowsCount,
+		updatedUserCounters.FollowersCount,
+		updatedUserCounters.PostsCount,
+		updatedUserCounters.Did,
+	).Exec()
 }
