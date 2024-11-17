@@ -2,23 +2,27 @@ package algorithms
 
 import (
 	"bsky/storage/cache"
-	db "bsky/storage/db/sqlc"
-	"bsky/storage/models"
+	"bsky/storage/db/models"
+	"bsky/storage/utils"
+	"github.com/scylladb/gocqlx/v3"
 )
 
 type LightLanguageAlgorithm struct {
 	languageCode string
 }
 
-func (a *LightLanguageAlgorithm) AcceptsPost(post models.Post, _ cache.UserStatistics) (ok bool, reason map[string]string) {
-	ok = post.Language == a.languageCode &&
-		post.ReplyRoot == "" &&
-		post.Embed == nil
+func (a *LightLanguageAlgorithm) AcceptsPost(
+	postContent utils.PostContent,
+	_ cache.UserStatistics,
+) (ok bool, reason map[string]string) {
+	ok = postContent.Post.Language == a.languageCode &&
+		postContent.Post.ReplyRoot == "" &&
+		postContent.Embed == nil
 	reason = nil
 	return
 }
 
-func (a *LightLanguageAlgorithm) GetPosts(_ *db.Queries, _ float64, _ int64) []models.Post {
+func (a *LightLanguageAlgorithm) GetPosts(_ *gocqlx.Session, _ float64, _ int64) []models.PostsStruct {
 	// These timelines are stored in memory only
-	return make([]models.Post, 0)
+	return make([]models.PostsStruct, 0)
 }

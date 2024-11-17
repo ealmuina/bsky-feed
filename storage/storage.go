@@ -3,74 +3,34 @@ package storage
 import (
 	"bsky/storage/algorithms"
 	"bsky/storage/cache"
-	db "bsky/storage/db/sqlc"
-	"bsky/storage/models"
-	"context"
+	"bsky/storage/db/models"
+	"bsky/storage/db/queries"
+	"bsky/storage/utils"
 	"fmt"
-	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
+	"github.com/scylladb/gocqlx/v3"
 	log "github.com/sirupsen/logrus"
 	"slices"
 	"sync"
 	"time"
 )
 
-type Entity string
-type Operation string
-
-const (
-	EntityPost        Entity = "post"
-	EntityInteraction        = "interaction"
-	EntityFollow             = "follow"
-)
-
-const (
-	OperationCreate Operation = "create"
-	OperationUpdate           = "update"
-	OperationDelete           = "delete"
-)
-
-type Event struct {
-	Entity    Entity
-	Operation Operation
-}
-
-var BulkSize = map[Entity]int{
-	EntityPost:        100,
-	EntityInteraction: 100,
-	EntityFollow:      100,
-}
-
 type Manager struct {
 	redisConnection *redis.Client
-	dbConnection    *pgxpool.Pool
-	queries         *db.Queries
+	dbSession       *gocqlx.Session
 
 	usersCache cache.UsersCache
 	postsCache cache.PostsCache
 	timelines  map[string]cache.Timeline
 	algorithms map[string]algorithms.Algorithm
 
-	buffers      sync.Map
-	mutexes      map[Event]*sync.Mutex
 	usersCreated sync.Map
 }
 
-func NewManager(dbConnection *pgxpool.Pool, redisConnection *redis.Client) *Manager {
-	mutexes := map[Event]*sync.Mutex{
-		Event{EntityPost, OperationCreate}:        {},
-		Event{EntityPost, OperationDelete}:        {},
-		Event{EntityInteraction, OperationCreate}: {},
-		Event{EntityInteraction, OperationDelete}: {},
-		Event{EntityFollow, OperationCreate}:      {},
-		Event{EntityFollow, OperationDelete}:      {},
-	}
-
+func NewManager(dbSession *gocqlx.Session, redisConnection *redis.Client) *Manager {
 	storageManager := Manager{
 		redisConnection: redisConnection,
-		dbConnection:    dbConnection,
-		queries:         db.New(dbConnection),
+		dbSession:       dbSession,
 
 		usersCache: cache.NewUsersCache(
 			redisConnection,
@@ -83,21 +43,18 @@ func NewManager(dbConnection *pgxpool.Pool, redisConnection *redis.Client) *Mana
 		timelines:  make(map[string]cache.Timeline),
 		algorithms: make(map[string]algorithms.Algorithm),
 
-		buffers:      sync.Map{},
-		mutexes:      mutexes,
 		usersCreated: sync.Map{},
 	}
 	storageManager.loadUsersCreated()
-	go storageManager.loadUsersFollows()
 	storageManager.initializeTimelines()
 	storageManager.initializeAlgorithms()
 	return &storageManager
 }
 
-func (m *Manager) AddPostToTimeline(timelineName string, post models.Post) {
+func (m *Manager) AddPostToTimeline(timelineName string, post models.PostsStruct, reason map[string]string) {
 	timeline, ok := m.timelines[timelineName]
 	if ok {
-		timeline.AddPost(post)
+		timeline.AddPost(post, reason)
 	} else {
 		log.Errorf("Could not find timeline for feed name: %s", timelineName)
 	}
@@ -105,19 +62,12 @@ func (m *Manager) AddPostToTimeline(timelineName string, post models.Post) {
 
 func (m *Manager) CleanOldData() {
 	// Clean DB
-	ctx := context.Background()
-	deletedPosts, err := m.queries.DeleteOldPosts(ctx)
+	deletedPosts, err := queries.DeleteOldPosts(m.dbSession)
 	if err != nil {
 		log.Errorf("Error cleaning old posts: %v", err)
 	}
-	if err := m.queries.VacuumPosts(ctx); err != nil {
-		log.Errorf("Error vacuuming posts table: %v", err)
-	}
-	if err := m.queries.DeleteOldInteractions(ctx); err != nil {
+	if err := queries.DeleteOldInteractions(m.dbSession); err != nil {
 		log.Errorf("Error cleaning old interactions: %v", err)
-	}
-	if err := m.queries.VacuumInteractions(ctx); err != nil {
-		log.Errorf("Error vacuuming interactions: %v", err)
 	}
 
 	// Clean timelines
@@ -138,178 +88,54 @@ func (m *Manager) CleanOldData() {
 	m.postsCache.DeletePosts(postUris)
 }
 
-func (m *Manager) CreateFollow(follow models.Follow) {
-	ctx := context.Background()
-
-	event := Event{EntityFollow, OperationCreate}
-	mutex := m.mutexes[event]
-	if mutex == nil {
-		log.Errorf("Mutex for follows create buffer not initialized")
+func (m *Manager) CreateFollow(follow models.FollowsStruct) {
+	// Create follow
+	if err := queries.CreateFollow(m.dbSession, follow); err != nil {
+		log.Errorf("Error creating follow: %v", err)
 		return
 	}
-	mutex.Lock()
-	defer mutex.Unlock()
 
-	var buffer []db.BulkCreateFollowsParams
-	b, ok := m.buffers.Load(event)
-	if ok {
-		buffer = b.([]db.BulkCreateFollowsParams)
-	} else {
-		buffer = make([]db.BulkCreateFollowsParams, 0)
+	// Add follow to users statistics
+	if err := queries.ApplyFollowToUsers(m.dbSession, follow, 1); err != nil {
+		log.Errorf("Error adding follow to users: %v", err)
+		return
 	}
-
-	buffer = append(
-		buffer,
-		db.BulkCreateFollowsParams{
-			Uri:        follow.Uri,
-			AuthorDid:  follow.AuthorDid,
-			SubjectDid: follow.SubjectDid,
-			CreatedAt:  pgtype.Timestamp{Time: follow.CreatedAt, Valid: true},
-		},
+	m.usersCache.UpdateUserStatistics(
+		follow.AuthorDid, 1, 0, 0, 0,
 	)
-	m.buffers.Store(event, buffer)
-
-	if len(buffer) >= BulkSize[event.Entity] {
-		go func() {
-			var createdFollows []db.InsertFromTempToFollowsRow
-
-			m.executeTransaction(
-				func(ctx context.Context, qtx *db.Queries) {
-					// Create temporary table
-					err := qtx.CreateTempFollowsTable(ctx)
-					if err != nil {
-						log.Infof("Error creating tmp_follows: %v", err)
-						return
-					}
-					// Copy data to temporary table
-					if _, err := qtx.BulkCreateFollows(context.Background(), buffer); err != nil {
-						log.Errorf("Error creating follows: %v", err)
-						return
-					}
-					// Move data from temporary table to follows
-					createdFollows, err = qtx.InsertFromTempToFollows(ctx)
-					if err != nil {
-						log.Errorf("Error persisting follows: %v", err)
-						return
-					}
-				},
-			)
-
-			// Add follow to users statistics
-			for _, follow := range createdFollows {
-				err := m.queries.AddUserFollows(ctx, db.AddUserFollowsParams{
-					Did:          follow.AuthorDid,
-					FollowsCount: pgtype.Int4{Int32: 1, Valid: true},
-				})
-				if err == nil {
-					m.usersCache.UpdateUserStatistics(
-						follow.AuthorDid, 1, 0, 0, 0,
-					)
-				}
-
-				err = m.queries.AddUserFollowers(ctx, db.AddUserFollowersParams{
-					Did:            follow.SubjectDid,
-					FollowersCount: pgtype.Int4{Int32: 1, Valid: true},
-				})
-				if err == nil {
-					m.usersCache.UpdateUserStatistics(
-						follow.SubjectDid, 0, 1, 0, 0,
-					)
-				}
-			}
-		}()
-
-		// Clear buffer
-		m.buffers.Store(event, make([]db.BulkCreateFollowsParams, 0, len(buffer)))
-	}
+	m.usersCache.UpdateUserStatistics(
+		follow.SubjectDid, 0, 1, 0, 0,
+	)
 }
 
-func (m *Manager) CreateInteraction(interaction models.Interaction) error {
-	event := Event{EntityInteraction, OperationCreate}
-	mutex := m.mutexes[event]
-	if mutex == nil {
-		err := fmt.Errorf("mutex for interactions create buffer not initialized")
-		log.Error(err)
+func (m *Manager) CreateInteraction(interaction models.InteractionsStruct) error {
+	// Create interaction
+	if err := queries.CreateInteraction(m.dbSession, interaction); err != nil {
+		log.Errorf("Error creating interaction: %v", err)
 		return err
 	}
-	mutex.Lock()
-	defer mutex.Unlock()
 
-	var buffer []db.BulkCreateInteractionsParams
-	b, ok := m.buffers.Load(event)
+	// Update caches
+	postAuthor, ok := m.postsCache.GetPostAuthor(interaction.PostUri)
 	if ok {
-		buffer = b.([]db.BulkCreateInteractionsParams)
-	} else {
-		buffer = make([]db.BulkCreateInteractionsParams, 0)
-	}
-
-	buffer = append(
-		buffer,
-		db.BulkCreateInteractionsParams{
-			Uri:       interaction.Uri,
-			Kind:      db.InteractionType(interaction.Kind),
-			AuthorDid: interaction.AuthorDid,
-			PostUri:   interaction.PostUri,
-			CreatedAt: pgtype.Timestamp{Time: interaction.CreatedAt, Valid: true},
-		},
-	)
-	m.buffers.Store(event.Entity, buffer)
-
-	if len(buffer) >= BulkSize[event.Entity] {
-		go func() {
-			var createdInteractions []db.InsertFromTempToInteractionsRow
-
-			m.executeTransaction(
-				func(ctx context.Context, qtx *db.Queries) {
-					// Create temporary table
-					err := qtx.CreateTempInteractionsTable(ctx)
-					if err != nil {
-						log.Infof("Error creating tmp_interactions: %v", err)
-						return
-					}
-					// Copy data to temporary table
-					if _, err := qtx.BulkCreateInteractions(ctx, buffer); err != nil {
-						log.Errorf("Error creating interactions: %v", err)
-						return
-					}
-					// Move data from temporary table to interactions
-					createdInteractions, err = qtx.InsertFromTempToInteractions(ctx)
-					if err != nil {
-						log.Errorf("Error persisting interactions: %v", err)
-						return
-					}
-				},
-			)
-
-			// Update caches
-			for _, interaction := range createdInteractions {
-				postAuthor, ok := m.postsCache.GetPostAuthor(interaction.PostUri)
-				if ok {
-					m.postsCache.AddInteraction(interaction.PostUri)
-					m.usersCache.UpdateUserStatistics(
-						postAuthor, 0, 0, 0, 1,
-					)
-				}
-			}
-		}()
-
-		// Clear buffer
-		m.buffers.Store(event, make([]db.BulkCreateInteractionsParams, 0, len(buffer)))
+		m.postsCache.AddInteraction(interaction.PostUri)
+		m.usersCache.UpdateUserStatistics(
+			postAuthor, 0, 0, 0, 1,
+		)
 	}
 
 	return nil
 }
 
-func (m *Manager) CreatePost(post models.Post) {
-	ctx := context.Background()
+func (m *Manager) CreatePost(postContent utils.PostContent) {
+	post := postContent.Post
 
 	// Add post to corresponding timelines
 	authorStatistics := m.usersCache.GetUserStatistics(post.AuthorDid)
 	go func() {
 		for timelineName, algorithm := range m.algorithms {
-			if ok, reason := algorithm.AcceptsPost(post, authorStatistics); ok {
-				post.Reason = reason
-				m.AddPostToTimeline(timelineName, post)
+			if ok, reason := algorithm.AcceptsPost(postContent, authorStatistics); ok {
+				m.AddPostToTimeline(timelineName, post, reason)
 			}
 		}
 	}()
@@ -322,82 +148,20 @@ func (m *Manager) CreatePost(post models.Post) {
 	}
 
 	// Store in DB
-	event := Event{EntityPost, OperationCreate}
-	mutex := m.mutexes[event]
-	if mutex == nil {
-		log.Errorf("Mutex for posts create buffer not initialized")
-		return
-	}
-	mutex.Lock()
-	defer mutex.Unlock()
-
-	var buffer []db.BulkCreatePostsParams
-	b, ok := m.buffers.Load(event)
-	if ok {
-		buffer = b.([]db.BulkCreatePostsParams)
-	} else {
-		buffer = make([]db.BulkCreatePostsParams, 0)
+	if err := queries.CreatePost(m.dbSession, post); err != nil {
+		log.Errorf("Error creating post: %v", err)
 	}
 
-	buffer = append(
-		buffer,
-		db.BulkCreatePostsParams{
-			Uri:         post.Uri,
-			AuthorDid:   post.AuthorDid,
-			ReplyParent: pgtype.Text{String: post.ReplyParent, Valid: post.ReplyParent != ""},
-			ReplyRoot:   pgtype.Text{String: post.ReplyRoot, Valid: post.ReplyRoot != ""},
-			CreatedAt:   pgtype.Timestamp{Time: post.CreatedAt, Valid: true},
-			Language:    pgtype.Text{String: post.Language, Valid: post.Language != ""},
-			Rank:        pgtype.Float8{Float64: post.Rank, Valid: true},
-		},
-	)
-	m.buffers.Store(event, buffer)
+	// Add post to user statistics
+	if err := queries.ApplyPostToUser(m.dbSession, post, 1); err != nil {
+		log.Errorf("Error increasing user's post count: %v", err)
+	}
 
-	if len(buffer) >= BulkSize[event.Entity] {
-		go func() {
-			var createdPosts []db.InsertFromTempToPostsRow
-
-			m.executeTransaction(
-				func(ctx context.Context, qtx *db.Queries) {
-					// Create temporary table
-					err := qtx.CreateTempPostsTable(ctx)
-					if err != nil {
-						log.Infof("Error creating tmp_posts: %v", err)
-						return
-					}
-					// Copy data to temporary table
-					if _, err := qtx.BulkCreatePosts(context.Background(), buffer); err != nil {
-						log.Errorf("Error creating posts: %v", err)
-						return
-					}
-					// Move data from temporary table to posts
-					createdPosts, err = qtx.InsertFromTempToPosts(ctx)
-					if err != nil {
-						log.Errorf("Error persisting posts: %v", err)
-						return
-					}
-				},
-			)
-
-			// Add post to user statistics
-			for _, post := range createdPosts {
-				err := m.queries.AddUserPosts(ctx, db.AddUserPostsParams{
-					Did:        post.AuthorDid,
-					PostsCount: pgtype.Int4{Int32: 1, Valid: true},
-				})
-				if err == nil {
-					// Update cache (exclude replies)
-					if !post.ReplyRoot.Valid {
-						m.usersCache.UpdateUserStatistics(
-							post.AuthorDid, 0, 0, 1, 0,
-						)
-					}
-				}
-			}
-		}()
-
-		// Clear buffer
-		m.buffers.Store(event, make([]db.BulkCreatePostsParams, 0, len(buffer)))
+	// Update cache (exclude replies)
+	if post.ReplyRoot == "" {
+		m.usersCache.UpdateUserStatistics(
+			post.AuthorDid, 0, 0, 1, 0,
+		)
 	}
 }
 
@@ -405,9 +169,9 @@ func (m *Manager) CreateUser(did string) {
 	if _, ok := m.usersCreated.Load(did); ok {
 		return
 	}
-	err := m.queries.CreateUser(
-		context.Background(),
-		db.CreateUserParams{Did: did},
+	err := queries.CreateUser(
+		m.dbSession,
+		models.UsersStruct{Did: did},
 	)
 	if err != nil {
 		log.Errorf("Error creating user: %m", err)
@@ -417,306 +181,176 @@ func (m *Manager) CreateUser(did string) {
 }
 
 func (m *Manager) DeleteFollow(uri string) {
-	ctx := context.Background()
-
-	event := Event{EntityFollow, OperationDelete}
-	mutex := m.mutexes[event]
-	if mutex == nil {
-		log.Errorf("Mutex for follows delete buffer not initialized")
+	// Get follow
+	follow, err := queries.GetFollow(m.dbSession, uri)
+	if err != nil {
+		log.Errorf("Error getting follow to delete: %v", err)
 		return
 	}
-	mutex.Lock()
-	defer mutex.Unlock()
 
-	var buffer []string
-	b, ok := m.buffers.Load(event)
-	if ok {
-		buffer = b.([]string)
-	} else {
-		buffer = make([]string, 0)
+	// Delete in DB
+	if err := queries.DeleteFollow(m.dbSession, uri); err != nil {
+		log.Errorf("Error deleting follow: %v", err)
+		return
 	}
 
-	buffer = append(buffer, uri)
-	m.buffers.Store(event, buffer)
-
-	if len(buffer) >= BulkSize[event.Entity] {
-		go func() {
-			var deletedFollows []db.BulkDeleteFollowsRow
-
-			m.executeTransaction(
-				func(ctx context.Context, qtx *db.Queries) {
-					// Delete follows
-					var err error
-					deletedFollows, err = qtx.BulkDeleteFollows(ctx, buffer)
-					if err != nil {
-						log.Infof("Error deleting follows: %v", err)
-						return
-					}
-				},
-			)
-
-			// Remove follow from users statistics
-			for _, follow := range deletedFollows {
-				err := m.queries.AddUserFollows(ctx, db.AddUserFollowsParams{
-					Did:          follow.AuthorDid,
-					FollowsCount: pgtype.Int4{Int32: -1, Valid: true},
-				})
-				if err == nil {
-					m.usersCache.UpdateUserStatistics(
-						follow.AuthorDid, -1, 0, 0, 0,
-					)
-				}
-
-				err = m.queries.AddUserFollowers(ctx, db.AddUserFollowersParams{
-					Did:            follow.SubjectDid,
-					FollowersCount: pgtype.Int4{Int32: -1, Valid: true},
-				})
-				if err == nil {
-					m.usersCache.UpdateUserStatistics(
-						follow.SubjectDid, 0, -1, 0, 0,
-					)
-				}
-			}
-		}()
-
-		// Clear buffer
-		m.buffers.Store(event, make([]string, 0, len(buffer)))
+	// Discount follow from users statistics
+	if err := queries.ApplyFollowToUsers(m.dbSession, follow, 1); err != nil {
+		log.Errorf("Error adding follow to users: %v", err)
+		return
 	}
+	m.usersCache.UpdateUserStatistics(
+		follow.AuthorDid, -1, 0, 0, 0,
+	)
+	m.usersCache.UpdateUserStatistics(
+		follow.SubjectDid, 0, -1, 0, 0,
+	)
 }
 
 func (m *Manager) DeleteInteraction(uri string) {
-	ctx := context.Background()
-
-	event := Event{EntityInteraction, OperationDelete}
-	mutex := m.mutexes[event]
-	if mutex == nil {
-		log.Errorf("Mutex for interactions delete buffer not initialized")
+	// Get interaction
+	interaction, err := queries.GetInteraction(m.dbSession, uri)
+	if err != nil {
+		log.Errorf("Error getting interaction to delete: %v", err)
 		return
 	}
-	mutex.Lock()
-	defer mutex.Unlock()
 
-	var buffer []string
-	b, ok := m.buffers.Load(event)
-	if ok {
-		buffer = b.([]string)
-	} else {
-		buffer = make([]string, 0)
+	// Delete in DB
+	if err := queries.DeleteInteraction(m.dbSession, uri); err != nil {
+		log.Errorf("Error deleting interaction: %v", err)
+		return
 	}
 
-	buffer = append(buffer, uri)
-	m.buffers.Store(event, buffer)
-
-	if len(buffer) >= BulkSize[event.Entity] {
-		go func() {
-			deletedInteractions, err := m.queries.BulkDeleteInteractions(ctx, buffer)
-			if err != nil {
-				log.Errorf("Error deleting interactions: %v", err)
-			}
-
-			// Update caches
-			for _, interaction := range deletedInteractions {
-				postAuthor, ok := m.postsCache.GetPostAuthor(interaction.PostUri)
-				if ok {
-					m.postsCache.DeleteInteraction(interaction.PostUri)
-					m.usersCache.UpdateUserStatistics(
-						postAuthor, 0, 0, 0, -1,
-					)
-				}
-			}
-		}()
-
-		// Clear buffer
-		m.buffers.Store(event, make([]string, 0, len(buffer)))
+	// Update caches
+	postAuthor, ok := m.postsCache.GetPostAuthor(interaction.PostUri)
+	if ok {
+		m.postsCache.DeleteInteraction(interaction.PostUri)
+		m.usersCache.UpdateUserStatistics(
+			postAuthor, 0, 0, 0, -1,
+		)
 	}
 }
 
 func (m *Manager) DeletePost(uri string) {
-	ctx := context.Background()
-
-	event := Event{EntityPost, OperationDelete}
-	mutex := m.mutexes[event]
-	if mutex == nil {
-		log.Errorf("Mutex for posts delete buffer not initialized")
+	// Get post
+	post, err := queries.GetPost(m.dbSession, uri)
+	if err != nil {
+		log.Errorf("Error getting post to delete: %v", err)
 		return
 	}
-	mutex.Lock()
-	defer mutex.Unlock()
 
-	var buffer []string
-	b, ok := m.buffers.Load(event)
-	if ok {
-		buffer = b.([]string)
-	} else {
-		buffer = make([]string, 0)
+	// Delete in DB
+	if err := queries.DeletePost(m.dbSession, uri); err != nil {
+		log.Errorf("Error deleting post: %v", err)
+		return
 	}
 
-	buffer = append(buffer, uri)
-	m.buffers.Store(event, buffer)
+	// Remove post from user statistics
+	if err := queries.ApplyPostToUser(m.dbSession, post, -1); err != nil {
+		log.Errorf("Error decreasing user's post count: %v", err)
+		return
+	}
 
-	if len(buffer) >= BulkSize[event.Entity] {
-		go func() {
-			var deletedPosts []db.BulkDeletePostsRow
-
-			m.executeTransaction(
-				func(ctx context.Context, qtx *db.Queries) {
-					// Delete posts
-					var err error
-					deletedPosts, err = qtx.BulkDeletePosts(ctx, buffer)
-					if err != nil {
-						log.Errorf("Error deleting posts: %m", err)
-						return
-					}
-				},
-			)
-
-			// Remove post from user statistics
-			for _, post := range deletedPosts {
-				err := m.queries.AddUserPosts(ctx, db.AddUserPostsParams{
-					Did:        post.AuthorDid,
-					PostsCount: pgtype.Int4{Int32: -1, Valid: true},
-				})
-				if err == nil {
-					// Update caches
-					deleted := m.postsCache.DeletePost(uri)
-					if deleted {
-						postInteractions := m.postsCache.GetPostInteractions(post.AuthorDid)
-						m.usersCache.UpdateUserStatistics(
-							post.AuthorDid, 0, 0, -1, -postInteractions,
-						)
-					}
-				}
-			}
-		}()
-
-		// Clear buffer
-		m.buffers.Store(event, make([]string, 0, len(buffer)))
+	// Update caches
+	deleted := m.postsCache.DeletePost(uri)
+	if deleted {
+		postInteractions := m.postsCache.GetPostInteractions(post.AuthorDid)
+		m.usersCache.UpdateUserStatistics(
+			post.AuthorDid, 0, 0, -1, -postInteractions,
+		)
 	}
 }
 
 func (m *Manager) DeleteUser(did string) {
-	ctx := context.Background()
-
-	// Delete user from DB
-	if err := m.queries.DeleteUser(ctx, did); err != nil {
-		log.Errorf("Error deleting user %s: %v", did, err)
+	// Delete user
+	if err := queries.DeleteUser(m.dbSession, did); err != nil {
+		log.Errorf("Error deleting user: %v", err)
 		return
 	}
+
 	// Delete user's posts
-	if err := m.queries.DeleteUserPosts(ctx, did); err != nil {
+	if err := queries.DeletePostsFromUser(m.dbSession, did); err != nil {
 		log.Errorf("Error deleting posts for user %s: %v", did, err)
 	}
+
 	// Delete user's interactions
-	if err := m.queries.DeleteUser(ctx, did); err != nil {
-		log.Errorf("Error deleting user %s: %v", did, err)
+	if err := queries.DeleteInteractionsFromUser(m.dbSession, did); err != nil {
+		log.Errorf("Error deleting interactions from user %s: %v", did, err)
 	}
+	// TODO: Update caches
+
+	// Delete user's follows
+	if err := queries.DeleteFollowsFromUser(m.dbSession, did); err != nil {
+		log.Errorf("Error deleting follows from user %s: %v", did, err)
+	}
+	// TODO: Update caches
 
 	// Delete user from cache
 	m.usersCache.DeleteUser(did)
 }
 
 func (m *Manager) GetCursor(service string) int64 {
-	state, _ := m.queries.GetSubscriptionState(
-		context.Background(),
-		service,
-	)
+	state, _ := queries.GetSubscriptionState(m.dbSession, service)
 	return state.Cursor // defaults to 0 if not in DB
 }
 
 func (m *Manager) GetOutdatedUserDids() []string {
-	dids, err := m.queries.GetUserDidsToRefreshStatistics(context.Background())
+	dids, err := queries.GetUserDidsToRefreshStatistics(m.dbSession)
 	if err != nil {
 		log.Errorf("Error getting user dids for update: %v", err)
 	}
 	return dids
 }
 
-func (m *Manager) GetTimeline(timelineName string, maxRank float64, limit int64) []models.Post {
+func (m *Manager) GetTimeline(timelineName string, maxRank float64, limit int64) []cache.TimelineEntry {
 	// Attempt to hit cache first
 	timeline, ok := m.timelines[timelineName]
 	if !ok {
 		panic(fmt.Sprintf("Could not find timeline for feed: %s", timelineName))
 	}
-	posts := timeline.GetPosts(maxRank, limit)
+	entries := timeline.GetPosts(maxRank, limit)
 
 	// Not found. Go to DB
-	if int64(len(posts)) < limit {
+	if int64(len(entries)) < limit {
 		algorithm, ok := m.algorithms[timelineName]
 		if !ok {
 			panic(fmt.Sprintf("Could not find algorithm for feed: %s", timelineName))
 		}
-		dbPosts := algorithm.GetPosts(m.queries, maxRank, limit)
+		dbPosts := algorithm.GetPosts(m.dbSession, maxRank, limit)
 		for _, post := range dbPosts {
-			if !slices.ContainsFunc(posts, func(post models.Post) bool {
-				for _, p := range posts {
-					if p.Uri == post.Uri {
+			if !slices.ContainsFunc(entries, func(entry cache.TimelineEntry) bool {
+				for _, e := range entries {
+					if e.Post.Uri == post.Uri {
 						return true
 					}
 				}
 				return false
 			}) {
-				posts = append(posts, post)
+				entries = append(entries, cache.TimelineEntry{Post: post})
 				// Add to cache
-				timeline.AddPost(post)
+				timeline.AddPost(post, nil)
 			}
 		}
 	}
 
-	return posts
+	return entries
 }
 
 func (m *Manager) UpdateCursor(service string, cursor int64) {
-	err := m.queries.UpdateSubscriptionStateCursor(
-		context.Background(),
-		db.UpdateSubscriptionStateCursorParams{
-			Cursor:  cursor,
-			Service: service,
-		},
-	)
-	if err != nil {
-		log.Errorf("Error updating cursor: %m", err)
+	if err := queries.UpdateSubscriptionStateCursor(m.dbSession, service, cursor); err != nil {
+		log.Errorf("Error updating cursor: %v", err)
 	}
 }
 
-func (m *Manager) UpdateUser(updatedUser models.User) {
+func (m *Manager) UpdateUser(updatedUser models.UsersStruct) {
 	// Update on cache
 	m.usersCache.SetUserFollows(updatedUser.Did, updatedUser.FollowersCount, updatedUser.FollowsCount)
 
 	// Update on DB
-	err := m.queries.UpdateUser(
-		context.Background(),
-		db.UpdateUserParams{
-			Did:            updatedUser.Did,
-			Handle:         pgtype.Text{String: updatedUser.Handle, Valid: true},
-			FollowersCount: pgtype.Int4{Int32: int32(updatedUser.FollowersCount), Valid: true},
-			FollowsCount:   pgtype.Int4{Int32: int32(updatedUser.FollowsCount), Valid: true},
-			PostsCount:     pgtype.Int4{Int32: int32(updatedUser.PostsCount), Valid: true},
-			LastUpdate:     pgtype.Timestamp{Time: time.Now(), Valid: true},
-		},
-	)
-	if err != nil {
+	updatedUser.LastUpdate = time.Now()
+	if err := queries.UpdateUser(m.dbSession, updatedUser); err != nil {
 		log.Errorf("Error updating user: %v", err)
 	}
-}
-
-func (m *Manager) executeTransaction(
-	operation func(ctx context.Context, queries *db.Queries),
-) {
-	ctx := context.Background()
-
-	// Start transaction
-	tx, err := m.dbConnection.Begin(ctx)
-	if err != nil {
-		log.Warningf("Error creating transaction: %v", err)
-		return
-	}
-	defer tx.Rollback(ctx) // Rollback on error
-	qtx := m.queries.WithTx(tx)
-
-	operation(ctx, qtx)
-
-	// Finish transaction
-	tx.Commit(ctx)
 }
 
 func (m *Manager) initializeAlgorithms() {
@@ -732,7 +366,7 @@ func (m *Manager) initializeTimelines() {
 }
 
 func (m *Manager) loadUsersCreated() {
-	dids, err := m.queries.GetUserDids(context.Background())
+	dids, err := queries.GetUserDids(m.dbSession)
 	if err != nil {
 		log.Error(err)
 		dids = make([]string, 0)
@@ -740,21 +374,5 @@ func (m *Manager) loadUsersCreated() {
 
 	for _, did := range dids {
 		m.usersCreated.Store(did, true)
-	}
-}
-
-func (m *Manager) loadUsersFollows() {
-	counts, err := m.queries.GetUsersFollows(context.Background())
-	if err != nil {
-		log.Errorf("Error getting users follows: %v", err)
-		return
-	}
-
-	for _, userCounts := range counts {
-		m.usersCache.SetUserFollows(
-			userCounts.Did,
-			int64(userCounts.FollowersCount.Int32),
-			int64(userCounts.FollowsCount.Int32),
-		)
 	}
 }

@@ -1,0 +1,61 @@
+CREATE KEYSPACE bsky
+    WITH replication = {
+        'class': 'SimpleStrategy',
+        'replication_factor': '1'
+        }
+     AND durable_writes = true;
+
+USE bsky;
+
+CREATE TABLE IF NOT EXISTS follows
+(
+    uri         text,
+    author_did  text,
+    subject_did text,
+    indexed_at  timestamp,
+    created_at  timestamp,
+    PRIMARY KEY ( (uri), subject_did, created_at )
+) WITH CLUSTERING ORDER BY (subject_did ASC, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS interactions
+(
+    uri        text,
+    kind       text,
+    author_did text,
+    post_uri   text,
+    indexed_at timestamp,
+    created_at timestamp,
+    PRIMARY KEY ( (uri), post_uri, created_at )
+) WITH CLUSTERING ORDER BY (post_uri ASC, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS posts
+(
+    uri          text,
+    author_did   text,
+    reply_parent text,
+    reply_root   text,
+    indexed_at   timestamp,
+    created_at   timestamp,
+    language     text,
+    rank         double,
+    PRIMARY KEY ( (uri), language, rank )
+) WITH CLUSTERING ORDER BY (language ASC, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS subscription_state
+(
+    id      int PRIMARY KEY,
+    service text,
+    cursor  bigint,
+);
+
+CREATE TABLE IF NOT EXISTS users
+(
+    did             text,
+    handle          text,
+    followers_count int,
+    follows_count   int,
+    posts_count     int,
+    indexed_at      timestamp,
+    last_update     timestamp,
+    PRIMARY KEY ( (did), last_update )
+);

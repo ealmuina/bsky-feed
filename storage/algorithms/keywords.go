@@ -2,8 +2,9 @@ package algorithms
 
 import (
 	"bsky/storage/cache"
-	db "bsky/storage/db/sqlc"
-	"bsky/storage/models"
+	"bsky/storage/db/models"
+	"bsky/storage/utils"
+	"github.com/scylladb/gocqlx/v3"
 	"regexp"
 	"strings"
 )
@@ -26,15 +27,18 @@ func (a *KeywordsAlgorithm) keywordsWeight(text string) float64 {
 	return total
 }
 
-func (a *KeywordsAlgorithm) AcceptsPost(post models.Post, _ cache.UserStatistics) (ok bool, reason map[string]string) {
-	ok = post.Language == a.languageCode &&
-		post.ReplyRoot == "" &&
-		a.keywordsWeight(post.Text) > 1
+func (a *KeywordsAlgorithm) AcceptsPost(
+	postContent utils.PostContent,
+	_ cache.UserStatistics,
+) (ok bool, reason map[string]string) {
+	ok = postContent.Post.Language == a.languageCode &&
+		postContent.Post.ReplyRoot == "" &&
+		a.keywordsWeight(postContent.Text) > 1
 	reason = nil
 	return ok, reason
 }
 
-func (a *KeywordsAlgorithm) GetPosts(_ *db.Queries, _ float64, _ int64) []models.Post {
+func (a *KeywordsAlgorithm) GetPosts(_ *gocqlx.Session, _ float64, _ int64) []models.PostsStruct {
 	// These timelines are stored in memory only
-	return make([]models.Post, 0)
+	return make([]models.PostsStruct, 0)
 }

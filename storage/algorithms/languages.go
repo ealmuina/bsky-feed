@@ -2,10 +2,10 @@ package algorithms
 
 import (
 	"bsky/storage/cache"
-	db "bsky/storage/db/sqlc"
-	"bsky/storage/models"
-	"context"
-	"github.com/jackc/pgx/v5/pgtype"
+	"bsky/storage/db/models"
+	"bsky/storage/db/queries"
+	"bsky/storage/utils"
+	"github.com/scylladb/gocqlx/v3"
 	log "github.com/sirupsen/logrus"
 )
 
@@ -13,29 +13,20 @@ type LanguageAlgorithm struct {
 	languageCode string
 }
 
-func (a *LanguageAlgorithm) AcceptsPost(post models.Post, _ cache.UserStatistics) (ok bool, reason map[string]string) {
-	return post.Language == a.languageCode && post.ReplyRoot == "", nil
+func (a *LanguageAlgorithm) AcceptsPost(
+	postContent utils.PostContent,
+	_ cache.UserStatistics,
+) (ok bool, reason map[string]string) {
+	return postContent.Post.Language == a.languageCode && postContent.Post.ReplyRoot == "", nil
 }
 
-func (a *LanguageAlgorithm) GetPosts(queries *db.Queries, maxRank float64, limit int64) []models.Post {
+func (a *LanguageAlgorithm) GetPosts(session *gocqlx.Session, maxRank float64, limit int64) []models.PostsStruct {
 	posts, err := queries.GetLanguagePosts(
-		context.Background(),
-		db.GetLanguagePostsParams{
-			Language: pgtype.Text{String: a.languageCode, Valid: true},
-			Rank:     pgtype.Float8{Float64: maxRank, Valid: true},
-			Limit:    int32(limit),
-		},
+		session, a.languageCode, maxRank, uint(limit),
 	)
 	if err != nil {
 		log.Errorf("error getting language posts: %v", err)
 		return nil
 	}
-	result := make([]models.Post, len(posts))
-	for i, post := range posts {
-		result[i] = models.Post{
-			Uri:  post.Uri,
-			Rank: post.Rank.Float64,
-		}
-	}
-	return result
+	return posts
 }

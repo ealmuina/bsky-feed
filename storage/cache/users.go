@@ -80,7 +80,7 @@ func (c *UsersCache) RequiresReload() bool {
 	return c.redisClient.Exists(context.Background(), UsersFollowersCountCacheRedisKey).Val() > 0
 }
 
-func (c *UsersCache) SetUserFollows(did string, followersCount int64, followsCount int64) {
+func (c *UsersCache) SetUserFollows(did string, followersCount int32, followsCount int32) {
 	ctx := context.Background()
 	c.redisClient.HSet(ctx, UsersFollowersCountCacheRedisKey, did, followersCount)
 	c.redisClient.HSet(ctx, UsersFollowsCountCacheRedisKey, did, followsCount)

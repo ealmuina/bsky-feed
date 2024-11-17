@@ -16,34 +16,28 @@ services:
         condition: service_started
 
   db:
-    image: postgres:17
+    image: scylladb/scylla
     environment:
-      - POSTGRES_USER=postgres
-      - POSTGRES_PASSWORD=postgres
+      - "MAX_HEAP_SIZE=256M"
+      - "HEAP_NEWSIZE=128M"
     healthcheck:
-      test: [ "CMD-SHELL", "pg_isready -d postgres -U postgres" ]
-      interval: 5s
-      timeout: 5s
-      retries: 5
+      test: [ "CMD", "cqlsh", "-u cassandra", "-p cassandra" ,"-e describe keyspaces" ]
+      interval: 15s
+      timeout: 10s
+      retries: 10
     ports:
-      - "5432:5432"
+      - "9042:9042"
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - scylla_data:/var/lib/cassandra
       - ./storage/db/db_init:/docker-entrypoint-initdb.d
     restart: unless-stopped
 
-  db-exporter:
-    image: prometheuscommunity/postgres-exporter
-    ports:
-      - "9187:9187"
-    environment:
-      DATA_SOURCE_NAME: "postgres://postgres:postgres@db/bsky_feeds?sslmode=disable"
-    depends_on:
-      prometheus:
-        condition: service_started
-      db:
-        condition: service_healthy
-    restart: unless-stopped
+  scylla-load-keyspace:
+    container_name: scylla-load-keyspace
+    image: scylladb/scylla
+    volumes:
+      - ./storage/db/db_init/schema.cql:/schema.cql
+    command: /bin/bash -c "sleep 60 && cqlsh db -f /schema.cql"
 
   redis:
     image: redis:latest
@@ -78,7 +72,7 @@ services:
     restart: unless-stopped
 
 volumes:
-  postgres_data:
+  scylla_data:
   redis_data:
   prometheus_data:
   grafana_data:

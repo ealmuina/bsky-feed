@@ -2,14 +2,18 @@ package algorithms
 
 import (
 	"bsky/storage/cache"
-	db "bsky/storage/db/sqlc"
-	"bsky/storage/models"
+	"bsky/storage/db/models"
+	"bsky/storage/utils"
+	"github.com/scylladb/gocqlx/v3"
 )
 
 type Algorithm interface {
-	AcceptsPost(post models.Post, authorStatistics cache.UserStatistics) (ok bool, reason map[string]string)
+	AcceptsPost(
+		postContent utils.PostContent,
+		authorStatistics cache.UserStatistics,
+	) (ok bool, reason map[string]string)
 
-	GetPosts(queries *db.Queries, maxRank float64, limit int64) []models.Post
+	GetPosts(session *gocqlx.Session, maxRank float64, limit int64) []models.PostsStruct
 }
 
 var ImplementedAlgorithms = map[string]Algorithm{
