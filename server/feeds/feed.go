@@ -2,7 +2,7 @@ package feeds
 
 import (
 	"bsky/storage"
-	"bsky/storage/models"
+	"bsky/storage/cache"
 	"fmt"
 	log "github.com/sirupsen/logrus"
 	"strconv"
@@ -32,8 +32,8 @@ func (f *Feed) GetTimeline(params QueryParams) Response {
 		params.Cursor = getNewCursor()
 	} else if params.Cursor == CursorEOF {
 		return Response{
-			Cursor: CursorEOF,
-			Posts:  make([]models.Post, 0),
+			Cursor:  CursorEOF,
+			Entries: make([]cache.TimelineEntry, 0),
 		}
 	}
 
@@ -48,11 +48,11 @@ func (f *Feed) GetTimeline(params QueryParams) Response {
 	cursor := CursorEOF
 	if len(posts) > 0 {
 		lastPost := posts[len(posts)-1]
-		cursor = fmt.Sprintf("%f", lastPost.Rank)
+		cursor = fmt.Sprintf("%f", lastPost.Post.Rank)
 	}
 
 	return Response{
-		Cursor: cursor,
-		Posts:  posts,
+		Cursor:  cursor,
+		Entries: posts,
 	}
 }

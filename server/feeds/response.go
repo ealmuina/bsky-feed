@@ -1,13 +1,13 @@
 package feeds
 
 import (
-	"bsky/storage/models"
+	"bsky/storage/cache"
 	"encoding/json"
 )
 
 type Response struct {
-	Cursor string
-	Posts  []models.Post
+	Cursor  string
+	Entries []cache.TimelineEntry
 }
 
 func (r Response) MarshalJSON() ([]byte, error) {
@@ -15,17 +15,17 @@ func (r Response) MarshalJSON() ([]byte, error) {
 		"cursor": r.Cursor,
 	}
 
-	posts := make([]any, len(r.Posts))
-	for i, post := range r.Posts {
+	entries := make([]any, len(r.Entries))
+	for i, entry := range r.Entries {
 		serializedPost := map[string]any{
-			"post": post.Uri,
+			"post": entry.Post.Uri,
 		}
-		if post.Reason != nil {
-			serializedPost["reason"] = post.Reason
+		if entry.Reason != nil {
+			serializedPost["reason"] = entry.Reason
 		}
-		posts[i] = serializedPost
+		entries[i] = serializedPost
 	}
-	result["feed"] = posts
+	result["feed"] = entries
 
 	return json.Marshal(result)
 }

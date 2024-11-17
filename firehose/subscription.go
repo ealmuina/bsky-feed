@@ -3,7 +3,8 @@ package firehose
 import (
 	"bsky/monitoring/middleware"
 	"bsky/storage"
-	"bsky/storage/models"
+	"bsky/storage/db/models"
+	storageUtils "bsky/storage/utils"
 	"bsky/utils"
 	"context"
 	"encoding/json"
@@ -142,18 +143,20 @@ func (s *Subscription) handleFeedPostCreate(evt *jsmodels.Event) error {
 	go func() {
 		s.storageManager.CreateUser(evt.Did)
 		s.storageManager.CreatePost(
-			models.Post{
-				Uri:         uri,
-				AuthorDid:   evt.Did,
-				ReplyParent: replyParent,
-				ReplyRoot:   replyRoot,
-				CreatedAt:   createdAt,
-				Language:    language,
-				Rank:        rank,
-				Text:        post.Text,
-				Embed:       post.Embed,
-			})
-
+			storageUtils.PostContent{
+				Post: models.PostsStruct{
+					Uri:         uri,
+					AuthorDid:   evt.Did,
+					ReplyParent: replyParent,
+					ReplyRoot:   replyRoot,
+					CreatedAt:   createdAt,
+					Language:    language,
+					Rank:        rank,
+				},
+				Text:  post.Text,
+				Embed: post.Embed,
+			},
+		)
 	}()
 
 	return nil
@@ -172,7 +175,7 @@ func (s *Subscription) handleGraphFollowCreate(evt *jsmodels.Event) error {
 	}
 
 	go s.storageManager.CreateFollow(
-		models.Follow{
+		models.FollowsStruct{
 			Uri:        s.calculateUri(evt),
 			AuthorDid:  evt.Did,
 			SubjectDid: follow.Subject,
@@ -186,7 +189,7 @@ func (s *Subscription) handleGraphFollowCreate(evt *jsmodels.Event) error {
 func (s *Subscription) handleInteractionCreate(evt *jsmodels.Event) error {
 	var createdAtStr string
 	var postUri string
-	var kind models.InteractionType
+	var kind string
 
 	switch evt.Commit.Collection {
 	case "app.bsky.feed.like":
@@ -196,7 +199,7 @@ func (s *Subscription) handleInteractionCreate(evt *jsmodels.Event) error {
 		}
 		createdAtStr = like.CreatedAt
 		postUri = like.Subject.Uri
-		kind = models.Like
+		kind = "like"
 
 	case "app.bsky.feed.repost":
 		var repost appbsky.FeedRepost
@@ -205,7 +208,7 @@ func (s *Subscription) handleInteractionCreate(evt *jsmodels.Event) error {
 		}
 		createdAtStr = repost.CreatedAt
 		postUri = repost.Subject.Uri
-		kind = models.Repost
+		kind = "repost"
 	}
 
 	createdAt, err := utils.ParseTime(createdAtStr)
@@ -217,7 +220,7 @@ func (s *Subscription) handleInteractionCreate(evt *jsmodels.Event) error {
 	go func() {
 		s.storageManager.CreateUser(evt.Did)
 		s.storageManager.CreateInteraction(
-			models.Interaction{
+			models.InteractionsStruct{
 				Uri:       s.calculateUri(evt),
 				Kind:      kind,
 				AuthorDid: evt.Did,

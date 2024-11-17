@@ -2,7 +2,7 @@ package tasks
 
 import (
 	"bsky/storage"
-	"bsky/storage/models"
+	"bsky/storage/db/models"
 	"context"
 	"errors"
 	"fmt"
@@ -136,12 +136,12 @@ func (u *StatisticsUpdater) updateUserStatistics(did string) {
 	}
 
 	u.storageManager.UpdateUser(
-		models.User{
+		models.UsersStruct{
 			Did:            did,
 			Handle:         profile.Handle,
-			FollowersCount: *profile.FollowersCount,
-			FollowsCount:   *profile.FollowsCount,
-			PostsCount:     *profile.PostsCount,
+			FollowersCount: int32(*profile.FollowersCount),
+			FollowsCount:   int32(*profile.FollowsCount),
+			PostsCount:     int32(*profile.PostsCount),
 		},
 	)
 }
