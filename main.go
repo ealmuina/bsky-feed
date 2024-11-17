@@ -78,7 +78,7 @@ func runBackgroundTasks(storageManager *storage.Manager) {
 			"bsky_feeds",
 			url.URL{
 				Scheme: "wss",
-				Host:   "jetstream2.us-east.bsky.network",
+				Host:   "jetstream1.us-east.bsky.network",
 				Path:   "/subscribe",
 			},
 			storageManager,
