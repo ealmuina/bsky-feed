@@ -22,7 +22,7 @@ import (
 	"time"
 )
 
-const MaxConcurrency = 16
+const NumWorkers = 16
 
 type Subscription struct {
 	serviceName       string
@@ -58,7 +58,7 @@ func (s *Subscription) Run() {
 			WantedCollections: []string{},
 		},
 		slog.Default(),
-		jsscheduler.NewScheduler(MaxConcurrency, "data_stream", slog.Default(), s.getHandle()),
+		jsscheduler.NewScheduler(NumWorkers, "data_stream", slog.Default(), s.getHandle()),
 	)
 	if err != nil {
 		log.Fatalf("Error creating Jetstream client: %v", err)
