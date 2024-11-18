@@ -12,6 +12,8 @@ services:
     depends_on:
       db:
         condition: service_healthy
+      db-init:
+        condition: service_completed_successfully
       redis:
         condition: service_started
 
@@ -29,15 +31,17 @@ services:
       - "9042:9042"
     volumes:
       - scylla_data:/var/lib/cassandra
-      - ./storage/db/db_init:/docker-entrypoint-initdb.d
     restart: unless-stopped
 
-  scylla-load-keyspace:
-    container_name: scylla-load-keyspace
+  db-init:
     image: scylladb/scylla
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: no
     volumes:
-      - ./storage/db/db_init/schema.cql:/schema.cql
-    command: /bin/bash -c "sleep 60 && cqlsh db -f /schema.cql"
+      - ./storage/db/db_init:/db_init
+    entrypoint: [ "sh", "/db_init/init.sh" ]
 
   redis:
     image: redis:latest
