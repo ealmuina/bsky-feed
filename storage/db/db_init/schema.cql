@@ -15,7 +15,7 @@ CREATE TABLE IF NOT EXISTS follows
     created_at  timestamp,
     PRIMARY KEY ( (uri), subject_did, created_at )
 ) WITH CLUSTERING ORDER BY (subject_did ASC, created_at DESC)
-   AND COMPRESSION = {'class': 'ZstdCompressor'};
+   AND COMPRESSION = {'sstable_compression': 'ZstdCompressor'};
 
 CREATE TABLE IF NOT EXISTS interactions
 (
@@ -26,7 +26,7 @@ CREATE TABLE IF NOT EXISTS interactions
     created_at timestamp,
     PRIMARY KEY ( (uri), post_uri, created_at )
 ) WITH CLUSTERING ORDER BY (post_uri ASC, created_at DESC)
-   AND COMPRESSION = {'class': 'ZstdCompressor'};
+   AND COMPRESSION = {'sstable_compression': 'ZstdCompressor'};
 
 CREATE TABLE IF NOT EXISTS posts
 (
@@ -39,7 +39,7 @@ CREATE TABLE IF NOT EXISTS posts
     rank         double,
     PRIMARY KEY ( (uri), language, rank )
 ) WITH CLUSTERING ORDER BY (language ASC, rank DESC)
-   AND COMPRESSION = {'class': 'ZstdCompressor'};
+   AND COMPRESSION = {'sstable_compression': 'ZstdCompressor'};
 
 CREATE TABLE IF NOT EXISTS subscription_state
 (

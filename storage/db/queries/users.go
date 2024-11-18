@@ -84,7 +84,6 @@ func GetUserDidsToRefreshStatistics(session *gocqlx.Session) ([]string, error) {
 		qb.Select("users").
 			Columns("did").
 			Where(qb.Lt("last_update")).
-			AllowFiltering().
 			ToCql(),
 	).Bind(
 		time.Now().AddDate(0, 0, -30).UnixMilli(),
