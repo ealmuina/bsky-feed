@@ -3,7 +3,7 @@ CREATE KEYSPACE bsky
         'class': 'SimpleStrategy',
         'replication_factor': '1'
         }
-     AND durable_writes = true;
+     AND durable_writes = false;
 
 USE bsky;
 
