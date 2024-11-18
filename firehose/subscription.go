@@ -265,6 +265,8 @@ func (s *Subscription) handleRecordDelete(evt *jsmodels.Event) error {
 }
 
 func (s *Subscription) processOperation(evt *jsmodels.Event) error {
+	return nil
+
 	switch evt.Commit.Operation {
 	case jsmodels.CommitOperationCreate:
 		if err := s.handleRecordCreate(evt); err != nil {
