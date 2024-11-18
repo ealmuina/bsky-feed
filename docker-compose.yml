@@ -18,7 +18,7 @@ services:
         condition: service_started
 
   db:
-    image: scylladb/scylla
+    image: cassandra:latest
     environment:
       - "MAX_HEAP_SIZE=256M"
       - "HEAP_NEWSIZE=128M"
@@ -34,7 +34,7 @@ services:
     restart: unless-stopped
 
   db-init:
-    image: scylladb/scylla
+    image: cassandra:latest
     depends_on:
       db:
         condition: service_healthy
