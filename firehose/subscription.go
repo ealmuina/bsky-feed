@@ -22,7 +22,7 @@ import (
 	"time"
 )
 
-const NumWorkers = 1000
+const NumWorkers = 500
 
 type Subscription struct {
 	serviceName       string
