@@ -68,7 +68,7 @@ func createCluster(keyspace string, host string) *gocql.ClusterConfig {
 	}
 	cluster := gocql.NewCluster(host)
 	cluster.Keyspace = keyspace
-	cluster.Timeout = 5 * time.Second
+	cluster.Timeout = time.Minute
 	cluster.RetryPolicy = retryPolicy
 	return cluster
 }
