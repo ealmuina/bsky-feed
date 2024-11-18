@@ -14,7 +14,6 @@ var (
 		Columns: []string{
 			"author_did",
 			"created_at",
-			"indexed_at",
 			"subject_did",
 			"uri",
 		},
@@ -32,7 +31,6 @@ var (
 		Columns: []string{
 			"author_did",
 			"created_at",
-			"indexed_at",
 			"kind",
 			"post_uri",
 			"uri",
@@ -51,7 +49,6 @@ var (
 		Columns: []string{
 			"author_did",
 			"created_at",
-			"indexed_at",
 			"language",
 			"rank",
 			"reply_parent",
@@ -84,7 +81,6 @@ var (
 		Columns: []string{
 			"did",
 			"handle",
-			"indexed_at",
 			"last_update",
 		},
 		PartKey: []string{
@@ -113,14 +109,12 @@ var (
 type FollowsStruct struct {
 	AuthorDid  string
 	CreatedAt  time.Time
-	IndexedAt  time.Time
 	SubjectDid string
 	Uri        string
 }
 type InteractionsStruct struct {
 	AuthorDid string
 	CreatedAt time.Time
-	IndexedAt time.Time
 	Kind      string
 	PostUri   string
 	Uri       string
@@ -128,7 +122,6 @@ type InteractionsStruct struct {
 type PostsStruct struct {
 	AuthorDid   string
 	CreatedAt   time.Time
-	IndexedAt   time.Time
 	Language    string
 	Rank        float64
 	ReplyParent string
@@ -142,7 +135,6 @@ type SubscriptionStateStruct struct {
 type UsersStruct struct {
 	Did        string
 	Handle     string
-	IndexedAt  time.Time
 	LastUpdate time.Time
 }
 type UsersCountersStruct struct {

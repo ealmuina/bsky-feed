@@ -12,7 +12,6 @@ CREATE TABLE IF NOT EXISTS follows
     uri         text,
     author_did  text,
     subject_did text,
-    indexed_at  timestamp,
     created_at  timestamp,
     PRIMARY KEY ( (uri), subject_did, created_at )
 ) WITH CLUSTERING ORDER BY (subject_did ASC, created_at DESC);
@@ -23,7 +22,6 @@ CREATE TABLE IF NOT EXISTS interactions
     kind       text,
     author_did text,
     post_uri   text,
-    indexed_at timestamp,
     created_at timestamp,
     PRIMARY KEY ( (uri), post_uri, created_at )
 ) WITH CLUSTERING ORDER BY (post_uri ASC, created_at DESC);
@@ -34,7 +32,6 @@ CREATE TABLE IF NOT EXISTS posts
     author_did   text,
     reply_parent text,
     reply_root   text,
-    indexed_at   timestamp,
     created_at   timestamp,
     language     text,
     rank         double,
@@ -51,7 +48,6 @@ CREATE TABLE IF NOT EXISTS users
 (
     did         text,
     handle      text,
-    indexed_at  timestamp,
     last_update timestamp,
     PRIMARY KEY ( (did), last_update )
 );

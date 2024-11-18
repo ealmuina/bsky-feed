@@ -7,55 +7,61 @@ import (
 	"time"
 )
 
-func ApplyFollowToUsers(session *gocqlx.Session, follow models.FollowsStruct, delta int) error {
+func increaseUserCounter(session *gocqlx.Session, userDid string, counterField string, delta int) error {
+	if countersInitialized := isUserCountersInitialized(session, userDid); !countersInitialized {
+		return nil
+	}
+
 	query := session.Query(
 		models.UsersCounters.
 			UpdateBuilder().
-			Add("follows_count").
+			Add(counterField).
 			ToCql(),
 	).Bind(
-		delta,
-		follow.AuthorDid,
-	)
-	if err := query.Exec(); err != nil {
-		return err
-	}
-
-	query = session.Query(
-		models.UsersCounters.
-			UpdateBuilder().
-			Add("followers_count").
-			ToCql(),
-	).Bind(
-		delta,
-		follow.SubjectDid,
+		delta, userDid,
 	)
 	return query.Exec()
 }
 
-func ApplyPostToUser(session *gocqlx.Session, post models.PostsStruct, delta int) error {
-	return session.Query(
-		models.UsersCounters.
-			UpdateBuilder().
-			Add("posts_count").
-			ToCql(),
+func isUserCountersInitialized(session *gocqlx.Session, userDid string) bool {
+	query := session.Query(
+		models.UsersCounters.Get("did"),
 	).Bind(
-		delta,
-		post.AuthorDid,
-	).Exec()
+		userDid,
+	)
+	var userCounters models.UsersCountersStruct
+	if err := query.GetRelease(&userCounters); err != nil {
+		return false
+	}
+	return true
+}
+
+func ApplyFollowToUsers(session *gocqlx.Session, follow models.FollowsStruct, delta int) error {
+	err := increaseUserCounter(session, follow.AuthorDid, "follows_count", delta)
+	if err != nil {
+		return err
+	}
+	return increaseUserCounter(session, follow.SubjectDid, "followers_count", delta)
+}
+
+func ApplyPostToUser(session *gocqlx.Session, post models.PostsStruct, delta int) error {
+	return increaseUserCounter(session, post.AuthorDid, "posts_count", delta)
 }
 
 func CreateUser(session *gocqlx.Session, user models.UsersStruct) error {
+	if isUserCountersInitialized(session, user.Did) {
+		return nil
+	}
 	return session.
-		Query(models.Users.Insert()).
+		Query(models.Users.InsertBuilder().Unique().ToCql()).
 		BindStruct(user).
 		Exec()
 }
 
 func DeleteUser(session *gocqlx.Session, did string) error {
 	return session.
-		Query(models.Users.Delete()).
-		BindMap(qb.M{"did": did}).
+		Query(qb.Delete("users").Where(qb.Eq("did")).ToCql()).
+		Bind(did).
 		Exec()
 }
 
@@ -96,20 +102,22 @@ func GetUserDidsToRefreshStatistics(session *gocqlx.Session) ([]string, error) {
 }
 
 func UpdateUser(session *gocqlx.Session, updatedUser models.UsersStruct) error {
-	// Delete if exists
-	_ = DeleteUser(session, updatedUser.Did)
+	// Delete outdated entry
+	_ = session.
+		Query(qb.Delete("users").Where(qb.Eq("did")).ToCql()).
+		Bind(updatedUser.Did).
+		Exec()
 
-	return CreateUser(session, updatedUser)
+	// Insert updated entry
+	return session.
+		Query(models.Users.InsertBuilder().ToCql()).
+		BindStruct(updatedUser).
+		Exec()
 }
 
 func UpdateUserCounters(session *gocqlx.Session, updatedUserCounters models.UsersCountersStruct) error {
-	// Delete previous entry from DB
-	query := session.Query(
-		models.UsersCounters.Delete(),
-	).BindStruct(updatedUserCounters)
-
-	if err := query.Exec(); err != nil {
-		return err
+	if countersInitialized := isUserCountersInitialized(session, updatedUserCounters.Did); countersInitialized {
+		return nil
 	}
 
 	// Add new entry

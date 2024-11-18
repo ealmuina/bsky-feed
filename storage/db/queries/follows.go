@@ -8,7 +8,7 @@ import (
 
 func CreateFollow(session *gocqlx.Session, follow models.FollowsStruct) error {
 	return session.
-		Query(models.Follows.Insert()).
+		Query(models.Follows.InsertBuilder().Unique().ToCql()).
 		BindStruct(follow).
 		Exec()
 }

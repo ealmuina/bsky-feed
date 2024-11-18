@@ -9,7 +9,7 @@ import (
 
 func CreateInteraction(session *gocqlx.Session, interaction models.InteractionsStruct) error {
 	return session.
-		Query(models.Interactions.Insert()).
+		Query(models.Interactions.InsertBuilder().Unique().ToCql()).
 		BindStruct(interaction).
 		Exec()
 }

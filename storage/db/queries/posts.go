@@ -9,7 +9,7 @@ import (
 
 func CreatePost(session *gocqlx.Session, post models.PostsStruct) error {
 	return session.
-		Query(models.Posts.Insert()).
+		Query(models.Posts.InsertBuilder().Unique().ToCql()).
 		BindStruct(post).
 		Exec()
 }
