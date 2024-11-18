@@ -11,7 +11,7 @@ import (
 	"fmt"
 	appbsky "github.com/bluesky-social/indigo/api/bsky"
 	jsclient "github.com/bluesky-social/jetstream/pkg/client"
-	jsscheduler "github.com/bluesky-social/jetstream/pkg/client/schedulers/parallel"
+	jsscheduler "github.com/bluesky-social/jetstream/pkg/client/schedulers/sequential"
 	jsmodels "github.com/bluesky-social/jetstream/pkg/models"
 	log "github.com/sirupsen/logrus"
 	"hash"
@@ -21,8 +21,6 @@ import (
 	"net/url"
 	"time"
 )
-
-const NumWorkers = 500
 
 type Subscription struct {
 	serviceName       string
@@ -58,7 +56,7 @@ func (s *Subscription) Run() {
 			WantedCollections: []string{},
 		},
 		slog.Default(),
-		jsscheduler.NewScheduler(NumWorkers, "data_stream", slog.Default(), s.getHandle()),
+		jsscheduler.NewScheduler("data_stream", slog.Default(), s.getHandle()),
 	)
 	if err != nil {
 		log.Fatalf("Error creating Jetstream client: %v", err)
@@ -265,20 +263,17 @@ func (s *Subscription) handleRecordDelete(evt *jsmodels.Event) error {
 }
 
 func (s *Subscription) processOperation(evt *jsmodels.Event) error {
-	return nil
-
-	switch evt.Commit.Operation {
-	case jsmodels.CommitOperationCreate:
-		if err := s.handleRecordCreate(evt); err != nil {
-			log.Errorf("Error handling create record: %s", err)
-			return err
+	go func() {
+		switch evt.Commit.Operation {
+		case jsmodels.CommitOperationCreate:
+			if err := s.handleRecordCreate(evt); err != nil {
+				log.Errorf("Error handling create record: %s", err)
+			}
+		case jsmodels.CommitOperationDelete:
+			if err := s.handleRecordDelete(evt); err != nil {
+				log.Errorf("Error handling delete record: %s", err)
+			}
 		}
-	case jsmodels.CommitOperationDelete:
-		if err := s.handleRecordDelete(evt); err != nil {
-			log.Errorf("Error handling delete record: %s", err)
-			return err
-		}
-	}
-
+	}()
 	return nil
 }
