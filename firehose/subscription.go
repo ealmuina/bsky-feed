@@ -11,7 +11,7 @@ import (
 	"fmt"
 	appbsky "github.com/bluesky-social/indigo/api/bsky"
 	jsclient "github.com/bluesky-social/jetstream/pkg/client"
-	jsscheduler "github.com/bluesky-social/jetstream/pkg/client/schedulers/sequential"
+	jsscheduler "github.com/bluesky-social/jetstream/pkg/client/schedulers/parallel"
 	jsmodels "github.com/bluesky-social/jetstream/pkg/models"
 	log "github.com/sirupsen/logrus"
 	"hash"
@@ -21,6 +21,8 @@ import (
 	"net/url"
 	"time"
 )
+
+const MaxConcurrency = 8
 
 type Subscription struct {
 	serviceName       string
@@ -56,7 +58,7 @@ func (s *Subscription) Run() {
 			WantedCollections: []string{},
 		},
 		slog.Default(),
-		jsscheduler.NewScheduler("data_stream", slog.Default(), s.getHandle()),
+		jsscheduler.NewScheduler(MaxConcurrency, "data_stream", slog.Default(), s.getHandle()),
 	)
 	if err != nil {
 		log.Fatalf("Error creating Jetstream client: %v", err)
@@ -93,7 +95,7 @@ func (s *Subscription) getHandle() func(context.Context, *jsmodels.Event) error 
 		cursor := evt.TimeUS
 		seq++
 		if seq%100 == 0 {
-			go s.storageManager.UpdateCursor(s.serviceName, cursor)
+			s.storageManager.UpdateCursor(s.serviceName, cursor)
 		}
 		if err := s.metricsMiddleware.HandleOperation(evt); err != nil {
 			log.Errorf("Error handling operation: %v", err)
@@ -140,24 +142,22 @@ func (s *Subscription) handleFeedPostCreate(evt *jsmodels.Event) error {
 	divisor := math.Pow10(decimalPlaces)
 	rank := float64(createdAt.Unix()) + float64(hash)/divisor
 
-	go func() {
-		s.storageManager.CreateUser(evt.Did)
-		s.storageManager.CreatePost(
-			storageUtils.PostContent{
-				Post: models.PostsStruct{
-					Uri:         uri,
-					AuthorDid:   evt.Did,
-					ReplyParent: replyParent,
-					ReplyRoot:   replyRoot,
-					CreatedAt:   createdAt,
-					Language:    language,
-					Rank:        rank,
-				},
-				Text:  post.Text,
-				Embed: post.Embed,
+	s.storageManager.CreateUser(evt.Did)
+	s.storageManager.CreatePost(
+		storageUtils.PostContent{
+			Post: models.PostsStruct{
+				Uri:         uri,
+				AuthorDid:   evt.Did,
+				ReplyParent: replyParent,
+				ReplyRoot:   replyRoot,
+				CreatedAt:   createdAt,
+				Language:    language,
+				Rank:        rank,
 			},
-		)
-	}()
+			Text:  post.Text,
+			Embed: post.Embed,
+		},
+	)
 
 	return nil
 }
@@ -174,7 +174,7 @@ func (s *Subscription) handleGraphFollowCreate(evt *jsmodels.Event) error {
 		return err
 	}
 
-	go s.storageManager.CreateFollow(
+	s.storageManager.CreateFollow(
 		models.FollowsStruct{
 			Uri:        s.calculateUri(evt),
 			AuthorDid:  evt.Did,
@@ -217,18 +217,16 @@ func (s *Subscription) handleInteractionCreate(evt *jsmodels.Event) error {
 		return err
 	}
 
-	go func() {
-		s.storageManager.CreateUser(evt.Did)
-		s.storageManager.CreateInteraction(
-			models.InteractionsStruct{
-				Uri:       s.calculateUri(evt),
-				Kind:      kind,
-				AuthorDid: evt.Did,
-				PostUri:   postUri,
-				CreatedAt: createdAt,
-			},
-		)
-	}()
+	s.storageManager.CreateUser(evt.Did)
+	s.storageManager.CreateInteraction(
+		models.InteractionsStruct{
+			Uri:       s.calculateUri(evt),
+			Kind:      kind,
+			AuthorDid: evt.Did,
+			PostUri:   postUri,
+			CreatedAt: createdAt,
+		},
+	)
 
 	return nil
 }
