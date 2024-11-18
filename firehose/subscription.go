@@ -22,7 +22,7 @@ import (
 	"time"
 )
 
-const MaxConcurrency = 8
+const MaxConcurrency = 16
 
 type Subscription struct {
 	serviceName       string
