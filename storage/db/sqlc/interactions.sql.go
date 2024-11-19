@@ -12,27 +12,35 @@ import (
 )
 
 type BulkCreateInteractionsParams struct {
-	Uri       string
-	Kind      InteractionType
-	AuthorDid string
-	PostUri   string
-	CreatedAt pgtype.Timestamp
+	UriKey       string
+	AuthorID     int32
+	Kind         InteractionType
+	PostUriKey   string
+	PostAuthorID int32
+	CreatedAt    pgtype.Timestamp
 }
 
 const bulkDeleteInteractions = `-- name: BulkDeleteInteractions :many
 DELETE
 FROM interactions
-WHERE uri = ANY ($1::VARCHAR[])
-RETURNING uri, post_uri
+WHERE uri_key = ANY ($1::VARCHAR[])
+  AND author_id = ANY ($2::INT[])
+RETURNING id, post_uri_key, post_author_id
 `
 
-type BulkDeleteInteractionsRow struct {
-	Uri     string
-	PostUri string
+type BulkDeleteInteractionsParams struct {
+	UriKeys   []string
+	AuthorIds []int32
 }
 
-func (q *Queries) BulkDeleteInteractions(ctx context.Context, dollar_1 []string) ([]BulkDeleteInteractionsRow, error) {
-	rows, err := q.db.Query(ctx, bulkDeleteInteractions, dollar_1)
+type BulkDeleteInteractionsRow struct {
+	ID           int32
+	PostUriKey   string
+	PostAuthorID int32
+}
+
+func (q *Queries) BulkDeleteInteractions(ctx context.Context, arg BulkDeleteInteractionsParams) ([]BulkDeleteInteractionsRow, error) {
+	rows, err := q.db.Query(ctx, bulkDeleteInteractions, arg.UriKeys, arg.AuthorIds)
 	if err != nil {
 		return nil, err
 	}
@@ -40,7 +48,7 @@ func (q *Queries) BulkDeleteInteractions(ctx context.Context, dollar_1 []string)
 	var items []BulkDeleteInteractionsRow
 	for rows.Next() {
 		var i BulkDeleteInteractionsRow
-		if err := rows.Scan(&i.Uri, &i.PostUri); err != nil {
+		if err := rows.Scan(&i.ID, &i.PostUriKey, &i.PostAuthorID); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -55,7 +63,7 @@ const createTempInteractionsTable = `-- name: CreateTempInteractionsTable :exec
 CREATE TEMPORARY TABLE tmp_interactions
     ON COMMIT DROP
 AS
-SELECT uri, kind, author_did, post_uri, indexed_at, created_at
+SELECT id, uri_key, author_id, kind, post_uri_key, post_author_id, indexed_at, created_at
 FROM interactions
     WITH NO DATA
 `
@@ -79,25 +87,26 @@ func (q *Queries) DeleteOldInteractions(ctx context.Context) error {
 const deleteUserInteractions = `-- name: DeleteUserInteractions :exec
 DELETE
 FROM interactions
-WHERE author_did = $1
+WHERE author_id = $1
 `
 
-func (q *Queries) DeleteUserInteractions(ctx context.Context, authorDid string) error {
-	_, err := q.db.Exec(ctx, deleteUserInteractions, authorDid)
+func (q *Queries) DeleteUserInteractions(ctx context.Context, authorID int32) error {
+	_, err := q.db.Exec(ctx, deleteUserInteractions, authorID)
 	return err
 }
 
 const insertFromTempToInteractions = `-- name: InsertFromTempToInteractions :many
-INSERT INTO interactions (uri, kind, author_did, post_uri, created_at)
-SELECT uri, kind, author_did, post_uri, created_at
+INSERT INTO interactions (uri_key, author_id, kind, post_uri_key, post_author_id, created_at)
+SELECT uri_key, author_id, kind, post_uri_key, post_author_id, created_at
 FROM tmp_interactions
 ON CONFLICT DO NOTHING
-RETURNING uri, post_uri
+RETURNING id, post_uri_key, post_author_id
 `
 
 type InsertFromTempToInteractionsRow struct {
-	Uri     string
-	PostUri string
+	ID           int32
+	PostUriKey   string
+	PostAuthorID int32
 }
 
 func (q *Queries) InsertFromTempToInteractions(ctx context.Context) ([]InsertFromTempToInteractionsRow, error) {
@@ -109,7 +118,7 @@ func (q *Queries) InsertFromTempToInteractions(ctx context.Context) ([]InsertFro
 	var items []InsertFromTempToInteractionsRow
 	for rows.Next() {
 		var i InsertFromTempToInteractionsRow
-		if err := rows.Scan(&i.Uri, &i.PostUri); err != nil {
+		if err := rows.Scan(&i.ID, &i.PostUriKey, &i.PostAuthorID); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -121,7 +130,7 @@ func (q *Queries) InsertFromTempToInteractions(ctx context.Context) ([]InsertFro
 }
 
 const vacuumInteractions = `-- name: VacuumInteractions :exec
-VACUUM interactions
+VACUUM ANALYSE interactions
 `
 
 func (q *Queries) VacuumInteractions(ctx context.Context) error {

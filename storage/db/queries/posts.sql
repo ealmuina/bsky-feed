@@ -7,55 +7,33 @@ FROM posts
     WITH NO DATA;
 
 -- name: BulkCreatePosts :copyfrom
-INSERT INTO tmp_posts (uri, author_did, reply_parent, reply_root, created_at, language, rank)
-VALUES ($1, $2, $3, $4, $5, $6, $7);
+INSERT INTO tmp_posts (uri_key, author_id, reply_parent, reply_root, created_at, language)
+VALUES ($1, $2, $3, $4, $5, $6);
 
 -- name: InsertFromTempToPosts :many
-INSERT INTO posts (uri, author_did, reply_parent, reply_root, created_at, language, rank)
-SELECT uri, author_did, reply_parent, reply_root, created_at, language, rank
+INSERT INTO posts (uri_key, author_id, reply_parent, reply_root, created_at, language)
+SELECT uri_key, author_id, reply_parent, reply_root, created_at, language
 FROM tmp_posts
 ON CONFLICT DO NOTHING
-RETURNING uri, author_did, reply_root;
+RETURNING id, author_id, reply_root;
 
 -- name: BulkDeletePosts :many
 DELETE
 FROM posts
-WHERE uri = ANY (@uris::VARCHAR[])
-RETURNING uri, author_did;
+WHERE uri_key = ANY (@uri_keys::VARCHAR[])
+  AND author_id = ANY (@author_ids::INT[])
+RETURNING id, author_id;
 
 -- name: DeleteOldPosts :many
 DELETE
 FROM posts
 WHERE posts.created_at < current_timestamp - interval '7 days'
-RETURNING uri, author_did;
+RETURNING id, author_id;
 
 -- name: VacuumPosts :exec
-VACUUM posts;
+VACUUM ANALYSE posts;
 
 -- name: DeleteUserPosts :exec
 DELETE
 FROM posts
-WHERE author_did = $1;
-
--- name: GetLanguagePosts :many
-SELECT posts.*
-FROM posts
-WHERE language = $1
-  AND reply_root IS NULL
-  AND rank < $2
-ORDER BY rank DESC
-LIMIT $3;
-
--- name: GetLanguageTopPosts :many
-SELECT uri as uri,
-       ''  as repost_uri,
-       created_at,
-       rank
-FROM posts
-         INNER JOIN users u ON posts.author_did = u.did
-WHERE language = $1
-  AND reply_root IS NULL
-  AND u.followers_count > 1000
-  AND rank < $2
-ORDER BY rank DESC
-LIMIT $3;
+WHERE author_id = $1;

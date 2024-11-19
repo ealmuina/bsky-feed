@@ -7,18 +7,19 @@ FROM follows
     WITH NO DATA;
 
 -- name: BulkCreateFollows :copyfrom
-INSERT INTO tmp_follows (uri, author_did, subject_did, created_at)
+INSERT INTO tmp_follows (uri_key, author_id, subject_id, created_at)
 VALUES ($1, $2, $3, $4);
 
 -- name: InsertFromTempToFollows :many
-INSERT INTO follows (uri, author_did, subject_did, created_at)
-SELECT uri, author_did, subject_did, created_at
+INSERT INTO follows (uri_key, author_id, subject_id, created_at)
+SELECT uri_key, author_id, subject_id, created_at
 FROM tmp_follows
 ON CONFLICT DO NOTHING
-RETURNING uri, author_did, subject_did;
+RETURNING uri_key, author_id, subject_id;
 
 -- name: BulkDeleteFollows :many
 DELETE
 FROM follows
-WHERE uri = ANY (@uris::VARCHAR[])
-RETURNING author_did, subject_did;
+WHERE uri_key = ANY (@uri_keys::VARCHAR[])
+  AND author_id = ANY (@author_ids::INT[])
+RETURNING id, author_id, subject_id;

@@ -6,13 +6,14 @@ import (
 )
 
 type Post struct {
-	Uri         string
+	ID          int32
+	UriKey      string
 	Reason      map[string]string
 	Rank        float64
 	CreatedAt   time.Time
-	AuthorDid   string
-	ReplyParent string
-	ReplyRoot   string
+	AuthorId    int32
+	ReplyParent []string
+	ReplyRoot   []string
 	Language    string
 	Text        string
 	Embed       *appbsky.FeedPost_Embed

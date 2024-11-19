@@ -12,29 +12,34 @@ import (
 )
 
 type BulkCreatePostsParams struct {
-	Uri         string
-	AuthorDid   string
-	ReplyParent pgtype.Text
-	ReplyRoot   pgtype.Text
+	UriKey      string
+	AuthorID    int32
+	ReplyParent []string
+	ReplyRoot   []string
 	CreatedAt   pgtype.Timestamp
 	Language    pgtype.Text
-	Rank        pgtype.Float8
 }
 
 const bulkDeletePosts = `-- name: BulkDeletePosts :many
 DELETE
 FROM posts
-WHERE uri = ANY ($1::VARCHAR[])
-RETURNING uri, author_did
+WHERE uri_key = ANY ($1::VARCHAR[])
+  AND author_id = ANY ($2::INT[])
+RETURNING id, author_id
 `
 
-type BulkDeletePostsRow struct {
-	Uri       string
-	AuthorDid string
+type BulkDeletePostsParams struct {
+	UriKeys   []string
+	AuthorIds []int32
 }
 
-func (q *Queries) BulkDeletePosts(ctx context.Context, uris []string) ([]BulkDeletePostsRow, error) {
-	rows, err := q.db.Query(ctx, bulkDeletePosts, uris)
+type BulkDeletePostsRow struct {
+	ID       int32
+	AuthorID int32
+}
+
+func (q *Queries) BulkDeletePosts(ctx context.Context, arg BulkDeletePostsParams) ([]BulkDeletePostsRow, error) {
+	rows, err := q.db.Query(ctx, bulkDeletePosts, arg.UriKeys, arg.AuthorIds)
 	if err != nil {
 		return nil, err
 	}
@@ -42,7 +47,7 @@ func (q *Queries) BulkDeletePosts(ctx context.Context, uris []string) ([]BulkDel
 	var items []BulkDeletePostsRow
 	for rows.Next() {
 		var i BulkDeletePostsRow
-		if err := rows.Scan(&i.Uri, &i.AuthorDid); err != nil {
+		if err := rows.Scan(&i.ID, &i.AuthorID); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -57,7 +62,7 @@ const createTempPostsTable = `-- name: CreateTempPostsTable :exec
 CREATE TEMPORARY TABLE tmp_posts
     ON COMMIT DROP
 AS
-SELECT uri, author_did, reply_parent, reply_root, indexed_at, created_at, language, rank
+SELECT id, uri_key, author_id, reply_parent, reply_root, language, indexed_at, created_at
 FROM posts
     WITH NO DATA
 `
@@ -71,12 +76,12 @@ const deleteOldPosts = `-- name: DeleteOldPosts :many
 DELETE
 FROM posts
 WHERE posts.created_at < current_timestamp - interval '7 days'
-RETURNING uri, author_did
+RETURNING id, author_id
 `
 
 type DeleteOldPostsRow struct {
-	Uri       string
-	AuthorDid string
+	ID       int32
+	AuthorID int32
 }
 
 func (q *Queries) DeleteOldPosts(ctx context.Context) ([]DeleteOldPostsRow, error) {
@@ -88,7 +93,7 @@ func (q *Queries) DeleteOldPosts(ctx context.Context) ([]DeleteOldPostsRow, erro
 	var items []DeleteOldPostsRow
 	for rows.Next() {
 		var i DeleteOldPostsRow
-		if err := rows.Scan(&i.Uri, &i.AuthorDid); err != nil {
+		if err := rows.Scan(&i.ID, &i.AuthorID); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -102,124 +107,26 @@ func (q *Queries) DeleteOldPosts(ctx context.Context) ([]DeleteOldPostsRow, erro
 const deleteUserPosts = `-- name: DeleteUserPosts :exec
 DELETE
 FROM posts
-WHERE author_did = $1
+WHERE author_id = $1
 `
 
-func (q *Queries) DeleteUserPosts(ctx context.Context, authorDid string) error {
-	_, err := q.db.Exec(ctx, deleteUserPosts, authorDid)
+func (q *Queries) DeleteUserPosts(ctx context.Context, authorID int32) error {
+	_, err := q.db.Exec(ctx, deleteUserPosts, authorID)
 	return err
 }
 
-const getLanguagePosts = `-- name: GetLanguagePosts :many
-SELECT posts.uri, posts.author_did, posts.reply_parent, posts.reply_root, posts.indexed_at, posts.created_at, posts.language, posts.rank
-FROM posts
-WHERE language = $1
-  AND reply_root IS NULL
-  AND rank < $2
-ORDER BY rank DESC
-LIMIT $3
-`
-
-type GetLanguagePostsParams struct {
-	Language pgtype.Text
-	Rank     pgtype.Float8
-	Limit    int32
-}
-
-func (q *Queries) GetLanguagePosts(ctx context.Context, arg GetLanguagePostsParams) ([]Post, error) {
-	rows, err := q.db.Query(ctx, getLanguagePosts, arg.Language, arg.Rank, arg.Limit)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []Post
-	for rows.Next() {
-		var i Post
-		if err := rows.Scan(
-			&i.Uri,
-			&i.AuthorDid,
-			&i.ReplyParent,
-			&i.ReplyRoot,
-			&i.IndexedAt,
-			&i.CreatedAt,
-			&i.Language,
-			&i.Rank,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const getLanguageTopPosts = `-- name: GetLanguageTopPosts :many
-SELECT uri as uri,
-       ''  as repost_uri,
-       created_at,
-       rank
-FROM posts
-         INNER JOIN users u ON posts.author_did = u.did
-WHERE language = $1
-  AND reply_root IS NULL
-  AND u.followers_count > 1000
-  AND rank < $2
-ORDER BY rank DESC
-LIMIT $3
-`
-
-type GetLanguageTopPostsParams struct {
-	Language pgtype.Text
-	Rank     pgtype.Float8
-	Limit    int32
-}
-
-type GetLanguageTopPostsRow struct {
-	Uri       string
-	RepostUri string
-	CreatedAt pgtype.Timestamp
-	Rank      pgtype.Float8
-}
-
-func (q *Queries) GetLanguageTopPosts(ctx context.Context, arg GetLanguageTopPostsParams) ([]GetLanguageTopPostsRow, error) {
-	rows, err := q.db.Query(ctx, getLanguageTopPosts, arg.Language, arg.Rank, arg.Limit)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []GetLanguageTopPostsRow
-	for rows.Next() {
-		var i GetLanguageTopPostsRow
-		if err := rows.Scan(
-			&i.Uri,
-			&i.RepostUri,
-			&i.CreatedAt,
-			&i.Rank,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
 const insertFromTempToPosts = `-- name: InsertFromTempToPosts :many
-INSERT INTO posts (uri, author_did, reply_parent, reply_root, created_at, language, rank)
-SELECT uri, author_did, reply_parent, reply_root, created_at, language, rank
+INSERT INTO posts (uri_key, author_id, reply_parent, reply_root, created_at, language)
+SELECT uri_key, author_id, reply_parent, reply_root, created_at, language
 FROM tmp_posts
 ON CONFLICT DO NOTHING
-RETURNING uri, author_did, reply_root
+RETURNING id, author_id, reply_root
 `
 
 type InsertFromTempToPostsRow struct {
-	Uri       string
-	AuthorDid string
-	ReplyRoot pgtype.Text
+	ID        int32
+	AuthorID  int32
+	ReplyRoot []string
 }
 
 func (q *Queries) InsertFromTempToPosts(ctx context.Context) ([]InsertFromTempToPostsRow, error) {
@@ -231,7 +138,7 @@ func (q *Queries) InsertFromTempToPosts(ctx context.Context) ([]InsertFromTempTo
 	var items []InsertFromTempToPostsRow
 	for rows.Next() {
 		var i InsertFromTempToPostsRow
-		if err := rows.Scan(&i.Uri, &i.AuthorDid, &i.ReplyRoot); err != nil {
+		if err := rows.Scan(&i.ID, &i.AuthorID, &i.ReplyRoot); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -243,7 +150,7 @@ func (q *Queries) InsertFromTempToPosts(ctx context.Context) ([]InsertFromTempTo
 }
 
 const vacuumPosts = `-- name: VacuumPosts :exec
-VACUUM posts
+VACUUM ANALYSE posts
 `
 
 func (q *Queries) VacuumPosts(ctx context.Context) error {

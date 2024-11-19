@@ -11,7 +11,6 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
 	log "github.com/sirupsen/logrus"
-	"slices"
 	"sync"
 	"time"
 )
@@ -52,9 +51,8 @@ type Manager struct {
 	timelines  map[string]cache.Timeline
 	algorithms map[string]algorithms.Algorithm
 
-	buffers      sync.Map
-	mutexes      map[Event]*sync.Mutex
-	usersCreated sync.Map
+	buffers sync.Map
+	mutexes map[Event]*sync.Mutex
 }
 
 func NewManager(dbConnection *pgxpool.Pool, redisConnection *redis.Client) *Manager {
@@ -83,12 +81,9 @@ func NewManager(dbConnection *pgxpool.Pool, redisConnection *redis.Client) *Mana
 		timelines:  make(map[string]cache.Timeline),
 		algorithms: make(map[string]algorithms.Algorithm),
 
-		buffers:      sync.Map{},
-		mutexes:      mutexes,
-		usersCreated: sync.Map{},
+		buffers: sync.Map{},
+		mutexes: mutexes,
 	}
-	storageManager.loadUsersCreated()
-	go storageManager.loadUsersFollows()
 	storageManager.initializeTimelines()
 	storageManager.initializeAlgorithms()
 	return &storageManager
@@ -126,16 +121,16 @@ func (m *Manager) CleanOldData() {
 	}
 
 	// Clean caches
-	postUris := make([]string, 0, len(deletedPosts))
+	postIds := make([]int32, 0, len(deletedPosts))
 	for _, deletedPost := range deletedPosts {
-		postUris = append(postUris, deletedPost.Uri)
+		postIds = append(postIds, deletedPost.ID)
 
 		// Discount from user statistics
-		postInteractions := m.postsCache.GetPostInteractions(deletedPost.Uri)
-		m.usersCache.UpdateUserStatistics(deletedPost.AuthorDid, 0, 0, -1, -postInteractions)
+		postInteractions := m.postsCache.GetPostInteractions(deletedPost.ID)
+		m.usersCache.UpdateUserStatistics(deletedPost.AuthorID, 0, 0, -1, -postInteractions)
 	}
 	// Delete from posts cache
-	m.postsCache.DeletePosts(postUris)
+	m.postsCache.DeletePosts(postIds)
 }
 
 func (m *Manager) CreateFollow(follow models.Follow) {
@@ -161,10 +156,10 @@ func (m *Manager) CreateFollow(follow models.Follow) {
 	buffer = append(
 		buffer,
 		db.BulkCreateFollowsParams{
-			Uri:        follow.Uri,
-			AuthorDid:  follow.AuthorDid,
-			SubjectDid: follow.SubjectDid,
-			CreatedAt:  pgtype.Timestamp{Time: follow.CreatedAt, Valid: true},
+			UriKey:    follow.UriKey,
+			AuthorID:  follow.AuthorID,
+			SubjectID: follow.SubjectID,
+			CreatedAt: pgtype.Timestamp{Time: follow.CreatedAt, Valid: true},
 		},
 	)
 	m.buffers.Store(event, buffer)
@@ -198,22 +193,22 @@ func (m *Manager) CreateFollow(follow models.Follow) {
 			// Add follow to users statistics
 			for _, follow := range createdFollows {
 				err := m.queries.AddUserFollows(ctx, db.AddUserFollowsParams{
-					Did:          follow.AuthorDid,
+					ID:           follow.AuthorID,
 					FollowsCount: pgtype.Int4{Int32: 1, Valid: true},
 				})
 				if err == nil {
 					m.usersCache.UpdateUserStatistics(
-						follow.AuthorDid, 1, 0, 0, 0,
+						follow.AuthorID, 1, 0, 0, 0,
 					)
 				}
 
 				err = m.queries.AddUserFollowers(ctx, db.AddUserFollowersParams{
-					Did:            follow.SubjectDid,
+					ID:             follow.SubjectID,
 					FollowersCount: pgtype.Int4{Int32: 1, Valid: true},
 				})
 				if err == nil {
 					m.usersCache.UpdateUserStatistics(
-						follow.SubjectDid, 0, 1, 0, 0,
+						follow.SubjectID, 0, 1, 0, 0,
 					)
 				}
 			}
@@ -224,13 +219,12 @@ func (m *Manager) CreateFollow(follow models.Follow) {
 	}
 }
 
-func (m *Manager) CreateInteraction(interaction models.Interaction) error {
+func (m *Manager) CreateInteraction(interaction models.Interaction) {
 	event := Event{EntityInteraction, OperationCreate}
 	mutex := m.mutexes[event]
 	if mutex == nil {
-		err := fmt.Errorf("mutex for interactions create buffer not initialized")
-		log.Error(err)
-		return err
+		log.Errorf("Mutex for interactions create buffer not initialized")
+		return
 	}
 	mutex.Lock()
 	defer mutex.Unlock()
@@ -246,11 +240,12 @@ func (m *Manager) CreateInteraction(interaction models.Interaction) error {
 	buffer = append(
 		buffer,
 		db.BulkCreateInteractionsParams{
-			Uri:       interaction.Uri,
-			Kind:      db.InteractionType(interaction.Kind),
-			AuthorDid: interaction.AuthorDid,
-			PostUri:   interaction.PostUri,
-			CreatedAt: pgtype.Timestamp{Time: interaction.CreatedAt, Valid: true},
+			UriKey:       interaction.UriKey,
+			Kind:         db.InteractionType(interaction.Kind),
+			AuthorID:     interaction.AuthorID,
+			PostUriKey:   interaction.PostUriKey,
+			PostAuthorID: interaction.PostAuthorId,
+			CreatedAt:    pgtype.Timestamp{Time: interaction.CreatedAt, Valid: true},
 		},
 	)
 	m.buffers.Store(event, buffer)
@@ -283,28 +278,23 @@ func (m *Manager) CreateInteraction(interaction models.Interaction) error {
 
 			// Update caches
 			for _, interaction := range createdInteractions {
-				postAuthor, ok := m.postsCache.GetPostAuthor(interaction.PostUri)
-				if ok {
-					m.postsCache.AddInteraction(interaction.PostUri)
-					m.usersCache.UpdateUserStatistics(
-						postAuthor, 0, 0, 0, 1,
-					)
-				}
+				m.postsCache.AddInteraction(interaction.PostAuthorID, interaction.PostUriKey)
+				m.usersCache.UpdateUserStatistics(
+					interaction.PostAuthorID, 0, 0, 0, 1,
+				)
 			}
 		}()
 
 		// Clear buffer
 		m.buffers.Store(event, make([]db.BulkCreateInteractionsParams, 0, len(buffer)))
 	}
-
-	return nil
 }
 
 func (m *Manager) CreatePost(post models.Post) {
 	ctx := context.Background()
 
 	// Add post to corresponding timelines
-	authorStatistics := m.usersCache.GetUserStatistics(post.AuthorDid)
+	authorStatistics := m.usersCache.GetUserStatistics(post.AuthorId)
 	go func() {
 		for timelineName, algorithm := range m.algorithms {
 			if ok, reason := algorithm.AcceptsPost(post, authorStatistics); ok {
@@ -313,13 +303,6 @@ func (m *Manager) CreatePost(post models.Post) {
 			}
 		}
 	}()
-
-	// Store in cache (exclude replies)
-	// *Done at this step so the post is available in cache as soon as possible
-	// instead of waiting until bulk creation
-	if post.ReplyRoot == "" {
-		m.postsCache.AddPost(post)
-	}
 
 	// Store in DB
 	event := Event{EntityPost, OperationCreate}
@@ -342,13 +325,12 @@ func (m *Manager) CreatePost(post models.Post) {
 	buffer = append(
 		buffer,
 		db.BulkCreatePostsParams{
-			Uri:         post.Uri,
-			AuthorDid:   post.AuthorDid,
-			ReplyParent: pgtype.Text{String: post.ReplyParent, Valid: post.ReplyParent != ""},
-			ReplyRoot:   pgtype.Text{String: post.ReplyRoot, Valid: post.ReplyRoot != ""},
+			UriKey:      post.UriKey,
+			AuthorID:    post.AuthorId,
+			ReplyParent: post.ReplyParent,
+			ReplyRoot:   post.ReplyRoot,
 			CreatedAt:   pgtype.Timestamp{Time: post.CreatedAt, Valid: true},
 			Language:    pgtype.Text{String: post.Language, Valid: post.Language != ""},
-			Rank:        pgtype.Float8{Float64: post.Rank, Valid: true},
 		},
 	)
 	m.buffers.Store(event, buffer)
@@ -382,14 +364,14 @@ func (m *Manager) CreatePost(post models.Post) {
 			// Add post to user statistics
 			for _, post := range createdPosts {
 				err := m.queries.AddUserPosts(ctx, db.AddUserPostsParams{
-					Did:        post.AuthorDid,
+					ID:         post.AuthorID,
 					PostsCount: pgtype.Int4{Int32: 1, Valid: true},
 				})
 				if err == nil {
 					// Update cache (exclude replies)
-					if !post.ReplyRoot.Valid {
+					if post.ReplyRoot == nil {
 						m.usersCache.UpdateUserStatistics(
-							post.AuthorDid, 0, 0, 1, 0,
+							post.AuthorID, 0, 0, 1, 0,
 						)
 					}
 				}
@@ -401,22 +383,25 @@ func (m *Manager) CreatePost(post models.Post) {
 	}
 }
 
-func (m *Manager) CreateUser(did string) {
-	if _, ok := m.usersCreated.Load(did); ok {
-		return
+func (m *Manager) GetOrCreateUser(did string) (int32, error) {
+	if id, ok := m.usersCache.UserDidToId(did); ok {
+		return id, nil
 	}
-	err := m.queries.CreateUser(
+
+	id, err := m.queries.CreateUser(
 		context.Background(),
 		db.CreateUserParams{Did: did},
 	)
 	if err != nil {
-		log.Errorf("Error creating user: %m", err)
-		return
+		log.Errorf("Error creating user: %v", err)
+		return 0, err
 	}
-	m.usersCreated.Store(did, true)
+	m.usersCache.AddUser(id, did)
+
+	return id, nil
 }
 
-func (m *Manager) DeleteFollow(uri string) {
+func (m *Manager) DeleteFollow(identifier models.Identifier) {
 	ctx := context.Background()
 
 	event := Event{EntityFollow, OperationDelete}
@@ -428,15 +413,15 @@ func (m *Manager) DeleteFollow(uri string) {
 	mutex.Lock()
 	defer mutex.Unlock()
 
-	var buffer []string
+	var buffer []models.Identifier
 	b, ok := m.buffers.Load(event)
 	if ok {
-		buffer = b.([]string)
+		buffer = b.([]models.Identifier)
 	} else {
-		buffer = make([]string, 0)
+		buffer = make([]models.Identifier, 0)
 	}
 
-	buffer = append(buffer, uri)
+	buffer = append(buffer, identifier)
 	m.buffers.Store(event, buffer)
 
 	if len(buffer) >= BulkSize[event.Entity] {
@@ -445,9 +430,20 @@ func (m *Manager) DeleteFollow(uri string) {
 
 			m.executeTransaction(
 				func(ctx context.Context, qtx *db.Queries) {
+					uriKeys := make([]string, len(buffer))
+					authorIds := make([]int32, len(buffer))
+
+					for i, identifier := range buffer {
+						uriKeys[i] = identifier.UriKey
+						authorIds[i] = identifier.AuthorId
+					}
+
 					// Delete follows
 					var err error
-					deletedFollows, err = qtx.BulkDeleteFollows(ctx, buffer)
+					deletedFollows, err = qtx.BulkDeleteFollows(ctx, db.BulkDeleteFollowsParams{
+						UriKeys:   uriKeys,
+						AuthorIds: authorIds,
+					})
 					if err != nil {
 						log.Infof("Error deleting follows: %v", err)
 						return
@@ -458,22 +454,22 @@ func (m *Manager) DeleteFollow(uri string) {
 			// Remove follow from users statistics
 			for _, follow := range deletedFollows {
 				err := m.queries.AddUserFollows(ctx, db.AddUserFollowsParams{
-					Did:          follow.AuthorDid,
+					ID:           follow.AuthorID,
 					FollowsCount: pgtype.Int4{Int32: -1, Valid: true},
 				})
 				if err == nil {
 					m.usersCache.UpdateUserStatistics(
-						follow.AuthorDid, -1, 0, 0, 0,
+						follow.AuthorID, -1, 0, 0, 0,
 					)
 				}
 
 				err = m.queries.AddUserFollowers(ctx, db.AddUserFollowersParams{
-					Did:            follow.SubjectDid,
+					ID:             follow.SubjectID,
 					FollowersCount: pgtype.Int4{Int32: -1, Valid: true},
 				})
 				if err == nil {
 					m.usersCache.UpdateUserStatistics(
-						follow.SubjectDid, 0, -1, 0, 0,
+						follow.SubjectID, 0, -1, 0, 0,
 					)
 				}
 			}
@@ -484,7 +480,7 @@ func (m *Manager) DeleteFollow(uri string) {
 	}
 }
 
-func (m *Manager) DeleteInteraction(uri string) {
+func (m *Manager) DeleteInteraction(identifier models.Identifier) {
 	ctx := context.Background()
 
 	event := Event{EntityInteraction, OperationDelete}
@@ -496,33 +492,41 @@ func (m *Manager) DeleteInteraction(uri string) {
 	mutex.Lock()
 	defer mutex.Unlock()
 
-	var buffer []string
+	var buffer []models.Identifier
 	b, ok := m.buffers.Load(event)
 	if ok {
-		buffer = b.([]string)
+		buffer = b.([]models.Identifier)
 	} else {
-		buffer = make([]string, 0)
+		buffer = make([]models.Identifier, 0)
 	}
 
-	buffer = append(buffer, uri)
+	buffer = append(buffer, identifier)
 	m.buffers.Store(event, buffer)
 
 	if len(buffer) >= BulkSize[event.Entity] {
 		go func() {
-			deletedInteractions, err := m.queries.BulkDeleteInteractions(ctx, buffer)
+			uriKeys := make([]string, len(buffer))
+			authorIds := make([]int32, len(buffer))
+
+			for i, identifier := range buffer {
+				uriKeys[i] = identifier.UriKey
+				authorIds[i] = identifier.AuthorId
+			}
+
+			deletedInteractions, err := m.queries.BulkDeleteInteractions(ctx, db.BulkDeleteInteractionsParams{
+				UriKeys:   uriKeys,
+				AuthorIds: authorIds,
+			})
 			if err != nil {
 				log.Errorf("Error deleting interactions: %v", err)
 			}
 
 			// Update caches
 			for _, interaction := range deletedInteractions {
-				postAuthor, ok := m.postsCache.GetPostAuthor(interaction.PostUri)
-				if ok {
-					m.postsCache.DeleteInteraction(interaction.PostUri)
-					m.usersCache.UpdateUserStatistics(
-						postAuthor, 0, 0, 0, -1,
-					)
-				}
+				m.postsCache.DeleteInteraction(interaction.PostAuthorID, interaction.PostUriKey)
+				m.usersCache.UpdateUserStatistics(
+					interaction.PostAuthorID, 0, 0, 0, -1,
+				)
 			}
 		}()
 
@@ -531,7 +535,7 @@ func (m *Manager) DeleteInteraction(uri string) {
 	}
 }
 
-func (m *Manager) DeletePost(uri string) {
+func (m *Manager) DeletePost(identifier models.Identifier) {
 	ctx := context.Background()
 
 	event := Event{EntityPost, OperationDelete}
@@ -543,26 +547,37 @@ func (m *Manager) DeletePost(uri string) {
 	mutex.Lock()
 	defer mutex.Unlock()
 
-	var buffer []string
+	var buffer []models.Identifier
 	b, ok := m.buffers.Load(event)
 	if ok {
-		buffer = b.([]string)
+		buffer = b.([]models.Identifier)
 	} else {
-		buffer = make([]string, 0)
+		buffer = make([]models.Identifier, 0)
 	}
 
-	buffer = append(buffer, uri)
+	buffer = append(buffer, identifier)
 	m.buffers.Store(event, buffer)
 
 	if len(buffer) >= BulkSize[event.Entity] {
 		go func() {
 			var deletedPosts []db.BulkDeletePostsRow
 
+			uriKeys := make([]string, len(buffer))
+			authorIds := make([]int32, len(buffer))
+
+			for i, identifier := range buffer {
+				uriKeys[i] = identifier.UriKey
+				authorIds[i] = identifier.AuthorId
+			}
+
 			m.executeTransaction(
 				func(ctx context.Context, qtx *db.Queries) {
 					// Delete posts
 					var err error
-					deletedPosts, err = qtx.BulkDeletePosts(ctx, buffer)
+					deletedPosts, err = qtx.BulkDeletePosts(ctx, db.BulkDeletePostsParams{
+						UriKeys:   uriKeys,
+						AuthorIds: authorIds,
+					})
 					if err != nil {
 						log.Errorf("Error deleting posts: %m", err)
 						return
@@ -573,16 +588,16 @@ func (m *Manager) DeletePost(uri string) {
 			// Remove post from user statistics
 			for _, post := range deletedPosts {
 				err := m.queries.AddUserPosts(ctx, db.AddUserPostsParams{
-					Did:        post.AuthorDid,
+					ID:         post.AuthorID,
 					PostsCount: pgtype.Int4{Int32: -1, Valid: true},
 				})
 				if err == nil {
 					// Update caches
-					deleted := m.postsCache.DeletePost(uri)
+					deleted := m.postsCache.DeletePost(post.ID)
 					if deleted {
-						postInteractions := m.postsCache.GetPostInteractions(post.AuthorDid)
+						postInteractions := m.postsCache.GetPostInteractions(post.AuthorID)
 						m.usersCache.UpdateUserStatistics(
-							post.AuthorDid, 0, 0, -1, -postInteractions,
+							post.AuthorID, 0, 0, -1, -postInteractions,
 						)
 					}
 				}
@@ -596,23 +611,27 @@ func (m *Manager) DeletePost(uri string) {
 
 func (m *Manager) DeleteUser(did string) {
 	ctx := context.Background()
+	id, ok := m.usersCache.UserDidToId(did)
+	if !ok {
+		return
+	}
 
 	// Delete user from DB
-	if err := m.queries.DeleteUser(ctx, did); err != nil {
+	if err := m.queries.DeleteUser(ctx, id); err != nil {
 		log.Errorf("Error deleting user %s: %v", did, err)
 		return
 	}
 	// Delete user's posts
-	if err := m.queries.DeleteUserPosts(ctx, did); err != nil {
+	if err := m.queries.DeleteUserPosts(ctx, id); err != nil {
 		log.Errorf("Error deleting posts for user %s: %v", did, err)
 	}
 	// Delete user's interactions
-	if err := m.queries.DeleteUser(ctx, did); err != nil {
+	if err := m.queries.DeleteUser(ctx, id); err != nil {
 		log.Errorf("Error deleting user %s: %v", did, err)
 	}
 
 	// Delete user from cache
-	m.usersCache.DeleteUser(did)
+	m.usersCache.DeleteUser(id)
 }
 
 func (m *Manager) GetCursor(service string) int64 {
@@ -637,32 +656,7 @@ func (m *Manager) GetTimeline(timelineName string, maxRank float64, limit int64)
 	if !ok {
 		panic(fmt.Sprintf("Could not find timeline for feed: %s", timelineName))
 	}
-	posts := timeline.GetPosts(maxRank, limit)
-
-	// Not found. Go to DB
-	if int64(len(posts)) < limit {
-		algorithm, ok := m.algorithms[timelineName]
-		if !ok {
-			panic(fmt.Sprintf("Could not find algorithm for feed: %s", timelineName))
-		}
-		dbPosts := algorithm.GetPosts(m.queries, maxRank, limit)
-		for _, post := range dbPosts {
-			if !slices.ContainsFunc(posts, func(post models.Post) bool {
-				for _, p := range posts {
-					if p.Uri == post.Uri {
-						return true
-					}
-				}
-				return false
-			}) {
-				posts = append(posts, post)
-				// Add to cache
-				timeline.AddPost(post)
-			}
-		}
-	}
-
-	return posts
+	return timeline.GetPosts(maxRank, limit)
 }
 
 func (m *Manager) UpdateCursor(service string, cursor int64) {
@@ -680,13 +674,13 @@ func (m *Manager) UpdateCursor(service string, cursor int64) {
 
 func (m *Manager) UpdateUser(updatedUser models.User) {
 	// Update on cache
-	m.usersCache.SetUserFollows(updatedUser.Did, updatedUser.FollowersCount, updatedUser.FollowsCount)
+	m.usersCache.SetUserFollows(updatedUser.ID, updatedUser.FollowersCount, updatedUser.FollowsCount)
 
 	// Update on DB
 	err := m.queries.UpdateUser(
 		context.Background(),
 		db.UpdateUserParams{
-			Did:            updatedUser.Did,
+			ID:             updatedUser.ID,
 			Handle:         pgtype.Text{String: updatedUser.Handle, Valid: true},
 			FollowersCount: pgtype.Int4{Int32: int32(updatedUser.FollowersCount), Valid: true},
 			FollowsCount:   pgtype.Int4{Int32: int32(updatedUser.FollowsCount), Valid: true},
@@ -728,33 +722,5 @@ func (m *Manager) initializeAlgorithms() {
 func (m *Manager) initializeTimelines() {
 	for feedName := range algorithms.ImplementedAlgorithms {
 		m.timelines[feedName] = cache.NewTimeline(feedName, m.redisConnection)
-	}
-}
-
-func (m *Manager) loadUsersCreated() {
-	dids, err := m.queries.GetUserDids(context.Background())
-	if err != nil {
-		log.Error(err)
-		dids = make([]string, 0)
-	}
-
-	for _, did := range dids {
-		m.usersCreated.Store(did, true)
-	}
-}
-
-func (m *Manager) loadUsersFollows() {
-	counts, err := m.queries.GetUsersFollows(context.Background())
-	if err != nil {
-		log.Errorf("Error getting users follows: %v", err)
-		return
-	}
-
-	for _, userCounts := range counts {
-		m.usersCache.SetUserFollows(
-			userCounts.Did,
-			int64(userCounts.FollowersCount.Int32),
-			int64(userCounts.FollowsCount.Int32),
-		)
 	}
 }

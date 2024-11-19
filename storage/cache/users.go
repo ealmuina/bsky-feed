@@ -2,22 +2,26 @@ package cache
 
 import (
 	"context"
+	"fmt"
 	"github.com/redis/go-redis/v9"
 	"math"
+	"strconv"
 	"time"
 )
 
-const UsersFollowersCountCacheRedisKey = "users_followers_count"
-const UsersFollowsCountCacheRedisKey = "users_follows_count"
-const UsersPostsCountCacheRedisKey = "users_posts_count"
-const UsersInteractionsCountCacheRedisKey = "users_interactions_count"
+const UsersFollowersCountRedisKey = "users_followers_count"
+const UsersFollowsCountRedisKey = "users_follows_count"
+const UsersPostsCountRedisKey = "users_posts_count"
+const UsersInteractionsCountRedisKey = "users_interactions_count"
+const UserIdToDidRedisKey = "users_id_to_did"
+const UserDidToIdRedisKey = "users_did_to_id"
 
 type UserStatistics struct {
-	Did               string
-	FollowersCount    int64
-	FollowsCount      int64
-	PostsCount        int64
-	InteractionsCount int64
+	ID                int32
+	FollowersCount    int32
+	FollowsCount      int32
+	PostsCount        int32
+	InteractionsCount int32
 }
 
 func (s *UserStatistics) GetEngagementFactor() float64 {
@@ -43,67 +47,94 @@ func NewUsersCache(redisConnection *redis.Client, expiration time.Duration) User
 	}
 }
 
-func (c *UsersCache) DeleteUser(did string) {
+func (c *UsersCache) AddUser(id int32, did string) {
 	ctx := context.Background()
-	c.redisClient.HDel(ctx, UsersFollowersCountCacheRedisKey, did)
-	c.redisClient.HDel(ctx, UsersFollowsCountCacheRedisKey, did)
-	c.redisClient.HDel(ctx, UsersPostsCountCacheRedisKey, did)
-	c.redisClient.HDel(ctx, UsersInteractionsCountCacheRedisKey, did)
+	idStr := fmt.Sprintf("%d", id)
+	c.redisClient.HSet(ctx, UserIdToDidRedisKey, idStr, did)
+	c.redisClient.HSet(ctx, UserDidToIdRedisKey, did, idStr)
+}
+
+func (c *UsersCache) DeleteUser(id int32) {
+	ctx := context.Background()
+	idStr := fmt.Sprintf("%d", id)
+	c.redisClient.HDel(ctx, UsersFollowersCountRedisKey, idStr)
+	c.redisClient.HDel(ctx, UsersFollowsCountRedisKey, idStr)
+	c.redisClient.HDel(ctx, UsersPostsCountRedisKey, idStr)
+	c.redisClient.HDel(ctx, UsersInteractionsCountRedisKey, idStr)
 }
 
 func (c *UsersCache) DeleteUsers(dids []string) {
 	ctx := context.Background()
-	c.redisClient.HDel(ctx, UsersFollowersCountCacheRedisKey, dids...)
-	c.redisClient.HDel(ctx, UsersFollowsCountCacheRedisKey, dids...)
-	c.redisClient.HDel(ctx, UsersPostsCountCacheRedisKey, dids...)
-	c.redisClient.HDel(ctx, UsersInteractionsCountCacheRedisKey, dids...)
+	c.redisClient.HDel(ctx, UsersFollowersCountRedisKey, dids...)
+	c.redisClient.HDel(ctx, UsersFollowsCountRedisKey, dids...)
+	c.redisClient.HDel(ctx, UsersPostsCountRedisKey, dids...)
+	c.redisClient.HDel(ctx, UsersInteractionsCountRedisKey, dids...)
 }
 
-func (c *UsersCache) GetUserStatistics(did string) UserStatistics {
+func (c *UsersCache) GetUserStatistics(id int32) UserStatistics {
 	ctx := context.Background()
+	idStr := fmt.Sprintf("%d", id)
 
-	followersCount, _ := c.redisClient.HGet(ctx, UsersFollowersCountCacheRedisKey, did).Int64()
-	followsCount, _ := c.redisClient.HGet(ctx, UsersFollowsCountCacheRedisKey, did).Int64()
-	postsCount, _ := c.redisClient.HGet(ctx, UsersPostsCountCacheRedisKey, did).Int64()
-	interactionsCount, _ := c.redisClient.HGet(ctx, UsersInteractionsCountCacheRedisKey, did).Int64()
+	followersCount, _ := c.redisClient.HGet(ctx, UsersFollowersCountRedisKey, idStr).Int()
+	followsCount, _ := c.redisClient.HGet(ctx, UsersFollowsCountRedisKey, idStr).Int()
+	postsCount, _ := c.redisClient.HGet(ctx, UsersPostsCountRedisKey, idStr).Int()
+	interactionsCount, _ := c.redisClient.HGet(ctx, UsersInteractionsCountRedisKey, idStr).Int()
 
 	return UserStatistics{
-		Did:               did,
-		FollowersCount:    followersCount,
-		FollowsCount:      followsCount,
-		PostsCount:        postsCount,
-		InteractionsCount: interactionsCount,
+		ID:                id,
+		FollowersCount:    int32(followersCount),
+		FollowsCount:      int32(followsCount),
+		PostsCount:        int32(postsCount),
+		InteractionsCount: int32(interactionsCount),
 	}
 }
 
 func (c *UsersCache) RequiresReload() bool {
-	return c.redisClient.Exists(context.Background(), UsersFollowersCountCacheRedisKey).Val() > 0
+	return c.redisClient.Exists(context.Background(), UsersFollowersCountRedisKey).Val() > 0
 }
 
-func (c *UsersCache) SetUserFollows(did string, followersCount int64, followsCount int64) {
+func (c *UsersCache) SetUserFollows(id int32, followersCount int64, followsCount int64) {
 	ctx := context.Background()
-	c.redisClient.HSet(ctx, UsersFollowersCountCacheRedisKey, did, followersCount)
-	c.redisClient.HSet(ctx, UsersFollowsCountCacheRedisKey, did, followsCount)
+	idStr := fmt.Sprintf("%d", id)
+	c.redisClient.HSet(ctx, UsersFollowersCountRedisKey, idStr, followersCount)
+	c.redisClient.HSet(ctx, UsersFollowsCountRedisKey, idStr, followsCount)
 }
 
 func (c *UsersCache) UpdateUserStatistics(
-	did string,
-	followsDelta int64,
-	followersDelta int64,
-	postsDelta int64,
-	interactionsDelta int64,
+	id int32,
+	followsDelta int32,
+	followersDelta int32,
+	postsDelta int32,
+	interactionsDelta int32,
 ) {
 	ctx := context.Background()
+	idStr := fmt.Sprintf("%d", id)
 
-	for redisKey, delta := range map[string]int64{
-		UsersFollowersCountCacheRedisKey:    followersDelta,
-		UsersFollowsCountCacheRedisKey:      followsDelta,
-		UsersPostsCountCacheRedisKey:        postsDelta,
-		UsersInteractionsCountCacheRedisKey: interactionsDelta,
+	for redisKey, delta := range map[string]int32{
+		UsersFollowersCountRedisKey:    followersDelta,
+		UsersFollowsCountRedisKey:      followsDelta,
+		UsersPostsCountRedisKey:        postsDelta,
+		UsersInteractionsCountRedisKey: interactionsDelta,
 	} {
 		if delta != 0 {
-			c.redisClient.HIncrBy(ctx, redisKey, did, delta)
-			c.redisClient.HExpire(ctx, redisKey, c.expiration, did)
+			c.redisClient.HIncrBy(ctx, redisKey, idStr, int64(delta))
+			c.redisClient.HExpire(ctx, redisKey, c.expiration, idStr)
 		}
 	}
+}
+
+func (c *UsersCache) UserIdToDid(id int32) (string, bool) {
+	did, err := c.redisClient.HGet(context.Background(), UserIdToDidRedisKey, strconv.Itoa(int(id))).Result()
+	if err != nil {
+		return "", false
+	}
+	return did, true
+}
+
+func (c *UsersCache) UserDidToId(did string) (int32, bool) {
+	id, err := c.redisClient.HGet(context.Background(), UserDidToIdRedisKey, did).Int()
+	if err != nil {
+		return 0, false
+	}
+	return int32(id), true
 }

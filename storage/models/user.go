@@ -1,6 +1,7 @@
 package models
 
 type User struct {
+	ID             int32
 	Did            string
 	Handle         string
 	FollowersCount int64

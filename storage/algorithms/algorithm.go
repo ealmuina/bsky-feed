@@ -2,14 +2,11 @@ package algorithms
 
 import (
 	"bsky/storage/cache"
-	db "bsky/storage/db/sqlc"
 	"bsky/storage/models"
 )
 
 type Algorithm interface {
 	AcceptsPost(post models.Post, authorStatistics cache.UserStatistics) (ok bool, reason map[string]string)
-
-	GetPosts(queries *db.Queries, maxRank float64, limit int64) []models.Post
 }
 
 var ImplementedAlgorithms = map[string]Algorithm{

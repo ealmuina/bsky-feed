@@ -54,31 +54,34 @@ func (ns NullInteractionType) Value() (driver.Value, error) {
 }
 
 type Follow struct {
-	Uri        string
-	AuthorDid  string
-	SubjectDid string
-	IndexedAt  pgtype.Timestamp
-	CreatedAt  pgtype.Timestamp
-}
-
-type Interaction struct {
-	Uri       string
-	Kind      InteractionType
-	AuthorDid string
-	PostUri   string
+	ID        int32
+	UriKey    string
+	AuthorID  int32
+	SubjectID int32
 	IndexedAt pgtype.Timestamp
 	CreatedAt pgtype.Timestamp
 }
 
+type Interaction struct {
+	ID           int32
+	UriKey       string
+	AuthorID     int32
+	Kind         InteractionType
+	PostUriKey   string
+	PostAuthorID int32
+	IndexedAt    pgtype.Timestamp
+	CreatedAt    pgtype.Timestamp
+}
+
 type Post struct {
-	Uri         string
-	AuthorDid   string
-	ReplyParent pgtype.Text
-	ReplyRoot   pgtype.Text
+	ID          int32
+	UriKey      string
+	AuthorID    int32
+	ReplyParent []string
+	ReplyRoot   []string
+	Language    pgtype.Text
 	IndexedAt   pgtype.Timestamp
 	CreatedAt   pgtype.Timestamp
-	Language    pgtype.Text
-	Rank        pgtype.Float8
 }
 
 type SubscriptionState struct {
@@ -88,34 +91,38 @@ type SubscriptionState struct {
 }
 
 type TmpFollow struct {
-	Uri        string
-	AuthorDid  string
-	SubjectDid string
-	IndexedAt  pgtype.Timestamp
-	CreatedAt  pgtype.Timestamp
-}
-
-type TmpInteraction struct {
-	Uri       string
-	Kind      InteractionType
-	AuthorDid string
-	PostUri   string
+	ID        int32
+	UriKey    string
+	AuthorID  int32
+	SubjectID int32
 	IndexedAt pgtype.Timestamp
 	CreatedAt pgtype.Timestamp
 }
 
+type TmpInteraction struct {
+	ID           int32
+	UriKey       string
+	AuthorID     int32
+	Kind         InteractionType
+	PostUriKey   string
+	PostAuthorID int32
+	IndexedAt    pgtype.Timestamp
+	CreatedAt    pgtype.Timestamp
+}
+
 type TmpPost struct {
-	Uri         string
-	AuthorDid   string
-	ReplyParent pgtype.Text
-	ReplyRoot   pgtype.Text
+	ID          int32
+	UriKey      string
+	AuthorID    int32
+	ReplyParent []string
+	ReplyRoot   []string
+	Language    pgtype.Text
 	IndexedAt   pgtype.Timestamp
 	CreatedAt   pgtype.Timestamp
-	Language    pgtype.Text
-	Rank        pgtype.Float8
 }
 
 type User struct {
+	ID             int32
 	Did            string
 	Handle         pgtype.Text
 	FollowersCount pgtype.Int4

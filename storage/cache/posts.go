@@ -1,15 +1,14 @@
 package cache
 
 import (
-	"bsky/storage/models"
 	"context"
+	"fmt"
 	"github.com/redis/go-redis/v9"
 	log "github.com/sirupsen/logrus"
 	"strconv"
 	"time"
 )
 
-const PostAuthorCacheRedisKey = "posts_author"
 const PostInteractionsCountCacheRedisKey = "posts_interactions_count"
 
 type PostsCache struct {
@@ -24,51 +23,43 @@ func NewPostsCache(redisConnection *redis.Client, expiration time.Duration) Post
 	}
 }
 
-func (c *PostsCache) AddPost(post models.Post) {
+func (c *PostsCache) AddInteraction(authorId int32, uriKey string) {
 	ctx := context.Background()
-	c.redisClient.HSet(ctx, PostAuthorCacheRedisKey, post.Uri, post.AuthorDid)
-	c.redisClient.HExpire(ctx, PostAuthorCacheRedisKey, c.expiration, post.Uri)
+	idStr := fmt.Sprintf("%d/%s", authorId, uriKey)
+	c.redisClient.HIncrBy(ctx, PostInteractionsCountCacheRedisKey, idStr, 1)
+	c.redisClient.HExpire(ctx, PostInteractionsCountCacheRedisKey, c.expiration, idStr)
 }
 
-func (c *PostsCache) AddInteraction(postUri string) {
+func (c *PostsCache) DeleteInteraction(authorId int32, uriKey string) {
 	ctx := context.Background()
-	c.redisClient.HIncrBy(ctx, PostInteractionsCountCacheRedisKey, postUri, 1)
-	c.redisClient.HExpire(ctx, PostInteractionsCountCacheRedisKey, c.expiration, postUri)
+	idStr := fmt.Sprintf("%d/%s", authorId, uriKey)
+	c.redisClient.HIncrBy(ctx, PostInteractionsCountCacheRedisKey, idStr, -1)
 }
 
-func (c *PostsCache) DeleteInteraction(postUri string) {
+func (c *PostsCache) DeletePost(id int32) bool {
 	ctx := context.Background()
-	c.redisClient.HIncrBy(ctx, PostInteractionsCountCacheRedisKey, postUri, -1)
-}
-
-func (c *PostsCache) DeletePost(uri string) bool {
-	result := c.redisClient.HDel(context.Background(), PostAuthorCacheRedisKey, uri)
-	c.redisClient.HDel(context.Background(), PostInteractionsCountCacheRedisKey, uri)
+	idStr := fmt.Sprintf("%d", id)
+	result := c.redisClient.HDel(ctx, PostInteractionsCountCacheRedisKey, idStr)
 	return result.Val() != 0
 }
 
-func (c *PostsCache) DeletePosts(uris []string) {
-	c.redisClient.HDel(context.Background(), PostAuthorCacheRedisKey, uris...)
-	c.redisClient.HDel(context.Background(), PostInteractionsCountCacheRedisKey, uris...)
-}
+func (c *PostsCache) DeletePosts(id []int32) {
+	ctx := context.Background()
 
-func (c *PostsCache) GetPostAuthor(uri string) (string, bool) {
-	authorDid, err := c.redisClient.HGet(
-		context.Background(),
-		PostAuthorCacheRedisKey,
-		uri,
-	).Result()
-	if err != nil {
-		return "", false
+	idStr := make([]string, len(id))
+	for i, v := range id {
+		idStr[i] = fmt.Sprintf("%d", v)
 	}
-	return authorDid, true
+
+	c.redisClient.HDel(ctx, PostInteractionsCountCacheRedisKey, idStr...)
 }
 
-func (c *PostsCache) GetPostInteractions(uri string) int64 {
+func (c *PostsCache) GetPostInteractions(id int32) int32 {
+	idStr := fmt.Sprintf("%d", id)
 	interactionsCountStr, err := c.redisClient.HGet(
 		context.Background(),
 		PostInteractionsCountCacheRedisKey,
-		uri,
+		idStr,
 	).Result()
 	if err != nil {
 		return 0
@@ -77,5 +68,5 @@ func (c *PostsCache) GetPostInteractions(uri string) int64 {
 	if err != nil {
 		log.Errorf("Could not convert value to int: %v", err)
 	}
-	return int64(interactionsCount)
+	return int32(interactionsCount)
 }

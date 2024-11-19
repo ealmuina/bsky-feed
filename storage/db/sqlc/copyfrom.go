@@ -29,9 +29,9 @@ func (r *iteratorForBulkCreateFollows) Next() bool {
 
 func (r iteratorForBulkCreateFollows) Values() ([]interface{}, error) {
 	return []interface{}{
-		r.rows[0].Uri,
-		r.rows[0].AuthorDid,
-		r.rows[0].SubjectDid,
+		r.rows[0].UriKey,
+		r.rows[0].AuthorID,
+		r.rows[0].SubjectID,
 		r.rows[0].CreatedAt,
 	}, nil
 }
@@ -41,7 +41,7 @@ func (r iteratorForBulkCreateFollows) Err() error {
 }
 
 func (q *Queries) BulkCreateFollows(ctx context.Context, arg []BulkCreateFollowsParams) (int64, error) {
-	return q.db.CopyFrom(ctx, []string{"tmp_follows"}, []string{"uri", "author_did", "subject_did", "created_at"}, &iteratorForBulkCreateFollows{rows: arg})
+	return q.db.CopyFrom(ctx, []string{"tmp_follows"}, []string{"uri_key", "author_id", "subject_id", "created_at"}, &iteratorForBulkCreateFollows{rows: arg})
 }
 
 // iteratorForBulkCreateInteractions implements pgx.CopyFromSource.
@@ -64,10 +64,11 @@ func (r *iteratorForBulkCreateInteractions) Next() bool {
 
 func (r iteratorForBulkCreateInteractions) Values() ([]interface{}, error) {
 	return []interface{}{
-		r.rows[0].Uri,
+		r.rows[0].UriKey,
+		r.rows[0].AuthorID,
 		r.rows[0].Kind,
-		r.rows[0].AuthorDid,
-		r.rows[0].PostUri,
+		r.rows[0].PostUriKey,
+		r.rows[0].PostAuthorID,
 		r.rows[0].CreatedAt,
 	}, nil
 }
@@ -77,7 +78,7 @@ func (r iteratorForBulkCreateInteractions) Err() error {
 }
 
 func (q *Queries) BulkCreateInteractions(ctx context.Context, arg []BulkCreateInteractionsParams) (int64, error) {
-	return q.db.CopyFrom(ctx, []string{"tmp_interactions"}, []string{"uri", "kind", "author_did", "post_uri", "created_at"}, &iteratorForBulkCreateInteractions{rows: arg})
+	return q.db.CopyFrom(ctx, []string{"tmp_interactions"}, []string{"uri_key", "author_id", "kind", "post_uri_key", "post_author_id", "created_at"}, &iteratorForBulkCreateInteractions{rows: arg})
 }
 
 // iteratorForBulkCreatePosts implements pgx.CopyFromSource.
@@ -100,13 +101,12 @@ func (r *iteratorForBulkCreatePosts) Next() bool {
 
 func (r iteratorForBulkCreatePosts) Values() ([]interface{}, error) {
 	return []interface{}{
-		r.rows[0].Uri,
-		r.rows[0].AuthorDid,
+		r.rows[0].UriKey,
+		r.rows[0].AuthorID,
 		r.rows[0].ReplyParent,
 		r.rows[0].ReplyRoot,
 		r.rows[0].CreatedAt,
 		r.rows[0].Language,
-		r.rows[0].Rank,
 	}, nil
 }
 
@@ -115,5 +115,5 @@ func (r iteratorForBulkCreatePosts) Err() error {
 }
 
 func (q *Queries) BulkCreatePosts(ctx context.Context, arg []BulkCreatePostsParams) (int64, error) {
-	return q.db.CopyFrom(ctx, []string{"tmp_posts"}, []string{"uri", "author_did", "reply_parent", "reply_root", "created_at", "language", "rank"}, &iteratorForBulkCreatePosts{rows: arg})
+	return q.db.CopyFrom(ctx, []string{"tmp_posts"}, []string{"uri_key", "author_id", "reply_parent", "reply_root", "created_at", "language"}, &iteratorForBulkCreatePosts{rows: arg})
 }

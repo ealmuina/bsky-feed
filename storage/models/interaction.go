@@ -10,10 +10,11 @@ const (
 )
 
 type Interaction struct {
-	Uri       string
-	Kind      InteractionType
-	AuthorDid string
-	PostUri   string
-	IndexedAt time.Time
-	CreatedAt time.Time
+	UriKey       string
+	Kind         InteractionType
+	AuthorID     int32
+	PostUriKey   string
+	PostAuthorId int32
+	IndexedAt    time.Time
+	CreatedAt    time.Time
 }

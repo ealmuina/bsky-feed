@@ -14,55 +14,56 @@ import (
 const addUserFollowers = `-- name: AddUserFollowers :exec
 UPDATE users
 SET followers_count = followers_count + $2
-WHERE did = $1
+WHERE id = $1
 `
 
 type AddUserFollowersParams struct {
-	Did            string
+	ID             int32
 	FollowersCount pgtype.Int4
 }
 
 func (q *Queries) AddUserFollowers(ctx context.Context, arg AddUserFollowersParams) error {
-	_, err := q.db.Exec(ctx, addUserFollowers, arg.Did, arg.FollowersCount)
+	_, err := q.db.Exec(ctx, addUserFollowers, arg.ID, arg.FollowersCount)
 	return err
 }
 
 const addUserFollows = `-- name: AddUserFollows :exec
 UPDATE users
 SET follows_count = follows_count + $2
-WHERE did = $1
+WHERE id = $1
 `
 
 type AddUserFollowsParams struct {
-	Did          string
+	ID           int32
 	FollowsCount pgtype.Int4
 }
 
 func (q *Queries) AddUserFollows(ctx context.Context, arg AddUserFollowsParams) error {
-	_, err := q.db.Exec(ctx, addUserFollows, arg.Did, arg.FollowsCount)
+	_, err := q.db.Exec(ctx, addUserFollows, arg.ID, arg.FollowsCount)
 	return err
 }
 
 const addUserPosts = `-- name: AddUserPosts :exec
 UPDATE users
 SET posts_count = users.posts_count + $2
-WHERE did = $1
+WHERE id = $1
 `
 
 type AddUserPostsParams struct {
-	Did        string
+	ID         int32
 	PostsCount pgtype.Int4
 }
 
 func (q *Queries) AddUserPosts(ctx context.Context, arg AddUserPostsParams) error {
-	_, err := q.db.Exec(ctx, addUserPosts, arg.Did, arg.PostsCount)
+	_, err := q.db.Exec(ctx, addUserPosts, arg.ID, arg.PostsCount)
 	return err
 }
 
-const createUser = `-- name: CreateUser :exec
+const createUser = `-- name: CreateUser :one
 INSERT INTO users (did, handle, followers_count, follows_count, posts_count, last_update)
 VALUES ($1, $2, $3, $4, $5, $6)
 ON CONFLICT DO NOTHING
+RETURNING id
 `
 
 type CreateUserParams struct {
@@ -74,8 +75,8 @@ type CreateUserParams struct {
 	LastUpdate     pgtype.Timestamp
 }
 
-func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) error {
-	_, err := q.db.Exec(ctx, createUser,
+func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (int32, error) {
+	row := q.db.QueryRow(ctx, createUser,
 		arg.Did,
 		arg.Handle,
 		arg.FollowersCount,
@@ -83,31 +84,34 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) error {
 		arg.PostsCount,
 		arg.LastUpdate,
 	)
-	return err
+	var id int32
+	err := row.Scan(&id)
+	return id, err
 }
 
 const deleteUser = `-- name: DeleteUser :exec
 DELETE
 FROM users
-WHERE did = $1
+WHERE id = $1
 `
 
-func (q *Queries) DeleteUser(ctx context.Context, did string) error {
-	_, err := q.db.Exec(ctx, deleteUser, did)
+func (q *Queries) DeleteUser(ctx context.Context, id int32) error {
+	_, err := q.db.Exec(ctx, deleteUser, id)
 	return err
 }
 
 const getUser = `-- name: GetUser :one
-SELECT did, handle, followers_count, follows_count, posts_count, indexed_at, last_update
+SELECT id, did, handle, followers_count, follows_count, posts_count, indexed_at, last_update
 FROM users
-WHERE did = $1
+WHERE id = $1
 LIMIT 1
 `
 
-func (q *Queries) GetUser(ctx context.Context, did string) (User, error) {
-	row := q.db.QueryRow(ctx, getUser, did)
+func (q *Queries) GetUser(ctx context.Context, id int32) (User, error) {
+	row := q.db.QueryRow(ctx, getUser, id)
 	var i User
 	err := row.Scan(
+		&i.ID,
 		&i.Did,
 		&i.Handle,
 		&i.FollowersCount,
@@ -117,31 +121,6 @@ func (q *Queries) GetUser(ctx context.Context, did string) (User, error) {
 		&i.LastUpdate,
 	)
 	return i, err
-}
-
-const getUserDids = `-- name: GetUserDids :many
-SELECT users.did
-FROM users
-`
-
-func (q *Queries) GetUserDids(ctx context.Context) ([]string, error) {
-	rows, err := q.db.Query(ctx, getUserDids)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []string
-	for rows.Next() {
-		var did string
-		if err := rows.Scan(&did); err != nil {
-			return nil, err
-		}
-		items = append(items, did)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
 }
 
 const getUserDidsToRefreshStatistics = `-- name: GetUserDidsToRefreshStatistics :many
@@ -171,37 +150,6 @@ func (q *Queries) GetUserDidsToRefreshStatistics(ctx context.Context) ([]string,
 	return items, nil
 }
 
-const getUsersFollows = `-- name: GetUsersFollows :many
-SELECT did, followers_count, follows_count
-FROM users
-`
-
-type GetUsersFollowsRow struct {
-	Did            string
-	FollowersCount pgtype.Int4
-	FollowsCount   pgtype.Int4
-}
-
-func (q *Queries) GetUsersFollows(ctx context.Context) ([]GetUsersFollowsRow, error) {
-	rows, err := q.db.Query(ctx, getUsersFollows)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []GetUsersFollowsRow
-	for rows.Next() {
-		var i GetUsersFollowsRow
-		if err := rows.Scan(&i.Did, &i.FollowersCount, &i.FollowsCount); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
 const updateUser = `-- name: UpdateUser :exec
 UPDATE users
 SET handle          = $2,
@@ -209,11 +157,11 @@ SET handle          = $2,
     follows_count   = $4,
     posts_count     = $5,
     last_update     = $6
-WHERE did = $1
+WHERE id = $1
 `
 
 type UpdateUserParams struct {
-	Did            string
+	ID             int32
 	Handle         pgtype.Text
 	FollowersCount pgtype.Int4
 	FollowsCount   pgtype.Int4
@@ -223,7 +171,7 @@ type UpdateUserParams struct {
 
 func (q *Queries) UpdateUser(ctx context.Context, arg UpdateUserParams) error {
 	_, err := q.db.Exec(ctx, updateUser,
-		arg.Did,
+		arg.ID,
 		arg.Handle,
 		arg.FollowersCount,
 		arg.FollowsCount,

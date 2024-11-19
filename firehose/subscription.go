@@ -19,6 +19,7 @@ import (
 	"math"
 	"math/rand"
 	"net/url"
+	"strings"
 	"time"
 )
 
@@ -136,32 +137,40 @@ func (s *Subscription) handleFeedPostCreate(evt *jsmodels.Event) error {
 		createdAt = now
 	}
 
-	replyParent, replyRoot := "", ""
+	var replyParent []string
+	var replyRoot []string
+
 	if post.Reply != nil {
 		if post.Reply.Parent != nil {
-			replyParent = post.Reply.Parent.Uri
+			authorDid, uriKey := s.splitUri(post.Reply.Parent.Uri, "/app.bsky.feed.post/")
+			replyParent = []string{authorDid, uriKey}
 		}
 		if post.Reply.Root != nil {
-			replyRoot = post.Reply.Root.Uri
+			authorDid, uriKey := s.splitUri(post.Reply.Root.Uri, "/app.bsky.feed.post/")
+			replyRoot = []string{authorDid, uriKey}
 		}
 	}
 
-	language := s.languageDetector.DetectLanguage(post.Text, post.Langs)
-
-	// Calculate rank
-	s.hasher.Write([]byte(uri))
-	hash := s.hasher.Sum32()
-	s.hasher.Reset()
-	decimalPlaces := int(math.Log10(float64(hash))) + 1
-	divisor := math.Pow10(decimalPlaces)
-	rank := float64(createdAt.Unix()) + float64(hash)/divisor
-
 	go func() {
-		s.storageManager.CreateUser(evt.Did)
+		language := s.languageDetector.DetectLanguage(post.Text, post.Langs)
+
+		// Calculate rank
+		s.hasher.Write([]byte(uri))
+		hash := s.hasher.Sum32()
+		s.hasher.Reset()
+		decimalPlaces := int(math.Log10(float64(hash))) + 1
+		divisor := math.Pow10(decimalPlaces)
+		rank := float64(createdAt.Unix()) + float64(hash)/divisor
+
+		authorId, err := s.storageManager.GetOrCreateUser(evt.Did)
+		if err != nil {
+			log.Errorf("Error creating user: %v", err)
+			return
+		}
 		s.storageManager.CreatePost(
 			models.Post{
-				Uri:         uri,
-				AuthorDid:   evt.Did,
+				UriKey:      evt.Commit.RKey,
+				AuthorId:    authorId,
 				ReplyParent: replyParent,
 				ReplyRoot:   replyRoot,
 				CreatedAt:   createdAt,
@@ -188,14 +197,26 @@ func (s *Subscription) handleGraphFollowCreate(evt *jsmodels.Event) error {
 		return err
 	}
 
-	go s.storageManager.CreateFollow(
-		models.Follow{
-			Uri:        s.calculateUri(evt),
-			AuthorDid:  evt.Did,
-			SubjectDid: follow.Subject,
-			CreatedAt:  createdAt,
-		},
-	)
+	go func() {
+		authorId, err := s.storageManager.GetOrCreateUser(evt.Did)
+		if err != nil {
+			log.Errorf("Error creating user: %v", err)
+			return
+		}
+		subjectId, err := s.storageManager.GetOrCreateUser(follow.Subject)
+		if err != nil {
+			log.Errorf("Error creating user: %v", err)
+			return
+		}
+		s.storageManager.CreateFollow(
+			models.Follow{
+				UriKey:    evt.Commit.RKey,
+				AuthorID:  authorId,
+				SubjectID: subjectId,
+				CreatedAt: createdAt,
+			},
+		)
+	}()
 
 	return nil
 }
@@ -232,14 +253,25 @@ func (s *Subscription) handleInteractionCreate(evt *jsmodels.Event) error {
 	}
 
 	go func() {
-		s.storageManager.CreateUser(evt.Did)
+		authorId, err := s.storageManager.GetOrCreateUser(evt.Did)
+		if err != nil {
+			log.Errorf("Error creating user: %v", err)
+			return
+		}
+		postAuthorDid, postUriKey := s.splitUri(postUri, "/app.bsky.feed.post/")
+		postAuthorId, err := s.storageManager.GetOrCreateUser(postAuthorDid)
+		if err != nil {
+			log.Errorf("Error creating user: %v", err)
+			return
+		}
 		s.storageManager.CreateInteraction(
 			models.Interaction{
-				Uri:       s.calculateUri(evt),
-				Kind:      kind,
-				AuthorDid: evt.Did,
-				PostUri:   postUri,
-				CreatedAt: createdAt,
+				UriKey:       evt.Commit.RKey,
+				Kind:         kind,
+				AuthorID:     authorId,
+				PostUriKey:   postUriKey,
+				PostAuthorId: postAuthorId,
+				CreatedAt:    createdAt,
 			},
 		)
 	}()
@@ -266,15 +298,23 @@ func (s *Subscription) handleRecordCreate(evt *jsmodels.Event) error {
 }
 
 func (s *Subscription) handleRecordDelete(evt *jsmodels.Event) error {
-	uri := s.calculateUri(evt)
+	authorId, err := s.storageManager.GetOrCreateUser(evt.Did)
+	if err != nil {
+		log.Errorf("Error creating user: %v", err)
+		return err
+	}
+	identifier := models.Identifier{
+		UriKey:   evt.Commit.RKey,
+		AuthorId: authorId,
+	}
 
 	switch evt.Commit.Collection {
 	case "app.bsky.feeds.post":
-		s.storageManager.DeletePost(uri)
+		s.storageManager.DeletePost(identifier)
 	case "app.bsky.feeds.like", "app.bsky.feeds.repost":
-		s.storageManager.DeleteInteraction(uri)
+		s.storageManager.DeleteInteraction(identifier)
 	case "app.bsky.graph.follow":
-		s.storageManager.DeleteFollow(uri)
+		s.storageManager.DeleteFollow(identifier)
 	}
 
 	return nil
@@ -295,4 +335,9 @@ func (s *Subscription) processOperation(evt *jsmodels.Event) error {
 	}
 
 	return nil
+}
+
+func (s *Subscription) splitUri(uri string, category string) (authorDid string, uriKey string) {
+	parts := strings.Split(uri, category)
+	return parts[0], parts[1]
 }

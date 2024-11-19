@@ -12,26 +12,33 @@ import (
 )
 
 type BulkCreateFollowsParams struct {
-	Uri        string
-	AuthorDid  string
-	SubjectDid string
-	CreatedAt  pgtype.Timestamp
+	UriKey    string
+	AuthorID  int32
+	SubjectID int32
+	CreatedAt pgtype.Timestamp
 }
 
 const bulkDeleteFollows = `-- name: BulkDeleteFollows :many
 DELETE
 FROM follows
-WHERE uri = ANY ($1::VARCHAR[])
-RETURNING author_did, subject_did
+WHERE uri_key = ANY ($1::VARCHAR[])
+  AND author_id = ANY ($2::INT[])
+RETURNING id, author_id, subject_id
 `
 
-type BulkDeleteFollowsRow struct {
-	AuthorDid  string
-	SubjectDid string
+type BulkDeleteFollowsParams struct {
+	UriKeys   []string
+	AuthorIds []int32
 }
 
-func (q *Queries) BulkDeleteFollows(ctx context.Context, uris []string) ([]BulkDeleteFollowsRow, error) {
-	rows, err := q.db.Query(ctx, bulkDeleteFollows, uris)
+type BulkDeleteFollowsRow struct {
+	ID        int32
+	AuthorID  int32
+	SubjectID int32
+}
+
+func (q *Queries) BulkDeleteFollows(ctx context.Context, arg BulkDeleteFollowsParams) ([]BulkDeleteFollowsRow, error) {
+	rows, err := q.db.Query(ctx, bulkDeleteFollows, arg.UriKeys, arg.AuthorIds)
 	if err != nil {
 		return nil, err
 	}
@@ -39,7 +46,7 @@ func (q *Queries) BulkDeleteFollows(ctx context.Context, uris []string) ([]BulkD
 	var items []BulkDeleteFollowsRow
 	for rows.Next() {
 		var i BulkDeleteFollowsRow
-		if err := rows.Scan(&i.AuthorDid, &i.SubjectDid); err != nil {
+		if err := rows.Scan(&i.ID, &i.AuthorID, &i.SubjectID); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -54,7 +61,7 @@ const createTempFollowsTable = `-- name: CreateTempFollowsTable :exec
 CREATE TEMPORARY TABLE tmp_follows
     ON COMMIT DROP
 AS
-SELECT uri, author_did, subject_did, indexed_at, created_at
+SELECT id, uri_key, author_id, subject_id, indexed_at, created_at
 FROM follows
     WITH NO DATA
 `
@@ -65,17 +72,17 @@ func (q *Queries) CreateTempFollowsTable(ctx context.Context) error {
 }
 
 const insertFromTempToFollows = `-- name: InsertFromTempToFollows :many
-INSERT INTO follows (uri, author_did, subject_did, created_at)
-SELECT uri, author_did, subject_did, created_at
+INSERT INTO follows (uri_key, author_id, subject_id, created_at)
+SELECT uri_key, author_id, subject_id, created_at
 FROM tmp_follows
 ON CONFLICT DO NOTHING
-RETURNING uri, author_did, subject_did
+RETURNING uri_key, author_id, subject_id
 `
 
 type InsertFromTempToFollowsRow struct {
-	Uri        string
-	AuthorDid  string
-	SubjectDid string
+	UriKey    string
+	AuthorID  int32
+	SubjectID int32
 }
 
 func (q *Queries) InsertFromTempToFollows(ctx context.Context) ([]InsertFromTempToFollowsRow, error) {
@@ -87,7 +94,7 @@ func (q *Queries) InsertFromTempToFollows(ctx context.Context) ([]InsertFromTemp
 	var items []InsertFromTempToFollowsRow
 	for rows.Next() {
 		var i InsertFromTempToFollowsRow
-		if err := rows.Scan(&i.Uri, &i.AuthorDid, &i.SubjectDid); err != nil {
+		if err := rows.Scan(&i.UriKey, &i.AuthorID, &i.SubjectID); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
