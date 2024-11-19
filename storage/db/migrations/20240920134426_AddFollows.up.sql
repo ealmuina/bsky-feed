@@ -1,13 +1,14 @@
 CREATE TABLE follows
 (
-    uri         VARCHAR(255) PRIMARY KEY,
+    id         SERIAL PRIMARY KEY,
+    uri_key    TEXT                                NOT NULL,
+    author_id  INT                                 NOT NULL,
+    subject_id INT                                 NOT NULL,
 
-    author_did  VARCHAR(255) NOT NULL,
-    subject_did VARCHAR(255) NOT NULL,
-
-    indexed_at  TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    created_at  TIMESTAMP    NOT NULL
+    indexed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    created_at TIMESTAMP                           NOT NULL
 );
 
-CREATE INDEX idx_follows_author_did ON follows (author_did);
-CREATE INDEX idx_follows_subject_did ON follows (subject_did);
+CREATE INDEX IF NOT EXISTS idx_follows_key ON follows (uri_key, author_id);
+CREATE INDEX IF NOT EXISTS idx_follows_author_id ON follows (author_id);
+CREATE INDEX IF NOT EXISTS idx_follows_subject_id ON follows (subject_id);

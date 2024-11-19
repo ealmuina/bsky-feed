@@ -1,17 +1,20 @@
 CREATE TABLE posts
 (
-    uri          VARCHAR(255) PRIMARY KEY,
+    id           SERIAL PRIMARY KEY,
+    uri_key      TEXT                                NOT NULL,
+    author_id    INT                                 NOT NULL,
 
-    author_did   VARCHAR(255) REFERENCES "users",
+    reply_parent TEXT[],
+    reply_root   TEXT[],
+    language     TEXT,
 
-    cid          VARCHAR(255) NOT NULL,
-    reply_parent VARCHAR(255) NULL,
-    reply_root   VARCHAR(255) NULL,
+    indexed_at   TIMESTAMP DEFAULT current_timestamp NOT NULL,
+    created_at   TIMESTAMP                           NOT NULL,
 
-    indexed_at   TIMESTAMP DEFAULT current_timestamp,
-    created_at   TIMESTAMP
+    UNIQUE (uri_key, author_id)
 );
 
-CREATE INDEX IF NOT EXISTS "idx_posts_uri" ON "posts" ("uri");
-CREATE INDEX IF NOT EXISTS "idx_posts_author_did" ON "posts" ("author_did");
-CREATE INDEX IF NOT EXISTS "idx_posts_created_at" ON "posts" ("created_at");
+CREATE INDEX IF NOT EXISTS idx_posts_key ON posts (uri_key, author_id);
+CREATE INDEX IF NOT EXISTS idx_posts_author_id ON posts (author_id);
+CREATE INDEX IF NOT EXISTS idx_posts_created_at ON posts (created_at);
+CREATE INDEX IF NOT EXISTS idx_posts_reply_root_is_null ON posts (reply_root) WHERE reply_root IS NULL;

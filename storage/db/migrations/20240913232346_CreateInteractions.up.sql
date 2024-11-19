@@ -2,18 +2,19 @@ CREATE TYPE interaction_type AS ENUM ('like', 'repost');
 
 CREATE TABLE interactions
 (
-    uri        VARCHAR(255)     NOT NULL PRIMARY KEY,
-    cid        VARCHAR(255)     NOT NULL,
-    kind       interaction_type NOT NULL,
+    id         SERIAL PRIMARY KEY,
+    uri_key    TEXT                                NOT NULL,
+    author_id  INT                                 NOT NULL,
+    kind       interaction_type                    NOT NULL,
 
-    author_did VARCHAR(255)     NOT NULL,
-    post_uri   VARCHAR(255)     NOT NULL,
+    post_id    INT                                 NOT NULL,
 
-    indexed_at TIMESTAMP DEFAULT current_timestamp,
-    created_at TIMESTAMP
+    indexed_at TIMESTAMP DEFAULT current_timestamp NOT NULL,
+    created_at TIMESTAMP                           NOT NULL,
+
+    UNIQUE (uri_key, author_id)
 );
 
-CREATE INDEX idx_interactions_kind ON interactions (kind);
-CREATE INDEX idx_interactions_author_did ON interactions (author_did);
-CREATE INDEX idx_interactions_post_uri ON interactions (post_uri);
+CREATE INDEX IF NOT EXISTS idx_interactions_key ON interactions (uri_key, author_id);
+CREATE INDEX idx_interactions_author_id ON interactions (author_id);
 CREATE INDEX idx_interactions_created_at ON interactions (created_at);
