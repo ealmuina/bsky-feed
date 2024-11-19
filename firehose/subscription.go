@@ -171,6 +171,7 @@ func (s *Subscription) handleFeedPostCreate(evt *jsmodels.Event) error {
 			models.Post{
 				UriKey:      evt.Commit.RKey,
 				AuthorId:    authorId,
+				AuthorDid:   evt.Did,
 				ReplyParent: replyParent,
 				ReplyRoot:   replyRoot,
 				CreatedAt:   createdAt,
@@ -244,6 +245,11 @@ func (s *Subscription) handleInteractionCreate(evt *jsmodels.Event) error {
 		createdAtStr = repost.CreatedAt
 		postUri = repost.Subject.Uri
 		kind = models.Repost
+	}
+
+	if !strings.Contains(postUri, "/app.bsky.feed.post/") {
+		// Likes can be given to feeds too
+		return nil
 	}
 
 	createdAt, err := utils.ParseTime(createdAtStr)
@@ -338,6 +344,9 @@ func (s *Subscription) processOperation(evt *jsmodels.Event) error {
 }
 
 func (s *Subscription) splitUri(uri string, category string) (authorDid string, uriKey string) {
-	parts := strings.Split(uri, category)
+	parts := strings.Split(
+		strings.TrimPrefix(uri, "at://"),
+		category,
+	)
 	return parts[0], parts[1]
 }

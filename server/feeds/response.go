@@ -7,7 +7,7 @@ import (
 
 type Response struct {
 	Cursor string
-	Posts  []models.Post
+	Posts  []models.TimelineEntry
 }
 
 func (r Response) MarshalJSON() ([]byte, error) {

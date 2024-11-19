@@ -11,7 +11,7 @@ SET handle          = $2,
     follows_count   = $4,
     posts_count     = $5,
     last_update     = $6
-WHERE id = $1;
+WHERE did = $1;
 
 -- name: DeleteUser :exec
 DELETE

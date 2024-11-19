@@ -22,14 +22,14 @@ func NewTimeline(name string, redisClient *redis.Client) Timeline {
 	}
 }
 
-func (t *Timeline) AddPost(post models.Post) {
-	bytes, err := json.Marshal(post)
+func (t *Timeline) AddPost(entry models.TimelineEntry) {
+	bytes, err := json.Marshal(entry)
 	if err == nil {
 		t.redisClient.ZAdd(
 			context.Background(),
 			t.getRedisKey(),
 			redis.Z{
-				Score:  post.Rank,
+				Score:  entry.Rank,
 				Member: bytes,
 			},
 		)
@@ -45,7 +45,7 @@ func (t *Timeline) DeleteExpiredPosts(expiration time.Time) {
 	)
 }
 
-func (t *Timeline) GetPosts(maxScore float64, limit int64) []models.Post {
+func (t *Timeline) GetPosts(maxScore float64, limit int64) []models.TimelineEntry {
 	members := t.redisClient.ZRevRangeByScore( // Retrieve in DESC order
 		context.Background(),
 		t.getRedisKey(),
@@ -54,14 +54,14 @@ func (t *Timeline) GetPosts(maxScore float64, limit int64) []models.Post {
 			Count: limit,
 		},
 	)
-	posts := make([]models.Post, len(members.Val()))
+	entries := make([]models.TimelineEntry, len(members.Val()))
 	for i, member := range members.Val() {
-		err := json.Unmarshal([]byte(member), &posts[i])
+		err := json.Unmarshal([]byte(member), &entries[i])
 		if err != nil {
 			log.Errorf("Error unmarshalling post: %s", err)
 		}
 	}
-	return posts
+	return entries
 }
 
 func (t *Timeline) getRedisKey() string {

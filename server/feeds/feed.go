@@ -33,7 +33,7 @@ func (f *Feed) GetTimeline(params QueryParams) Response {
 	} else if params.Cursor == CursorEOF {
 		return Response{
 			Cursor: CursorEOF,
-			Posts:  make([]models.Post, 0),
+			Posts:  make([]models.TimelineEntry, 0),
 		}
 	}
 
@@ -43,16 +43,16 @@ func (f *Feed) GetTimeline(params QueryParams) Response {
 		return Response{}
 	}
 
-	posts := f.storageManager.GetTimeline(f.name, cursorRank, params.Limit)
+	entries := f.storageManager.GetTimeline(f.name, cursorRank, params.Limit)
 
 	cursor := CursorEOF
-	if len(posts) > 0 {
-		lastPost := posts[len(posts)-1]
+	if len(entries) > 0 {
+		lastPost := entries[len(entries)-1]
 		cursor = fmt.Sprintf("%f", lastPost.Rank)
 	}
 
 	return Response{
 		Cursor: cursor,
-		Posts:  posts,
+		Posts:  entries,
 	}
 }

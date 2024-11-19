@@ -89,10 +89,10 @@ func NewManager(dbConnection *pgxpool.Pool, redisConnection *redis.Client) *Mana
 	return &storageManager
 }
 
-func (m *Manager) AddPostToTimeline(timelineName string, post models.Post) {
+func (m *Manager) AddPostToTimeline(timelineName string, timelineEntry models.TimelineEntry) {
 	timeline, ok := m.timelines[timelineName]
 	if ok {
-		timeline.AddPost(post)
+		timeline.AddPost(timelineEntry)
 	} else {
 		log.Errorf("Could not find timeline for feed name: %s", timelineName)
 	}
@@ -298,8 +298,14 @@ func (m *Manager) CreatePost(post models.Post) {
 	go func() {
 		for timelineName, algorithm := range m.algorithms {
 			if ok, reason := algorithm.AcceptsPost(post, authorStatistics); ok {
-				post.Reason = reason
-				m.AddPostToTimeline(timelineName, post)
+				m.AddPostToTimeline(
+					timelineName,
+					models.TimelineEntry{
+						Uri:    post.Uri(),
+						Reason: reason,
+						Rank:   post.Rank,
+					},
+				)
 			}
 		}
 	}()
@@ -383,24 +389,6 @@ func (m *Manager) CreatePost(post models.Post) {
 	}
 }
 
-func (m *Manager) GetOrCreateUser(did string) (int32, error) {
-	if id, ok := m.usersCache.UserDidToId(did); ok {
-		return id, nil
-	}
-
-	id, err := m.queries.CreateUser(
-		context.Background(),
-		db.CreateUserParams{Did: did},
-	)
-	if err != nil {
-		log.Errorf("Error creating user: %v", err)
-		return 0, err
-	}
-	m.usersCache.AddUser(id, did)
-
-	return id, nil
-}
-
 func (m *Manager) DeleteFollow(identifier models.Identifier) {
 	ctx := context.Background()
 
@@ -476,7 +464,7 @@ func (m *Manager) DeleteFollow(identifier models.Identifier) {
 		}()
 
 		// Clear buffer
-		m.buffers.Store(event, make([]string, 0, len(buffer)))
+		m.buffers.Store(event, make([]models.Identifier, 0, len(buffer)))
 	}
 }
 
@@ -531,7 +519,7 @@ func (m *Manager) DeleteInteraction(identifier models.Identifier) {
 		}()
 
 		// Clear buffer
-		m.buffers.Store(event, make([]string, 0, len(buffer)))
+		m.buffers.Store(event, make([]models.Identifier, 0, len(buffer)))
 	}
 }
 
@@ -605,7 +593,7 @@ func (m *Manager) DeletePost(identifier models.Identifier) {
 		}()
 
 		// Clear buffer
-		m.buffers.Store(event, make([]string, 0, len(buffer)))
+		m.buffers.Store(event, make([]models.Identifier, 0, len(buffer)))
 	}
 }
 
@@ -642,6 +630,28 @@ func (m *Manager) GetCursor(service string) int64 {
 	return state.Cursor // defaults to 0 if not in DB
 }
 
+func (m *Manager) GetUser(id int32) (string, bool) {
+	return m.usersCache.UserIdToDid(id)
+}
+
+func (m *Manager) GetOrCreateUser(did string) (int32, error) {
+	if id, ok := m.usersCache.UserDidToId(did); ok {
+		return id, nil
+	}
+
+	id, err := m.queries.CreateUser(
+		context.Background(),
+		db.CreateUserParams{Did: did},
+	)
+	if err != nil {
+		log.Errorf("Error creating user: %v", err)
+		return 0, err
+	}
+	m.usersCache.AddUser(id, did)
+
+	return id, nil
+}
+
 func (m *Manager) GetOutdatedUserDids() []string {
 	dids, err := m.queries.GetUserDidsToRefreshStatistics(context.Background())
 	if err != nil {
@@ -650,8 +660,7 @@ func (m *Manager) GetOutdatedUserDids() []string {
 	return dids
 }
 
-func (m *Manager) GetTimeline(timelineName string, maxRank float64, limit int64) []models.Post {
-	// Attempt to hit cache first
+func (m *Manager) GetTimeline(timelineName string, maxRank float64, limit int64) []models.TimelineEntry {
 	timeline, ok := m.timelines[timelineName]
 	if !ok {
 		panic(fmt.Sprintf("Could not find timeline for feed: %s", timelineName))
@@ -680,7 +689,7 @@ func (m *Manager) UpdateUser(updatedUser models.User) {
 	err := m.queries.UpdateUser(
 		context.Background(),
 		db.UpdateUserParams{
-			ID:             updatedUser.ID,
+			Did:            updatedUser.Did,
 			Handle:         pgtype.Text{String: updatedUser.Handle, Valid: true},
 			FollowersCount: pgtype.Int4{Int32: int32(updatedUser.FollowersCount), Valid: true},
 			FollowsCount:   pgtype.Int4{Int32: int32(updatedUser.FollowsCount), Valid: true},

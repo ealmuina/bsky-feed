@@ -157,11 +157,11 @@ SET handle          = $2,
     follows_count   = $4,
     posts_count     = $5,
     last_update     = $6
-WHERE id = $1
+WHERE did = $1
 `
 
 type UpdateUserParams struct {
-	ID             int32
+	Did            string
 	Handle         pgtype.Text
 	FollowersCount pgtype.Int4
 	FollowsCount   pgtype.Int4
@@ -171,7 +171,7 @@ type UpdateUserParams struct {
 
 func (q *Queries) UpdateUser(ctx context.Context, arg UpdateUserParams) error {
 	_, err := q.db.Exec(ctx, updateUser,
-		arg.ID,
+		arg.Did,
 		arg.Handle,
 		arg.FollowersCount,
 		arg.FollowsCount,
