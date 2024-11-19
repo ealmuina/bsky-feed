@@ -17,13 +17,14 @@ import (
 	"hash/fnv"
 	"log/slog"
 	"math"
+	"math/rand"
 	"net/url"
 	"time"
 )
 
 type Subscription struct {
 	serviceName       string
-	url               url.URL
+	hosts             []string
 	languageDetector  *utils.LanguageDetector
 	hasher            hash.Hash32
 	storageManager    *storage.Manager
@@ -32,12 +33,12 @@ type Subscription struct {
 
 func NewSubscription(
 	serviceName string,
-	url url.URL,
+	hosts []string,
 	storageManager *storage.Manager,
 ) *Subscription {
 	s := &Subscription{
 		serviceName:      serviceName,
-		url:              url,
+		hosts:            hosts,
 		languageDetector: utils.NewLanguageDetector(),
 		hasher:           fnv.New32a(),
 		storageManager:   storageManager,
@@ -47,28 +48,20 @@ func NewSubscription(
 }
 
 func (s *Subscription) Run() {
-	client, err := jsclient.NewClient(
-		&jsclient.ClientConfig{
-			Compress:          false,
-			WebsocketURL:      s.url.String(),
-			WantedDids:        []string{},
-			WantedCollections: []string{},
-		},
-		slog.Default(),
-		jsscheduler.NewScheduler("data_stream", slog.Default(), s.getHandle()),
-	)
-	if err != nil {
-		log.Fatalf("Error creating Jetstream client: %v", err)
-	}
-
 	for {
+		client := s.createClient()
+
 		cursor := s.storageManager.GetCursor(s.serviceName)
+		if cursor > 0 {
+			// Subtract one minute to fill any event gap
+			cursor = cursor - 6e7 // 1 min in microseconds
+		}
 		cursorPointer := &cursor
 		if cursor == 0 {
 			cursorPointer = nil
 		}
 
-		err = client.ConnectAndRead(context.Background(), cursorPointer)
+		err := client.ConnectAndRead(context.Background(), cursorPointer)
 		if err != nil {
 			log.Errorf("Error connecting to Jetstream client: %v", err)
 		} else {
@@ -81,6 +74,30 @@ func (s *Subscription) Run() {
 
 func (s *Subscription) calculateUri(evt *jsmodels.Event) string {
 	return fmt.Sprintf("at://%s/%s/%s", evt.Did, evt.Commit.Collection, evt.Commit.RKey)
+}
+
+func (s *Subscription) createClient() *jsclient.Client {
+	host := s.hosts[rand.Intn(len(s.hosts))]
+	url := url.URL{
+		Scheme: "wss",
+		Host:   host,
+		Path:   "/subscribe",
+	}
+
+	client, err := jsclient.NewClient(
+		&jsclient.ClientConfig{
+			Compress:          false,
+			WebsocketURL:      url.String(),
+			WantedDids:        []string{},
+			WantedCollections: []string{},
+		},
+		slog.Default(),
+		jsscheduler.NewScheduler("data_stream", slog.Default(), s.getHandle()),
+	)
+	if err != nil {
+		log.Fatalf("Error creating Jetstream client: %v", err)
+	}
+	return client
 }
 
 func (s *Subscription) getHandle() func(context.Context, *jsmodels.Event) error {

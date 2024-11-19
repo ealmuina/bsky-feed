@@ -14,7 +14,6 @@ import (
 	"github.com/redis/go-redis/v9"
 	log "github.com/sirupsen/logrus"
 	"math"
-	"net/url"
 	"os"
 )
 
@@ -73,14 +72,16 @@ func runBackgroundTasks(storageManager *storage.Manager) {
 	})
 
 	// Firehose consumer
+	firehoseHosts := []string{
+		"jetstream1.us-east.bsky.network",
+		"jetstream2.us-east.bsky.network",
+		"jetstream1.us-west.bsky.network",
+		"jetstream2.us-west.bsky.network",
+	}
 	go utils.Recoverer(math.MaxInt, 1, func() {
 		subscription := firehose.NewSubscription(
 			"bsky_feeds",
-			url.URL{
-				Scheme: "wss",
-				Host:   "jetstream1.us-east.bsky.network",
-				Path:   "/subscribe",
-			},
+			firehoseHosts,
 			storageManager,
 		)
 		subscription.Run()
