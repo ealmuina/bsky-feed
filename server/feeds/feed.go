@@ -44,8 +44,8 @@ func (f *Feed) GetTimeline(params QueryParams) Response {
 	}
 
 	entries := f.storageManager.GetTimeline(f.name, cursorRank, params.Limit)
-	for _, entry := range entries {
-		entry.Uri = fmt.Sprintf("at://%s", entry.Uri)
+	for i := 0; i < len(entries); i++ {
+		entries[i].Uri = fmt.Sprintf("at://%s", entries[i].Uri)
 	}
 
 	cursor := CursorEOF
