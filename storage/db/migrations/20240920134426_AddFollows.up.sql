@@ -5,8 +5,6 @@ CREATE TABLE follows
     author_id  INT                                 NOT NULL,
     subject_id INT                                 NOT NULL,
 
-    created_at TIMESTAMP NOT NULL,
-
     UNIQUE (uri_key, author_id)
 );
 
