@@ -8,7 +8,6 @@ CREATE TABLE posts
     reply_root   TEXT[],
     language     TEXT,
 
-    indexed_at   TIMESTAMP DEFAULT current_timestamp NOT NULL,
     created_at   TIMESTAMP                           NOT NULL,
 
     UNIQUE (uri_key, author_id)

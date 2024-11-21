@@ -101,7 +101,7 @@ func (q *Queries) DeleteUser(ctx context.Context, id int32) error {
 }
 
 const getUser = `-- name: GetUser :one
-SELECT id, did, handle, followers_count, follows_count, posts_count, indexed_at, last_update
+SELECT id, did, handle, followers_count, follows_count, posts_count, last_update
 FROM users
 WHERE id = $1
 LIMIT 1
@@ -117,7 +117,6 @@ func (q *Queries) GetUser(ctx context.Context, id int32) (User, error) {
 		&i.FollowersCount,
 		&i.FollowsCount,
 		&i.PostsCount,
-		&i.IndexedAt,
 		&i.LastUpdate,
 	)
 	return i, err

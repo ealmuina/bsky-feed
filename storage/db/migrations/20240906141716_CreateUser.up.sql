@@ -8,7 +8,6 @@ CREATE TABLE users
     follows_count   INTEGER,
     posts_count     INTEGER,
 
-    indexed_at      TIMESTAMP DEFAULT current_timestamp NOT NULL,
     last_update     TIMESTAMP
 );
 

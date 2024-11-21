@@ -62,7 +62,7 @@ const createTempPostsTable = `-- name: CreateTempPostsTable :exec
 CREATE TEMPORARY TABLE tmp_posts
     ON COMMIT DROP
 AS
-SELECT id, uri_key, author_id, reply_parent, reply_root, language, indexed_at, created_at
+SELECT id, uri_key, author_id, reply_parent, reply_root, language, created_at
 FROM posts
     WITH NO DATA
 `

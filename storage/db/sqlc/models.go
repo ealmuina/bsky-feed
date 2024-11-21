@@ -58,7 +58,6 @@ type Follow struct {
 	UriKey    string
 	AuthorID  int32
 	SubjectID int32
-	IndexedAt pgtype.Timestamp
 	CreatedAt pgtype.Timestamp
 }
 
@@ -69,7 +68,6 @@ type Interaction struct {
 	Kind         InteractionType
 	PostUriKey   string
 	PostAuthorID int32
-	IndexedAt    pgtype.Timestamp
 	CreatedAt    pgtype.Timestamp
 }
 
@@ -80,7 +78,6 @@ type Post struct {
 	ReplyParent []string
 	ReplyRoot   []string
 	Language    pgtype.Text
-	IndexedAt   pgtype.Timestamp
 	CreatedAt   pgtype.Timestamp
 }
 
@@ -95,7 +92,6 @@ type TmpFollow struct {
 	UriKey    string
 	AuthorID  int32
 	SubjectID int32
-	IndexedAt pgtype.Timestamp
 	CreatedAt pgtype.Timestamp
 }
 
@@ -106,7 +102,6 @@ type TmpInteraction struct {
 	Kind         InteractionType
 	PostUriKey   string
 	PostAuthorID int32
-	IndexedAt    pgtype.Timestamp
 	CreatedAt    pgtype.Timestamp
 }
 
@@ -117,7 +112,6 @@ type TmpPost struct {
 	ReplyParent []string
 	ReplyRoot   []string
 	Language    pgtype.Text
-	IndexedAt   pgtype.Timestamp
 	CreatedAt   pgtype.Timestamp
 }
 
@@ -128,6 +122,5 @@ type User struct {
 	FollowersCount pgtype.Int4
 	FollowsCount   pgtype.Int4
 	PostsCount     pgtype.Int4
-	IndexedAt      pgtype.Timestamp
 	LastUpdate     pgtype.Timestamp
 }

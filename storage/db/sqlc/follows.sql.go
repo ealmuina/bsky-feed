@@ -61,7 +61,7 @@ const createTempFollowsTable = `-- name: CreateTempFollowsTable :exec
 CREATE TEMPORARY TABLE tmp_follows
     ON COMMIT DROP
 AS
-SELECT id, uri_key, author_id, subject_id, indexed_at, created_at
+SELECT id, uri_key, author_id, subject_id, created_at
 FROM follows
     WITH NO DATA
 `

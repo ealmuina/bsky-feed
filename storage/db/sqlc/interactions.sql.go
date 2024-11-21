@@ -63,7 +63,7 @@ const createTempInteractionsTable = `-- name: CreateTempInteractionsTable :exec
 CREATE TEMPORARY TABLE tmp_interactions
     ON COMMIT DROP
 AS
-SELECT id, uri_key, author_id, kind, post_uri_key, post_author_id, indexed_at, created_at
+SELECT id, uri_key, author_id, kind, post_uri_key, post_author_id, created_at
 FROM interactions
     WITH NO DATA
 `
