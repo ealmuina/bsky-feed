@@ -7,12 +7,12 @@ FROM follows
     WITH NO DATA;
 
 -- name: BulkCreateFollows :copyfrom
-INSERT INTO tmp_follows (uri_key, author_id, subject_id, created_at)
-VALUES ($1, $2, $3, $4);
+INSERT INTO tmp_follows (uri_key, author_id, subject_id)
+VALUES ($1, $2, $3);
 
 -- name: InsertFromTempToFollows :many
-INSERT INTO follows (uri_key, author_id, subject_id, created_at)
-SELECT uri_key, author_id, subject_id, created_at
+INSERT INTO follows (uri_key, author_id, subject_id)
+SELECT uri_key, author_id, subject_id
 FROM tmp_follows
 ON CONFLICT DO NOTHING
 RETURNING uri_key, author_id, subject_id;

@@ -58,7 +58,6 @@ type Follow struct {
 	UriKey    string
 	AuthorID  int32
 	SubjectID int32
-	CreatedAt pgtype.Timestamp
 }
 
 type Interaction struct {
@@ -92,7 +91,6 @@ type TmpFollow struct {
 	UriKey    string
 	AuthorID  int32
 	SubjectID int32
-	CreatedAt pgtype.Timestamp
 }
 
 type TmpInteraction struct {

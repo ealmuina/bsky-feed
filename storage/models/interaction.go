@@ -15,6 +15,5 @@ type Interaction struct {
 	AuthorID     int32
 	PostUriKey   string
 	PostAuthorId int32
-	IndexedAt    time.Time
 	CreatedAt    time.Time
 }

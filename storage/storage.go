@@ -159,7 +159,6 @@ func (m *Manager) CreateFollow(follow models.Follow) {
 			UriKey:    follow.UriKey,
 			AuthorID:  follow.AuthorID,
 			SubjectID: follow.SubjectID,
-			CreatedAt: pgtype.Timestamp{Time: follow.CreatedAt, Valid: true},
 		},
 	)
 	m.buffers.Store(event, buffer)

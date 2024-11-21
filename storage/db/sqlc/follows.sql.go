@@ -7,15 +7,12 @@ package db
 
 import (
 	"context"
-
-	"github.com/jackc/pgx/v5/pgtype"
 )
 
 type BulkCreateFollowsParams struct {
 	UriKey    string
 	AuthorID  int32
 	SubjectID int32
-	CreatedAt pgtype.Timestamp
 }
 
 const bulkDeleteFollows = `-- name: BulkDeleteFollows :many
@@ -61,7 +58,7 @@ const createTempFollowsTable = `-- name: CreateTempFollowsTable :exec
 CREATE TEMPORARY TABLE tmp_follows
     ON COMMIT DROP
 AS
-SELECT id, uri_key, author_id, subject_id, created_at
+SELECT id, uri_key, author_id, subject_id
 FROM follows
     WITH NO DATA
 `
@@ -72,8 +69,8 @@ func (q *Queries) CreateTempFollowsTable(ctx context.Context) error {
 }
 
 const insertFromTempToFollows = `-- name: InsertFromTempToFollows :many
-INSERT INTO follows (uri_key, author_id, subject_id, created_at)
-SELECT uri_key, author_id, subject_id, created_at
+INSERT INTO follows (uri_key, author_id, subject_id)
+SELECT uri_key, author_id, subject_id
 FROM tmp_follows
 ON CONFLICT DO NOTHING
 RETURNING uri_key, author_id, subject_id

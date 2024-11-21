@@ -32,7 +32,6 @@ func (r iteratorForBulkCreateFollows) Values() ([]interface{}, error) {
 		r.rows[0].UriKey,
 		r.rows[0].AuthorID,
 		r.rows[0].SubjectID,
-		r.rows[0].CreatedAt,
 	}, nil
 }
 
@@ -41,7 +40,7 @@ func (r iteratorForBulkCreateFollows) Err() error {
 }
 
 func (q *Queries) BulkCreateFollows(ctx context.Context, arg []BulkCreateFollowsParams) (int64, error) {
-	return q.db.CopyFrom(ctx, []string{"tmp_follows"}, []string{"uri_key", "author_id", "subject_id", "created_at"}, &iteratorForBulkCreateFollows{rows: arg})
+	return q.db.CopyFrom(ctx, []string{"tmp_follows"}, []string{"uri_key", "author_id", "subject_id"}, &iteratorForBulkCreateFollows{rows: arg})
 }
 
 // iteratorForBulkCreateInteractions implements pgx.CopyFromSource.
