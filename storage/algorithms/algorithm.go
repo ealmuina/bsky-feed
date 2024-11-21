@@ -17,12 +17,12 @@ var ImplementedAlgorithms = map[string]Algorithm{
 	"spanish":    &LanguageAlgorithm{"es"},
 	"top_spanish": &TopLanguageAlgorithm{
 		languageCode:  "es",
-		minFollowers:  10000,
+		minFollowers:  1000,
 		minEngagement: 1.0,
 	},
 	"top_portuguese": &TopLanguageAlgorithm{
 		languageCode:  "pt",
-		minFollowers:  10000,
+		minFollowers:  1000,
 		minEngagement: 1.0,
 	},
 	"light_spanish": &LightLanguageAlgorithm{"es"},
