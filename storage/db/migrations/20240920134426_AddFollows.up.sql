@@ -6,7 +6,9 @@ CREATE TABLE follows
     subject_id INT                                 NOT NULL,
 
     indexed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,
-    created_at TIMESTAMP                           NOT NULL
+    created_at TIMESTAMP NOT NULL,
+
+    UNIQUE (uri_key, author_id)
 );
 
 CREATE INDEX IF NOT EXISTS idx_follows_key ON follows (uri_key, author_id);
