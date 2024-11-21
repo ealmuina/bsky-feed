@@ -3,6 +3,7 @@ package utils
 import (
 	"encoding/json"
 	log "github.com/sirupsen/logrus"
+	"runtime/debug"
 	"strconv"
 )
 
@@ -26,6 +27,7 @@ func Recoverer(maxPanics, id int, f func()) {
 	defer func() {
 		if err := recover(); err != nil {
 			log.Errorf("HERE %v: %v", id, err)
+			log.Errorf("stacktrace from panic: \n" + string(debug.Stack()))
 			if maxPanics == 0 {
 				panic("TOO MANY PANICS")
 			} else {
