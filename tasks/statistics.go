@@ -128,7 +128,7 @@ func (u *StatisticsUpdater) updateUserStatistics(did string) {
 			}
 
 			// Sleep if API rate limit has been exceeded
-			if bskyErr.Ratelimit.Remaining == 0 {
+			if bskyErr.Ratelimit != nil && bskyErr.Ratelimit.Remaining == 0 {
 				time.Sleep(bskyErr.Ratelimit.Reset.Sub(time.Now()))
 			}
 		}
