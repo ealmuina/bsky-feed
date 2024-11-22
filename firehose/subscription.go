@@ -55,7 +55,7 @@ func (s *Subscription) Run() {
 		cursor := s.storageManager.GetCursor(s.serviceName)
 		if cursor > 0 {
 			// Subtract one minute to fill any event gap
-			cursor = cursor - 6e7 // 1 min in microseconds
+			cursor = cursor - 1e7 // 10 seconds in microseconds
 		}
 		cursorPointer := &cursor
 		if cursor == 0 {

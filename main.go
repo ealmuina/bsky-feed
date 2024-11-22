@@ -72,16 +72,15 @@ func runBackgroundTasks(storageManager *storage.Manager) {
 	})
 
 	// Firehose consumer
-	firehoseHosts := []string{
-		"jetstream1.us-east.bsky.network",
-		"jetstream2.us-east.bsky.network",
-		"jetstream1.us-west.bsky.network",
-		"jetstream2.us-west.bsky.network",
-	}
 	go utils.Recoverer(math.MaxInt, 1, func() {
 		subscription := firehose.NewSubscription(
 			"bsky_feeds",
-			firehoseHosts,
+			[]string{
+				"jetstream1.us-east.bsky.network",
+				"jetstream2.us-east.bsky.network",
+				"jetstream1.us-west.bsky.network",
+				"jetstream2.us-west.bsky.network",
+			},
 			storageManager,
 		)
 		subscription.Run()
