@@ -24,14 +24,10 @@ WHERE uri_key = ANY (@uri_keys::VARCHAR[])
   AND author_id = ANY (@author_ids::INT[])
 RETURNING id, author_id;
 
--- name: DeleteOldPosts :many
-DELETE
+-- name: GetOldPosts :many
+SELECT id, author_id
 FROM posts
-WHERE posts.created_at < current_timestamp - interval '7 days'
-RETURNING id, author_id;
-
--- name: VacuumPosts :exec
-VACUUM ANALYSE posts;
+WHERE posts.created_at < current_timestamp - interval '7 days';
 
 -- name: DeleteUserPosts :exec
 DELETE

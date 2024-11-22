@@ -313,7 +313,7 @@ func (s *Subscription) handleRecordDelete(evt *jsmodels.Event) error {
 	case "app.bsky.feeds.like", "app.bsky.feeds.repost":
 		s.storageManager.DeleteInteraction(identifier)
 	case "app.bsky.graph.follow":
-		s.storageManager.DeleteFollow(identifier)
+		s.storageManager.DeleteFollow(authorId)
 	}
 
 	return nil

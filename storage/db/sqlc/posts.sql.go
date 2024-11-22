@@ -72,38 +72,6 @@ func (q *Queries) CreateTempPostsTable(ctx context.Context) error {
 	return err
 }
 
-const deleteOldPosts = `-- name: DeleteOldPosts :many
-DELETE
-FROM posts
-WHERE posts.created_at < current_timestamp - interval '7 days'
-RETURNING id, author_id
-`
-
-type DeleteOldPostsRow struct {
-	ID       int32
-	AuthorID int32
-}
-
-func (q *Queries) DeleteOldPosts(ctx context.Context) ([]DeleteOldPostsRow, error) {
-	rows, err := q.db.Query(ctx, deleteOldPosts)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []DeleteOldPostsRow
-	for rows.Next() {
-		var i DeleteOldPostsRow
-		if err := rows.Scan(&i.ID, &i.AuthorID); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
 const deleteUserPosts = `-- name: DeleteUserPosts :exec
 DELETE
 FROM posts
@@ -113,6 +81,37 @@ WHERE author_id = $1
 func (q *Queries) DeleteUserPosts(ctx context.Context, authorID int32) error {
 	_, err := q.db.Exec(ctx, deleteUserPosts, authorID)
 	return err
+}
+
+const getOldPosts = `-- name: GetOldPosts :many
+SELECT id, author_id
+FROM posts
+WHERE posts.created_at < current_timestamp - interval '7 days'
+`
+
+type GetOldPostsRow struct {
+	ID       int32
+	AuthorID int32
+}
+
+func (q *Queries) GetOldPosts(ctx context.Context) ([]GetOldPostsRow, error) {
+	rows, err := q.db.Query(ctx, getOldPosts)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetOldPostsRow
+	for rows.Next() {
+		var i GetOldPostsRow
+		if err := rows.Scan(&i.ID, &i.AuthorID); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const insertFromTempToPosts = `-- name: InsertFromTempToPosts :many
@@ -147,13 +146,4 @@ func (q *Queries) InsertFromTempToPosts(ctx context.Context) ([]InsertFromTempTo
 		return nil, err
 	}
 	return items, nil
-}
-
-const vacuumPosts = `-- name: VacuumPosts :exec
-VACUUM ANALYSE posts
-`
-
-func (q *Queries) VacuumPosts(ctx context.Context) error {
-	_, err := q.db.Exec(ctx, vacuumPosts)
-	return err
 }

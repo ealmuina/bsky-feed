@@ -53,13 +53,6 @@ func (ns NullInteractionType) Value() (driver.Value, error) {
 	return string(ns.InteractionType), nil
 }
 
-type Follow struct {
-	ID        int32
-	UriKey    string
-	AuthorID  int32
-	SubjectID int32
-}
-
 type Interaction struct {
 	ID           int32
 	UriKey       string
@@ -84,13 +77,6 @@ type SubscriptionState struct {
 	ID      int32
 	Service string
 	Cursor  int64
-}
-
-type TmpFollow struct {
-	ID        int32
-	UriKey    string
-	AuthorID  int32
-	SubjectID int32
 }
 
 type TmpInteraction struct {

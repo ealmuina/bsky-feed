@@ -9,40 +9,6 @@ import (
 	"context"
 )
 
-// iteratorForBulkCreateFollows implements pgx.CopyFromSource.
-type iteratorForBulkCreateFollows struct {
-	rows                 []BulkCreateFollowsParams
-	skippedFirstNextCall bool
-}
-
-func (r *iteratorForBulkCreateFollows) Next() bool {
-	if len(r.rows) == 0 {
-		return false
-	}
-	if !r.skippedFirstNextCall {
-		r.skippedFirstNextCall = true
-		return true
-	}
-	r.rows = r.rows[1:]
-	return len(r.rows) > 0
-}
-
-func (r iteratorForBulkCreateFollows) Values() ([]interface{}, error) {
-	return []interface{}{
-		r.rows[0].UriKey,
-		r.rows[0].AuthorID,
-		r.rows[0].SubjectID,
-	}, nil
-}
-
-func (r iteratorForBulkCreateFollows) Err() error {
-	return nil
-}
-
-func (q *Queries) BulkCreateFollows(ctx context.Context, arg []BulkCreateFollowsParams) (int64, error) {
-	return q.db.CopyFrom(ctx, []string{"tmp_follows"}, []string{"uri_key", "author_id", "subject_id"}, &iteratorForBulkCreateFollows{rows: arg})
-}
-
 // iteratorForBulkCreateInteractions implements pgx.CopyFromSource.
 type iteratorForBulkCreateInteractions struct {
 	rows                 []BulkCreateInteractionsParams
