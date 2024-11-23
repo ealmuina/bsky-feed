@@ -55,6 +55,16 @@ type Manager struct {
 	mutexes map[Event]*sync.Mutex
 }
 
+func getBuffer[T any](event Event, buffers *sync.Map, defaultBuffer []T) (buffer []T) {
+	b, ok := buffers.Load(event)
+	if ok {
+		buffer = b.([]T)
+	} else {
+		buffer = defaultBuffer
+	}
+	return buffer
+}
+
 func NewManager(dbConnection *pgxpool.Pool, redisConnection *redis.Client) *Manager {
 	mutexes := map[Event]*sync.Mutex{
 		Event{EntityPost, OperationCreate}:        {},
@@ -165,14 +175,7 @@ func (m *Manager) CreateInteraction(interaction models.Interaction) {
 	mutex.Lock()
 	defer mutex.Unlock()
 
-	var buffer []db.BulkCreateInteractionsParams
-	b, ok := m.buffers.Load(event)
-	if ok {
-		buffer = b.([]db.BulkCreateInteractionsParams)
-	} else {
-		buffer = make([]db.BulkCreateInteractionsParams, 0)
-	}
-
+	buffer := getBuffer(event, &m.buffers, make([]db.BulkCreateInteractionsParams, 0))
 	buffer = append(
 		buffer,
 		db.BulkCreateInteractionsParams{
@@ -256,14 +259,7 @@ func (m *Manager) CreatePost(post models.Post) {
 	mutex.Lock()
 	defer mutex.Unlock()
 
-	var buffer []db.BulkCreatePostsParams
-	b, ok := m.buffers.Load(event)
-	if ok {
-		buffer = b.([]db.BulkCreatePostsParams)
-	} else {
-		buffer = make([]db.BulkCreatePostsParams, 0)
-	}
-
+	buffer := getBuffer(event, &m.buffers, make([]db.BulkCreatePostsParams, 0))
 	buffer = append(
 		buffer,
 		db.BulkCreatePostsParams{
@@ -352,14 +348,7 @@ func (m *Manager) DeleteInteraction(identifier models.Identifier) {
 	mutex.Lock()
 	defer mutex.Unlock()
 
-	var buffer []models.Identifier
-	b, ok := m.buffers.Load(event)
-	if ok {
-		buffer = b.([]models.Identifier)
-	} else {
-		buffer = make([]models.Identifier, 0)
-	}
-
+	buffer := getBuffer(event, &m.buffers, make([]models.Identifier, 0))
 	buffer = append(buffer, identifier)
 	m.buffers.Store(event, buffer)
 
@@ -407,14 +396,7 @@ func (m *Manager) DeletePost(identifier models.Identifier) {
 	mutex.Lock()
 	defer mutex.Unlock()
 
-	var buffer []models.Identifier
-	b, ok := m.buffers.Load(event)
-	if ok {
-		buffer = b.([]models.Identifier)
-	} else {
-		buffer = make([]models.Identifier, 0)
-	}
-
+	buffer := getBuffer(event, &m.buffers, make([]models.Identifier, 0))
 	buffer = append(buffer, identifier)
 	m.buffers.Store(event, buffer)
 
