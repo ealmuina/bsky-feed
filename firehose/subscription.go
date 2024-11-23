@@ -142,11 +142,17 @@ func (s *Subscription) handleFeedPostCreate(evt *jsmodels.Event) error {
 
 	if post.Reply != nil {
 		if post.Reply.Parent != nil {
-			authorDid, uriKey := s.splitUri(post.Reply.Parent.Uri, "/app.bsky.feed.post/")
+			authorDid, uriKey, err := s.splitUri(post.Reply.Parent.Uri, "/app.bsky.feed.post/")
+			if err != nil {
+				return err
+			}
 			replyParent = []string{authorDid, uriKey}
 		}
 		if post.Reply.Root != nil {
-			authorDid, uriKey := s.splitUri(post.Reply.Root.Uri, "/app.bsky.feed.post/")
+			authorDid, uriKey, err := s.splitUri(post.Reply.Root.Uri, "/app.bsky.feed.post/")
+			if err != nil {
+				return err
+			}
 			replyRoot = []string{authorDid, uriKey}
 		}
 	}
@@ -257,7 +263,11 @@ func (s *Subscription) handleInteractionCreate(evt *jsmodels.Event) error {
 			log.Errorf("Error creating user: %v", err)
 			return
 		}
-		postAuthorDid, postUriKey := s.splitUri(postUri, "/app.bsky.feed.post/")
+		postAuthorDid, postUriKey, err := s.splitUri(postUri, "/app.bsky.feed.post/")
+		if err != nil {
+			log.Errorf("Error parsing post uri: %v", err)
+			return
+		}
 		postAuthorId, err := s.storageManager.GetOrCreateUser(postAuthorDid)
 		if err != nil {
 			log.Errorf("Error creating user: %v", err)
@@ -336,10 +346,13 @@ func (s *Subscription) processOperation(evt *jsmodels.Event) error {
 	return nil
 }
 
-func (s *Subscription) splitUri(uri string, category string) (authorDid string, uriKey string) {
+func (s *Subscription) splitUri(uri string, category string) (authorDid string, uriKey string, err error) {
 	parts := strings.Split(
 		strings.TrimPrefix(uri, "at://"),
 		category,
 	)
-	return parts[0], parts[1]
+	if len(parts) != 2 {
+		return "", "", fmt.Errorf("invalid uri: %s", uri)
+	}
+	return parts[0], parts[1], nil
 }
