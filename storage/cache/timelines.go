@@ -25,7 +25,7 @@ func NewTimeline(name string, redisClient *redis.Client) Timeline {
 func (t *Timeline) AddPost(entry models.TimelineEntry) {
 	bytes, err := json.Marshal(entry)
 	if err == nil {
-		t.redisClient.ZAdd(
+		t.redisClient.ZAddNX(
 			context.Background(),
 			t.getRedisKey(),
 			redis.Z{
