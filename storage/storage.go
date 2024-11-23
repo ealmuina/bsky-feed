@@ -484,23 +484,28 @@ func (m *Manager) GetCursor(service string) int64 {
 	return state.Cursor // defaults to 0 if not in DB
 }
 
-func (m *Manager) GetUser(id int32) (string, bool) {
-	return m.usersCache.UserIdToDid(id)
-}
-
-func (m *Manager) GetOrCreateUser(did string) (int32, error) {
+func (m *Manager) GetOrCreateUser(did string) (id int32, err error) {
 	if id, ok := m.usersCache.UserDidToId(did); ok {
 		return id, nil
 	}
 
-	id, err := m.queries.CreateUser(
-		context.Background(),
-		db.CreateUserParams{Did: did},
+	// Best approach based on https://hakibenita.com/postgresql-get-or-create#coming-full-circle
+	m.executeTransaction(
+		func(ctx context.Context, qtx *db.Queries) {
+			// Insert
+			err = qtx.CreateUser(ctx, db.CreateUserParams{Did: did})
+			if err != nil {
+				log.Infof("Error creating user '%s': %v", did, err)
+				return
+			}
+			// Select
+			id, err = qtx.GetUserId(ctx, did)
+			if err != nil {
+				log.Errorf("Error retrieving user id from did '%s': %v", did, err)
+				return
+			}
+		},
 	)
-	if err != nil {
-		log.Errorf("Error creating user: %v", err)
-		return 0, err
-	}
 	m.usersCache.AddUser(id, did)
 
 	return id, nil

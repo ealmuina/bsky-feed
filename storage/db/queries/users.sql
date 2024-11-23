@@ -1,8 +1,7 @@
--- name: CreateUser :one
+-- name: CreateUser :exec
 INSERT INTO users (did, handle, followers_count, follows_count, posts_count, last_update)
 VALUES ($1, $2, $3, $4, $5, $6)
-ON CONFLICT DO NOTHING
-RETURNING id;
+ON CONFLICT DO NOTHING;
 
 -- name: UpdateUser :exec
 UPDATE users
@@ -37,6 +36,12 @@ WHERE id = $1;
 SELECT *
 FROM users
 WHERE id = $1
+LIMIT 1;
+
+-- name: GetUserId :one
+SELECT id
+FROM users
+WHERE did = $1
 LIMIT 1;
 
 -- name: GetUserDidsToRefreshStatistics :many

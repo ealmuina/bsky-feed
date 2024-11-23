@@ -59,11 +59,10 @@ func (q *Queries) AddUserPosts(ctx context.Context, arg AddUserPostsParams) erro
 	return err
 }
 
-const createUser = `-- name: CreateUser :one
+const createUser = `-- name: CreateUser :exec
 INSERT INTO users (did, handle, followers_count, follows_count, posts_count, last_update)
 VALUES ($1, $2, $3, $4, $5, $6)
 ON CONFLICT DO NOTHING
-RETURNING id
 `
 
 type CreateUserParams struct {
@@ -75,8 +74,8 @@ type CreateUserParams struct {
 	LastUpdate     pgtype.Timestamp
 }
 
-func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (int32, error) {
-	row := q.db.QueryRow(ctx, createUser,
+func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) error {
+	_, err := q.db.Exec(ctx, createUser,
 		arg.Did,
 		arg.Handle,
 		arg.FollowersCount,
@@ -84,9 +83,7 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (int32, 
 		arg.PostsCount,
 		arg.LastUpdate,
 	)
-	var id int32
-	err := row.Scan(&id)
-	return id, err
+	return err
 }
 
 const deleteUser = `-- name: DeleteUser :exec
@@ -147,6 +144,20 @@ func (q *Queries) GetUserDidsToRefreshStatistics(ctx context.Context) ([]string,
 		return nil, err
 	}
 	return items, nil
+}
+
+const getUserId = `-- name: GetUserId :one
+SELECT id
+FROM users
+WHERE did = $1
+LIMIT 1
+`
+
+func (q *Queries) GetUserId(ctx context.Context, did string) (int32, error) {
+	row := q.db.QueryRow(ctx, getUserId, did)
+	var id int32
+	err := row.Scan(&id)
+	return id, err
 }
 
 const updateUser = `-- name: UpdateUser :exec
