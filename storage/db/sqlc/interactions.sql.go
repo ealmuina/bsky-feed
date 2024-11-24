@@ -14,7 +14,7 @@ import (
 type BulkCreateInteractionsParams struct {
 	UriKey       string
 	AuthorID     int32
-	Kind         InteractionType
+	Kind         int16
 	PostUriKey   string
 	PostAuthorID int32
 	CreatedAt    pgtype.Timestamp

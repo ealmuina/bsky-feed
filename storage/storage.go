@@ -180,7 +180,7 @@ func (m *Manager) CreateInteraction(interaction models.Interaction) {
 		buffer,
 		db.BulkCreateInteractionsParams{
 			UriKey:       interaction.UriKey,
-			Kind:         db.InteractionType(interaction.Kind),
+			Kind:         int16(interaction.Kind),
 			AuthorID:     interaction.AuthorID,
 			PostUriKey:   interaction.PostUriKey,
 			PostAuthorID: interaction.PostAuthorId,

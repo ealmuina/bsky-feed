@@ -2,11 +2,11 @@ package models
 
 import "time"
 
-type InteractionType string
+type InteractionType int16
 
 const (
-	Like   InteractionType = "like"
-	Repost InteractionType = "repost"
+	Like   InteractionType = 0
+	Repost InteractionType = 1
 )
 
 type Interaction struct {

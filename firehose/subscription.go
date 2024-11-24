@@ -19,6 +19,7 @@ import (
 	"math"
 	"math/rand"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -146,14 +147,22 @@ func (s *Subscription) handleFeedPostCreate(evt *jsmodels.Event) error {
 			if err != nil {
 				return err
 			}
-			replyParent = []string{authorDid, uriKey}
+			authorId, err := s.storageManager.GetOrCreateUser(authorDid)
+			if err != nil {
+				return err
+			}
+			replyParent = []string{strconv.Itoa(int(authorId)), uriKey}
 		}
 		if post.Reply.Root != nil {
 			authorDid, uriKey, err := s.splitUri(post.Reply.Root.Uri, "/app.bsky.feed.post/")
 			if err != nil {
 				return err
 			}
-			replyRoot = []string{authorDid, uriKey}
+			authorId, err := s.storageManager.GetOrCreateUser(authorDid)
+			if err != nil {
+				return err
+			}
+			replyRoot = []string{strconv.Itoa(int(authorId)), uriKey}
 		}
 	}
 

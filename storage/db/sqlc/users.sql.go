@@ -168,7 +168,7 @@ SET handle            = $2,
     follows_count     = $4,
     posts_count       = $5,
     last_update       = $6,
-    refresh_frequency = greatest(1, 30 - (4 * log($3 + 1)))
+    refresh_frequency = greatest(1, 30 - (5 * log($3 + 1)))
 WHERE did = $1
 `
 
