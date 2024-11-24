@@ -98,7 +98,7 @@ func (q *Queries) DeleteUser(ctx context.Context, id int32) error {
 }
 
 const getUser = `-- name: GetUser :one
-SELECT id, did, handle, followers_count, follows_count, posts_count, last_update
+SELECT id, did, handle, followers_count, follows_count, posts_count, last_update, refresh_frequency
 FROM users
 WHERE id = $1
 LIMIT 1
@@ -115,6 +115,7 @@ func (q *Queries) GetUser(ctx context.Context, id int32) (User, error) {
 		&i.FollowsCount,
 		&i.PostsCount,
 		&i.LastUpdate,
+		&i.RefreshFrequency,
 	)
 	return i, err
 }
@@ -123,7 +124,7 @@ const getUserDidsToRefreshStatistics = `-- name: GetUserDidsToRefreshStatistics 
 SELECT users.did
 FROM users
 WHERE last_update IS NULL
-   OR last_update < current_timestamp - interval '30 days'
+   OR last_update < current_timestamp - (refresh_frequency || ' days')::interval
 `
 
 func (q *Queries) GetUserDidsToRefreshStatistics(ctx context.Context) ([]string, error) {
@@ -162,11 +163,12 @@ func (q *Queries) GetUserId(ctx context.Context, did string) (int32, error) {
 
 const updateUser = `-- name: UpdateUser :exec
 UPDATE users
-SET handle          = $2,
-    followers_count = $3,
-    follows_count   = $4,
-    posts_count     = $5,
-    last_update     = $6
+SET handle            = $2,
+    followers_count   = $3,
+    follows_count     = $4,
+    posts_count       = $5,
+    last_update       = $6,
+    refresh_frequency = greatest(1, 30 - (4 * log($3 + 1)))
 WHERE did = $1
 `
 

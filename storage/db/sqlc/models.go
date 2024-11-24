@@ -100,11 +100,12 @@ type TmpPost struct {
 }
 
 type User struct {
-	ID             int32
-	Did            string
-	Handle         pgtype.Text
-	FollowersCount pgtype.Int4
-	FollowsCount   pgtype.Int4
-	PostsCount     pgtype.Int4
-	LastUpdate     pgtype.Timestamp
+	ID               int32
+	Did              string
+	Handle           pgtype.Text
+	FollowersCount   pgtype.Int4
+	FollowsCount     pgtype.Int4
+	PostsCount       pgtype.Int4
+	LastUpdate       pgtype.Timestamp
+	RefreshFrequency int32
 }

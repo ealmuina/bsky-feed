@@ -5,11 +5,12 @@ ON CONFLICT DO NOTHING;
 
 -- name: UpdateUser :exec
 UPDATE users
-SET handle          = $2,
-    followers_count = $3,
-    follows_count   = $4,
-    posts_count     = $5,
-    last_update     = $6
+SET handle            = $2,
+    followers_count   = $3,
+    follows_count     = $4,
+    posts_count       = $5,
+    last_update       = $6,
+    refresh_frequency = greatest(1, 30 - (5 * log($3 + 1)))
 WHERE did = $1;
 
 -- name: DeleteUser :exec
@@ -48,4 +49,4 @@ LIMIT 1;
 SELECT users.did
 FROM users
 WHERE last_update IS NULL
-   OR last_update < current_timestamp - interval '30 days';
+   OR last_update < current_timestamp - (refresh_frequency || ' days')::interval;
