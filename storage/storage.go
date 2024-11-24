@@ -143,8 +143,19 @@ func (m *Manager) CleanOldData() {
 func (m *Manager) CreateFollow(follow models.Follow) {
 	ctx := context.Background()
 
+	// Set user follow
+	err := m.queries.SetUserFollow(ctx, db.SetUserFollowParams{
+		ID:        follow.AuthorID,
+		Rkey:      follow.UriKey,
+		SubjectID: follow.SubjectID,
+	})
+	if err != nil {
+		log.Errorf("Error setting follow: %v", err)
+		return
+	}
+
 	// Add follow to user statistics
-	err := m.queries.AddUserFollows(ctx, db.AddUserFollowsParams{
+	err = m.queries.AddUserFollows(ctx, db.AddUserFollowsParams{
 		ID:           follow.AuthorID,
 		FollowsCount: pgtype.Int4{Int32: 1, Valid: true},
 	})
@@ -153,7 +164,6 @@ func (m *Manager) CreateFollow(follow models.Follow) {
 			follow.AuthorID, 1, 0, 0, 0,
 		)
 	}
-
 	err = m.queries.AddUserFollowers(ctx, db.AddUserFollowersParams{
 		ID:             follow.SubjectID,
 		FollowersCount: pgtype.Int4{Int32: 1, Valid: true},
@@ -321,17 +331,36 @@ func (m *Manager) CreatePost(post models.Post) {
 	}
 }
 
-func (m *Manager) DeleteFollow(authorId int32) {
+func (m *Manager) DeleteFollow(identifier models.Identifier) {
 	ctx := context.Background()
 
-	// Discount from author follows
-	err := m.queries.AddUserFollows(ctx, db.AddUserFollowsParams{
-		ID:           authorId,
+	// Delete from DB
+	subjectId, err := m.queries.RemoveUserFollow(ctx, db.RemoveUserFollowParams{
+		ID:   identifier.AuthorId,
+		Rkey: identifier.UriKey,
+	})
+	if err != nil {
+		log.Errorf("Error removing follow: %v", err)
+		return
+	}
+
+	// Discount from users statistics
+	err = m.queries.AddUserFollows(ctx, db.AddUserFollowsParams{
+		ID:           identifier.AuthorId,
 		FollowsCount: pgtype.Int4{Int32: -1, Valid: true},
 	})
 	if err == nil {
 		m.usersCache.UpdateUserStatistics(
-			authorId, -1, 0, 0, 0,
+			identifier.AuthorId, -1, 0, 0, 0,
+		)
+	}
+	err = m.queries.AddUserFollowers(ctx, db.AddUserFollowersParams{
+		ID:             subjectId,
+		FollowersCount: pgtype.Int4{Int32: -1, Valid: true},
+	})
+	if err == nil {
+		m.usersCache.UpdateUserStatistics(
+			subjectId, 0, -1, 0, 0,
 		)
 	}
 }

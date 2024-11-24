@@ -8,6 +8,8 @@ CREATE TABLE users
     follows_count     INT,
     posts_count       INT,
 
+    follows JSONB,
+
     last_update       TIMESTAMP,
     refresh_frequency INT  NOT NULL DEFAULT 30
 );
