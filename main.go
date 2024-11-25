@@ -101,7 +101,7 @@ func runBackgroundTasks(storageManager *storage.Manager) {
 	})
 
 	if os.Getenv("RUN_BACKFILL") == "true" {
-		backfiller := backfill.NewBackfiller(storageManager)
+		backfiller := backfill.NewBackfiller("backfill", storageManager)
 		go backfiller.Run()
 	}
 }
