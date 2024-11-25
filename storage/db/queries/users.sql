@@ -20,17 +20,17 @@ WHERE id = $1;
 
 -- name: AddUserFollowers :exec
 UPDATE users
-SET followers_count = followers_count + $2
+SET followers_count = COALESCE(followers_count, 0) + $2
 WHERE id = $1;
 
 -- name: AddUserFollows :exec
 UPDATE users
-SET follows_count = follows_count + $2
+SET follows_count = COALESCE(follows_count, 0) + $2
 WHERE id = $1;
 
 -- name: AddUserPosts :exec
 UPDATE users
-SET posts_count = users.posts_count + $2
+SET posts_count = COALESCE(posts_count, 0) + $2
 WHERE id = $1;
 
 -- name: GetUser :one
@@ -53,7 +53,7 @@ WHERE last_update IS NULL
 
 -- name: SetUserFollow :exec
 UPDATE users
-SET follows = follows || ('{"' || @rkey::text || '":' || @subject_id::int || '}')::jsonb
+SET follows = COALESCE(follows, '{}'::jsonb) || ('{"' || @rkey::text || '":' || @subject_id::int || '}')::jsonb
 WHERE id = @id;
 
 -- name: RemoveUserFollow :one

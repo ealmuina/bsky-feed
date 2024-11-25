@@ -13,7 +13,7 @@ import (
 
 const addUserFollowers = `-- name: AddUserFollowers :exec
 UPDATE users
-SET followers_count = followers_count + $2
+SET followers_count = COALESCE(followers_count, 0) + $2
 WHERE id = $1
 `
 
@@ -29,7 +29,7 @@ func (q *Queries) AddUserFollowers(ctx context.Context, arg AddUserFollowersPara
 
 const addUserFollows = `-- name: AddUserFollows :exec
 UPDATE users
-SET follows_count = follows_count + $2
+SET follows_count = COALESCE(follows_count, 0) + $2
 WHERE id = $1
 `
 
@@ -45,7 +45,7 @@ func (q *Queries) AddUserFollows(ctx context.Context, arg AddUserFollowsParams) 
 
 const addUserPosts = `-- name: AddUserPosts :exec
 UPDATE users
-SET posts_count = users.posts_count + $2
+SET posts_count = COALESCE(posts_count, 0) + $2
 WHERE id = $1
 `
 
@@ -190,7 +190,7 @@ func (q *Queries) RemoveUserFollow(ctx context.Context, arg RemoveUserFollowPara
 
 const setUserFollow = `-- name: SetUserFollow :exec
 UPDATE users
-SET follows = follows || ('{"' || $1::text || '":' || $2::int || '}')::jsonb
+SET follows = COALESCE(follows, '{}'::jsonb) || ('{"' || $1::text || '":' || $2::int || '}')::jsonb
 WHERE id = $3
 `
 
