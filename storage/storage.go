@@ -335,7 +335,7 @@ func (m *Manager) DeleteFollow(identifier models.Identifier) {
 	ctx := context.Background()
 
 	// Delete from DB
-	subjectId, err := m.queries.RemoveUserFollow(ctx, db.RemoveUserFollowParams{
+	subjectIdBytes, err := m.queries.RemoveUserFollow(ctx, db.RemoveUserFollowParams{
 		ID:   identifier.AuthorId,
 		Rkey: identifier.UriKey,
 	})
@@ -343,6 +343,11 @@ func (m *Manager) DeleteFollow(identifier models.Identifier) {
 		log.Errorf("Error removing follow: %v", err)
 		return
 	}
+	if subjectIdBytes == nil {
+		// Follow not found
+		return
+	}
+	subjectId := int32(subjectIdBytes.(float64))
 
 	// Discount from users statistics
 	err = m.queries.AddUserFollows(ctx, db.AddUserFollowsParams{

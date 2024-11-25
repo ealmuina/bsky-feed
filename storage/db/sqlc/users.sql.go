@@ -172,7 +172,7 @@ UPDATE users
 SET follows = deleted_key.updated_follows
 FROM deleted_key
 WHERE users.id = deleted_key.id
-RETURNING deleted_key.deleted_value::int
+RETURNING deleted_key.deleted_value
 `
 
 type RemoveUserFollowParams struct {
@@ -180,21 +180,21 @@ type RemoveUserFollowParams struct {
 	ID   int32
 }
 
-func (q *Queries) RemoveUserFollow(ctx context.Context, arg RemoveUserFollowParams) (int32, error) {
+func (q *Queries) RemoveUserFollow(ctx context.Context, arg RemoveUserFollowParams) (interface{}, error) {
 	row := q.db.QueryRow(ctx, removeUserFollow, arg.Rkey, arg.ID)
-	var deleted_key_deleted_value int32
-	err := row.Scan(&deleted_key_deleted_value)
-	return deleted_key_deleted_value, err
+	var deleted_value interface{}
+	err := row.Scan(&deleted_value)
+	return deleted_value, err
 }
 
 const setUserFollow = `-- name: SetUserFollow :exec
 UPDATE users
-SET follows = jsonb_set(follows, $1, $2::int, true)
+SET follows = follows || ('{"' || $1::text || '":' || $2::int || '}')::jsonb
 WHERE id = $3
 `
 
 type SetUserFollowParams struct {
-	Rkey      interface{}
+	Rkey      string
 	SubjectID int32
 	ID        int32
 }

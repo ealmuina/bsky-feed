@@ -53,7 +53,7 @@ WHERE last_update IS NULL
 
 -- name: SetUserFollow :exec
 UPDATE users
-SET follows = jsonb_set(follows, @rkey, @subject_id::int, true)
+SET follows = follows || ('{"' || @rkey::text || '":' || @subject_id::int || '}')::jsonb
 WHERE id = @id;
 
 -- name: RemoveUserFollow :one
@@ -66,4 +66,4 @@ UPDATE users
 SET follows = deleted_key.updated_follows
 FROM deleted_key
 WHERE users.id = deleted_key.id
-RETURNING deleted_key.deleted_value::int;
+RETURNING deleted_key.deleted_value;
