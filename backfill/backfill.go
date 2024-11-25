@@ -6,6 +6,7 @@ import (
 	"bsky/utils"
 	"bytes"
 	"context"
+	"errors"
 	comatproto "github.com/bluesky-social/indigo/api/atproto"
 	appbsky "github.com/bluesky-social/indigo/api/bsky"
 	"github.com/bluesky-social/indigo/repo"
@@ -23,6 +24,10 @@ import (
 	"strings"
 	"time"
 )
+
+const AccountDeactivatedError = "AccountDeactivated"
+const InvalidRequestError = "InvalidRequest" // Seen when profile is not found
+const ExpiredToken = "ExpiredToken"
 
 type Backfiller struct {
 	serviceName      string
@@ -95,67 +100,6 @@ func (b *Backfiller) Run() {
 		}
 		cursor = *response.Cursor
 		b.storageManager.UpdateCursor(b.serviceName, cursor)
-	}
-}
-
-func (b *Backfiller) processRepo(repoMeta *comatproto.SyncListRepos_Repo) {
-	ctx := context.Background()
-	log.Warnf("Backfilling '%s'", repoMeta.Did)
-
-	repoBytes, err := comatproto.SyncGetRepo(ctx, b.client, repoMeta.Did, "")
-	if err != nil {
-		log.Errorf("SyncGetRepo failed for did '%s': %v", repoMeta.Did, err)
-		return
-	}
-
-	repoData, err := repo.ReadRepoFromCar(ctx, bytes.NewReader(repoBytes))
-	if err != nil {
-		log.Errorf("ReadRepoFromCar failed for did '%s': %v", repoMeta.Did, err)
-		return
-	}
-
-	_ = repoData.ForEach(ctx, "", func(k string, v cid.Cid) error {
-		if !strings.HasPrefix(k, "app.bsky.") {
-			return nil
-		}
-
-		_, record, err := repoData.GetRecord(ctx, k)
-		if err != nil {
-			log.Errorf("GetRecord failed for did '%s': %v", k, err)
-			return err
-		}
-
-		b.processRecord(repoMeta.Did, k, record)
-		return nil
-	})
-}
-
-func (b *Backfiller) processRecord(repoDid string, uri string, record typegen.CBORMarshaler) {
-	switch data := record.(type) {
-	case *appbsky.FeedPost:
-		b.handlePostCreate(
-			repoDid, uri, data,
-		)
-	case *appbsky.FeedLike:
-		b.handleInteractionCreate(
-			repoDid,
-			uri,
-			models.Like,
-			data.CreatedAt,
-			data.Subject.Uri,
-		)
-	case *appbsky.FeedRepost:
-		b.handleInteractionCreate(
-			repoDid,
-			uri,
-			models.Repost,
-			data.CreatedAt,
-			data.Subject.Uri,
-		)
-	case *appbsky.GraphFollow:
-		b.handleFollowCreate(
-			repoDid, uri, data,
-		)
 	}
 }
 
@@ -298,10 +242,105 @@ func (b *Backfiller) handlePostCreate(did string, uri string, post *appbsky.Feed
 	}()
 }
 
+func (b *Backfiller) processBskyError(did string, err error, callback func()) {
+	retry := false
+	var bskyErr *xrpc.Error
+
+	if errors.As(err, &bskyErr) {
+		if bskyErr.StatusCode == 400 {
+			var wrappedError *xrpc.XRPCError
+
+			if errors.As(bskyErr.Wrapped, &wrappedError) {
+				switch wrappedError.ErrStr {
+				case AccountDeactivatedError, InvalidRequestError:
+					// Delete user if profile does not exist anymore
+					b.storageManager.DeleteUser(did)
+				case ExpiredToken:
+					b.client = getXrpcClient()
+					retry = true
+				}
+			}
+		}
+
+		// Sleep if API rate limit has been exceeded
+		if bskyErr.Ratelimit != nil && bskyErr.Ratelimit.Remaining == 0 {
+			time.Sleep(bskyErr.Ratelimit.Reset.Sub(time.Now()))
+			retry = true
+		}
+	}
+
+	if retry {
+		callback()
+	}
+}
+
+func (b *Backfiller) processRecord(repoDid string, uri string, record typegen.CBORMarshaler) {
+	switch data := record.(type) {
+	case *appbsky.FeedPost:
+		b.handlePostCreate(
+			repoDid, uri, data,
+		)
+	case *appbsky.FeedLike:
+		b.handleInteractionCreate(
+			repoDid,
+			uri,
+			models.Like,
+			data.CreatedAt,
+			data.Subject.Uri,
+		)
+	case *appbsky.FeedRepost:
+		b.handleInteractionCreate(
+			repoDid,
+			uri,
+			models.Repost,
+			data.CreatedAt,
+			data.Subject.Uri,
+		)
+	case *appbsky.GraphFollow:
+		b.handleFollowCreate(
+			repoDid, uri, data,
+		)
+	}
+}
+
+func (b *Backfiller) processRepo(repoMeta *comatproto.SyncListRepos_Repo) {
+	ctx := context.Background()
+	log.Warnf("Backfilling '%s'", repoMeta.Did)
+
+	repoBytes, err := comatproto.SyncGetRepo(ctx, b.client, repoMeta.Did, "")
+	if err != nil {
+		log.Errorf("SyncGetRepo failed for did '%s': %v", repoMeta.Did, err)
+		b.processBskyError(repoMeta.Did, err, func() { b.processRepo(repoMeta) })
+		return
+	}
+
+	repoData, err := repo.ReadRepoFromCar(ctx, bytes.NewReader(repoBytes))
+	if err != nil {
+		log.Errorf("ReadRepoFromCar failed for did '%s': %v", repoMeta.Did, err)
+		return
+	}
+
+	_ = repoData.ForEach(ctx, "", func(k string, v cid.Cid) error {
+		if !strings.HasPrefix(k, "app.bsky.") {
+			return nil
+		}
+
+		_, record, err := repoData.GetRecord(ctx, k)
+		if err != nil {
+			log.Errorf("GetRecord failed for did '%s': %v", k, err)
+			return err
+		}
+
+		b.processRecord(repoMeta.Did, k, record)
+		return nil
+	})
+}
+
 func (b *Backfiller) setCreatedAt(did string) {
 	profile, err := appbsky.ActorGetProfile(context.Background(), b.client, did)
 	if err != nil {
 		log.Errorf("Error getting actor '%s': %v", did, err)
+		b.processBskyError(did, err, func() { b.setCreatedAt(did) })
 		return
 	}
 	if profile.CreatedAt == nil {
