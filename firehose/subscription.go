@@ -53,7 +53,9 @@ func (s *Subscription) Run() {
 	for {
 		client := s.createClient()
 
-		cursor := s.storageManager.GetCursor(s.serviceName)
+		cursorStr := s.storageManager.GetCursor(s.serviceName)
+		cursor := int64(utils.IntFromString(cursorStr, 0))
+
 		if cursor > 0 {
 			// Subtract one minute to fill any event gap
 			cursor = cursor - 1e7 // 10 seconds in microseconds
@@ -111,7 +113,7 @@ func (s *Subscription) getHandle() func(context.Context, *jsmodels.Event) error 
 		cursor := evt.TimeUS
 		seq++
 		if seq%100 == 0 {
-			go s.storageManager.UpdateCursor(s.serviceName, cursor)
+			go s.storageManager.UpdateCursor(s.serviceName, strconv.Itoa(int(cursor)))
 		}
 		if err := s.metricsMiddleware.HandleOperation(evt); err != nil {
 			log.Errorf("Error handling operation: %v", err)

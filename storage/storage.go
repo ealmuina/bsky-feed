@@ -518,12 +518,12 @@ func (m *Manager) DeleteUser(did string) {
 	m.usersCache.DeleteUser(id)
 }
 
-func (m *Manager) GetCursor(service string) int64 {
+func (m *Manager) GetCursor(service string) string {
 	state, _ := m.queries.GetSubscriptionState(
 		context.Background(),
 		service,
 	)
-	return state.Cursor // defaults to 0 if not in DB
+	return state.Cursor // defaults to "" if not in DB
 }
 
 func (m *Manager) GetOrCreateUser(did string) (id int32, err error) {
@@ -569,7 +569,7 @@ func (m *Manager) GetTimeline(timelineName string, maxRank float64, limit int64)
 	return timeline.GetPosts(maxRank, limit)
 }
 
-func (m *Manager) UpdateCursor(service string, cursor int64) {
+func (m *Manager) UpdateCursor(service string, cursor string) {
 	err := m.queries.UpdateSubscriptionStateCursor(
 		context.Background(),
 		db.UpdateSubscriptionStateCursorParams{
@@ -578,7 +578,7 @@ func (m *Manager) UpdateCursor(service string, cursor int64) {
 		},
 	)
 	if err != nil {
-		log.Errorf("Error updating cursor: %m", err)
+		log.Errorf("Error updating cursor: %v", err)
 	}
 }
 

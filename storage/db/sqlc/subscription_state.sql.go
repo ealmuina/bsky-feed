@@ -31,7 +31,7 @@ ON CONFLICT (service)
 
 type UpdateSubscriptionStateCursorParams struct {
 	Service string
-	Cursor  int64
+	Cursor  string
 }
 
 func (q *Queries) UpdateSubscriptionStateCursor(ctx context.Context, arg UpdateSubscriptionStateCursorParams) error {

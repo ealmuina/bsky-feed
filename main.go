@@ -79,7 +79,7 @@ func runBackgroundTasks(storageManager *storage.Manager) {
 	// Firehose consumer
 	go utils.Recoverer(math.MaxInt, 1, func() {
 		subscription := firehose.NewSubscription(
-			"bsky_feeds",
+			"firehose",
 			[]string{
 				"jetstream1.us-east.bsky.network",
 				"jetstream2.us-east.bsky.network",
@@ -100,6 +100,8 @@ func runBackgroundTasks(storageManager *storage.Manager) {
 		statisticsUpdater.Run()
 	})
 
-	backfiller := backfill.NewBackfiller(storageManager)
-	go backfiller.Run()
+	if os.Getenv("RUN_BACKFILL") == "true" {
+		backfiller := backfill.NewBackfiller(storageManager)
+		go backfiller.Run()
+	}
 }

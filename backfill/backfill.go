@@ -32,6 +32,7 @@ var acceptedCollections = []string{
 }
 
 type Backfiller struct {
+	serviceName      string
 	storageManager   *storage.Manager
 	client           *xrpc.Client
 	languageDetector *utils.LanguageDetector
@@ -66,8 +67,9 @@ func getXrpcClient() *xrpc.Client {
 	return xrpcClient
 }
 
-func NewBackfiller(storageManager *storage.Manager) *Backfiller {
+func NewBackfiller(serviceName string, storageManager *storage.Manager) *Backfiller {
 	return &Backfiller{
+		serviceName:      serviceName,
 		storageManager:   storageManager,
 		client:           getXrpcClient(),
 		languageDetector: utils.NewLanguageDetector(),
@@ -78,19 +80,14 @@ func NewBackfiller(storageManager *storage.Manager) *Backfiller {
 func (b *Backfiller) Run() {
 	ctx := context.Background()
 
-	cursor := ""
+	cursor := b.storageManager.GetCursor(b.serviceName)
 	for {
-		response, err := comatproto.SyncListRepos(ctx, b.client, cursor, 500)
+		response, err := comatproto.SyncListRepos(ctx, b.client, cursor, 1000)
 		if err != nil {
 			log.Errorf("SyncListRepos failed: %v", err)
 			time.Sleep(10 * time.Second)
 			continue
 		}
-
-		if response.Cursor == nil {
-			break
-		}
-		cursor = *response.Cursor
 
 		for _, repoMeta := range response.Repos {
 			if repoMeta.Active == nil || !*repoMeta.Active {
@@ -98,6 +95,12 @@ func (b *Backfiller) Run() {
 			}
 			b.processRepo(repoMeta)
 		}
+
+		if response.Cursor == nil {
+			break
+		}
+		cursor = *response.Cursor
+		b.storageManager.UpdateCursor(b.serviceName, cursor)
 	}
 }
 

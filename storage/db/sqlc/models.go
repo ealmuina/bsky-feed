@@ -31,7 +31,7 @@ type Post struct {
 type SubscriptionState struct {
 	ID      int32
 	Service string
-	Cursor  int64
+	Cursor  string
 }
 
 type TmpInteraction struct {
