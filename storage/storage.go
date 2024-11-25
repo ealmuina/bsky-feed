@@ -110,14 +110,16 @@ func (m *Manager) AddPostToTimeline(timelineName string, timelineEntry models.Ti
 	}
 }
 
-func (m *Manager) CleanOldData() {
+func (m *Manager) CleanOldData(persistentDb bool) {
 	// Clean DB
 	ctx := context.Background()
-	if err := m.queries.DeleteOldInteractions(ctx); err != nil {
-		log.Errorf("Error cleaning old interactions: %v", err)
-	}
-	if err := m.queries.VacuumInteractions(ctx); err != nil {
-		log.Errorf("Error vacuuming interactions: %v", err)
+	if !persistentDb {
+		if err := m.queries.DeleteOldInteractions(ctx); err != nil {
+			log.Errorf("Error cleaning old interactions: %v", err)
+		}
+		if err := m.queries.VacuumInteractions(ctx); err != nil {
+			log.Errorf("Error vacuuming interactions: %v", err)
+		}
 	}
 
 	// Clean timelines

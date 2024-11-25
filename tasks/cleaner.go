@@ -5,11 +5,11 @@ import (
 	"time"
 )
 
-func CleanOldData(storageManager *storage.Manager) {
+func CleanOldData(storageManager *storage.Manager, persistentDb bool) {
 	for {
 		select {
 		case <-time.After(1 * time.Hour):
-			storageManager.CleanOldData()
+			storageManager.CleanOldData(persistentDb)
 		}
 	}
 }

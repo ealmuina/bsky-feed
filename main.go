@@ -71,9 +71,11 @@ func main() {
 }
 
 func runBackgroundTasks(storageManager *storage.Manager) {
+	runBackfill := os.Getenv("RUN_BACKFILL") == "true"
+
 	// DB cleanup
 	go utils.Recoverer(math.MaxInt, 1, func() {
-		tasks.CleanOldData(storageManager)
+		tasks.CleanOldData(storageManager, runBackfill)
 	})
 
 	// Firehose consumer
@@ -91,7 +93,7 @@ func runBackgroundTasks(storageManager *storage.Manager) {
 		subscription.Run()
 	})
 
-	if os.Getenv("RUN_BACKFILL") == "true" {
+	if runBackfill {
 		// Backfill
 		backfiller := backfill.NewBackfiller("backfill", storageManager)
 		go backfiller.Run()
