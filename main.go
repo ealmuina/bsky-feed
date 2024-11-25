@@ -91,17 +91,18 @@ func runBackgroundTasks(storageManager *storage.Manager) {
 		subscription.Run()
 	})
 
-	// Statistics updater
-	go utils.Recoverer(math.MaxInt, 1, func() {
-		statisticsUpdater, err := tasks.NewStatisticsUpdater(storageManager)
-		if err != nil {
-			panic(err)
-		}
-		statisticsUpdater.Run()
-	})
-
 	if os.Getenv("RUN_BACKFILL") == "true" {
+		// Backfill
 		backfiller := backfill.NewBackfiller("backfill", storageManager)
 		go backfiller.Run()
+	} else {
+		// Statistics updater
+		go utils.Recoverer(math.MaxInt, 1, func() {
+			statisticsUpdater, err := tasks.NewStatisticsUpdater(storageManager)
+			if err != nil {
+				panic(err)
+			}
+			statisticsUpdater.Run()
+		})
 	}
 }

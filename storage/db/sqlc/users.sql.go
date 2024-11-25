@@ -98,7 +98,7 @@ func (q *Queries) DeleteUser(ctx context.Context, id int32) error {
 }
 
 const getUser = `-- name: GetUser :one
-SELECT id, did, handle, followers_count, follows_count, posts_count, follows, last_update, refresh_frequency
+SELECT id, did, handle, followers_count, follows_count, posts_count, follows, created_at, last_update, refresh_frequency
 FROM users
 WHERE id = $1
 LIMIT 1
@@ -115,6 +115,7 @@ func (q *Queries) GetUser(ctx context.Context, id int32) (User, error) {
 		&i.FollowsCount,
 		&i.PostsCount,
 		&i.Follows,
+		&i.CreatedAt,
 		&i.LastUpdate,
 		&i.RefreshFrequency,
 	)
@@ -201,6 +202,24 @@ type SetUserFollowParams struct {
 
 func (q *Queries) SetUserFollow(ctx context.Context, arg SetUserFollowParams) error {
 	_, err := q.db.Exec(ctx, setUserFollow, arg.Rkey, arg.SubjectID, arg.ID)
+	return err
+}
+
+const setUserMetadata = `-- name: SetUserMetadata :exec
+UPDATE users
+SET handle     = $2,
+    created_at = $3
+WHERE did = $1
+`
+
+type SetUserMetadataParams struct {
+	Did       string
+	Handle    pgtype.Text
+	CreatedAt pgtype.Timestamp
+}
+
+func (q *Queries) SetUserMetadata(ctx context.Context, arg SetUserMetadataParams) error {
+	_, err := q.db.Exec(ctx, setUserMetadata, arg.Did, arg.Handle, arg.CreatedAt)
 	return err
 }
 

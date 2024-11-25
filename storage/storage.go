@@ -569,6 +569,18 @@ func (m *Manager) GetTimeline(timelineName string, maxRank float64, limit int64)
 	return timeline.GetPosts(maxRank, limit)
 }
 
+func (m *Manager) SetUserMetadata(did string, handle string, createdAt time.Time) {
+	ctx := context.Background()
+	err := m.queries.SetUserMetadata(ctx, db.SetUserMetadataParams{
+		Did:       did,
+		Handle:    pgtype.Text{String: handle, Valid: true},
+		CreatedAt: pgtype.Timestamp{Time: createdAt, Valid: true},
+	})
+	if err != nil {
+		log.Errorf("Error setting user metadata: %v", err)
+	}
+}
+
 func (m *Manager) UpdateCursor(service string, cursor string) {
 	err := m.queries.UpdateSubscriptionStateCursor(
 		context.Background(),

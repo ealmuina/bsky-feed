@@ -24,13 +24,6 @@ import (
 	"time"
 )
 
-var acceptedCollections = []string{
-	"app.bsky.feed.like",
-	"app.bsky.feed.repost",
-	"app.bsky.feed.post",
-	"app.bsky.graph.follow",
-}
-
 type Backfiller struct {
 	serviceName      string
 	storageManager   *storage.Manager
@@ -94,6 +87,7 @@ func (b *Backfiller) Run() {
 				continue
 			}
 			b.processRepo(repoMeta)
+			b.setCreatedAt(repoMeta.Did)
 		}
 
 		if response.Cursor == nil {
@@ -121,13 +115,7 @@ func (b *Backfiller) processRepo(repoMeta *comatproto.SyncListRepos_Repo) {
 	}
 
 	_ = repoData.ForEach(ctx, "", func(k string, v cid.Cid) error {
-		skipRecord := true
-		for _, collection := range acceptedCollections {
-			if strings.HasPrefix(k, collection) {
-				skipRecord = false
-			}
-		}
-		if skipRecord {
+		if !strings.HasPrefix(k, "app.bsky.") {
 			return nil
 		}
 
@@ -136,6 +124,7 @@ func (b *Backfiller) processRepo(repoMeta *comatproto.SyncListRepos_Repo) {
 			log.Errorf("GetRecord failed for did '%s': %v", k, err)
 			return err
 		}
+
 		b.processRecord(repoMeta.Did, k, record)
 		return nil
 	})
@@ -307,4 +296,23 @@ func (b *Backfiller) handlePostCreate(did string, uri string, post *appbsky.Feed
 			})
 
 	}()
+}
+
+func (b *Backfiller) setCreatedAt(did string) {
+	profile, err := appbsky.ActorGetProfile(context.Background(), b.client, did)
+	if err != nil {
+		log.Errorf("Error getting actor '%s': %v", did, err)
+		return
+	}
+	if profile.CreatedAt == nil {
+		return
+	}
+
+	createdAt, err := utils.ParseTime(*profile.CreatedAt)
+	if err != nil {
+		log.Errorf("Error parsing created at: %s", err)
+		return
+	}
+
+	b.storageManager.SetUserMetadata(did, profile.Handle, createdAt)
 }

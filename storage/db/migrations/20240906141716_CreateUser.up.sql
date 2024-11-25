@@ -1,8 +1,8 @@
 CREATE TABLE users
 (
     id                SERIAL PRIMARY KEY,
-    did               TEXT  NOT NULL,
-    handle            VARCHAR(255),
+    did        TEXT NOT NULL UNIQUE,
+    handle     TEXT,
 
     followers_count   INT,
     follows_count     INT,
@@ -10,6 +10,7 @@ CREATE TABLE users
 
     follows           JSONB NOT NULL DEFAULT '{}',
 
+    created_at TIMESTAMP,
     last_update       TIMESTAMP,
     refresh_frequency INT   NOT NULL DEFAULT 30
 );

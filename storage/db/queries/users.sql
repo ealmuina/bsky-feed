@@ -67,3 +67,9 @@ SET follows = deleted_key.updated_follows
 FROM deleted_key
 WHERE users.id = deleted_key.id
 RETURNING deleted_key.deleted_value;
+
+-- name: SetUserMetadata :exec
+UPDATE users
+SET handle     = $2,
+    created_at = $3
+WHERE did = $1;

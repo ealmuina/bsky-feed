@@ -62,6 +62,7 @@ type User struct {
 	FollowsCount     pgtype.Int4
 	PostsCount       pgtype.Int4
 	Follows          []byte
+	CreatedAt        pgtype.Timestamp
 	LastUpdate       pgtype.Timestamp
 	RefreshFrequency int32
 }
