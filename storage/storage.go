@@ -45,6 +45,7 @@ type Manager struct {
 	redisConnection *redis.Client
 	dbConnection    *pgxpool.Pool
 	queries         *db.Queries
+	persistFollows  bool
 
 	usersCache cache.UsersCache
 	postsCache cache.PostsCache
@@ -65,7 +66,7 @@ func getBuffer[T any](event Event, buffers *sync.Map, defaultBuffer []T) (buffer
 	return buffer
 }
 
-func NewManager(dbConnection *pgxpool.Pool, redisConnection *redis.Client) *Manager {
+func NewManager(dbConnection *pgxpool.Pool, redisConnection *redis.Client, persistFollows bool) *Manager {
 	mutexes := map[Event]*sync.Mutex{
 		Event{EntityPost, OperationCreate}:        {},
 		Event{EntityPost, OperationDelete}:        {},
@@ -79,6 +80,7 @@ func NewManager(dbConnection *pgxpool.Pool, redisConnection *redis.Client) *Mana
 		redisConnection: redisConnection,
 		dbConnection:    dbConnection,
 		queries:         db.New(dbConnection),
+		persistFollows:  persistFollows,
 
 		usersCache: cache.NewUsersCache(
 			redisConnection,
@@ -143,19 +145,21 @@ func (m *Manager) CleanOldData() {
 func (m *Manager) CreateFollow(follow models.Follow) {
 	ctx := context.Background()
 
-	// Set user follow
-	err := m.queries.SetUserFollow(ctx, db.SetUserFollowParams{
-		ID:        follow.AuthorID,
-		Rkey:      follow.UriKey,
-		SubjectID: follow.SubjectID,
-	})
-	if err != nil {
-		log.Errorf("Error setting follow: %v", err)
-		return
+	if m.persistFollows {
+		// Set user follow on DB
+		err := m.queries.SetUserFollow(ctx, db.SetUserFollowParams{
+			ID:        follow.AuthorID,
+			Rkey:      follow.UriKey,
+			SubjectID: follow.SubjectID,
+		})
+		if err != nil {
+			log.Errorf("Error setting follow: %v", err)
+			return
+		}
 	}
 
 	// Add follow to user statistics
-	err = m.queries.AddUserFollows(ctx, db.AddUserFollowsParams{
+	err := m.queries.AddUserFollows(ctx, db.AddUserFollowsParams{
 		ID:           follow.AuthorID,
 		FollowsCount: pgtype.Int4{Int32: 1, Valid: true},
 	})
@@ -334,38 +338,42 @@ func (m *Manager) CreatePost(post models.Post) {
 func (m *Manager) DeleteFollow(identifier models.Identifier) {
 	ctx := context.Background()
 
-	// Delete from DB
-	subjectIdBytes, err := m.queries.RemoveUserFollow(ctx, db.RemoveUserFollowParams{
-		ID:   identifier.AuthorId,
-		Rkey: identifier.UriKey,
-	})
-	if err != nil {
-		log.Errorf("Error removing follow: %v", err)
-		return
-	}
-	if subjectIdBytes == nil {
-		// Follow not found
-		return
-	}
-	subjectId := int32(subjectIdBytes.(float64))
+	if m.persistFollows {
+		// Delete from DB
+		subjectIdBytes, err := m.queries.RemoveUserFollow(ctx, db.RemoveUserFollowParams{
+			ID:   identifier.AuthorId,
+			Rkey: identifier.UriKey,
+		})
+		if err != nil {
+			log.Errorf("Error removing follow: %v", err)
+			return
+		}
+		if subjectIdBytes == nil {
+			// Follow not found
+			return
+		}
+		subjectId := int32(subjectIdBytes.(float64))
 
-	// Discount from users statistics
-	err = m.queries.AddUserFollows(ctx, db.AddUserFollowsParams{
+		// Discount from followed statistics
+		err = m.queries.AddUserFollowers(ctx, db.AddUserFollowersParams{
+			ID:             subjectId,
+			FollowersCount: pgtype.Int4{Int32: -1, Valid: true},
+		})
+		if err == nil {
+			m.usersCache.UpdateUserStatistics(
+				subjectId, 0, -1, 0, 0,
+			)
+		}
+	}
+
+	// Discount from follower statistics
+	err := m.queries.AddUserFollows(ctx, db.AddUserFollowsParams{
 		ID:           identifier.AuthorId,
 		FollowsCount: pgtype.Int4{Int32: -1, Valid: true},
 	})
 	if err == nil {
 		m.usersCache.UpdateUserStatistics(
 			identifier.AuthorId, -1, 0, 0, 0,
-		)
-	}
-	err = m.queries.AddUserFollowers(ctx, db.AddUserFollowersParams{
-		ID:             subjectId,
-		FollowersCount: pgtype.Int4{Int32: -1, Valid: true},
-	})
-	if err == nil {
-		m.usersCache.UpdateUserStatistics(
-			subjectId, 0, -1, 0, 0,
 		)
 	}
 }

@@ -55,7 +55,11 @@ func main() {
 		DB:       0,  // use default DB
 	})
 
-	storageManager := storage.NewManager(connectionPool, redisClient)
+	storageManager := storage.NewManager(
+		connectionPool,
+		redisClient,
+		os.Getenv("PERSIST_FOLLOWS") == "true",
+	)
 
 	// Run background tasks
 	runBackgroundTasks(storageManager)
