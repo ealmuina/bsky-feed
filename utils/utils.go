@@ -2,9 +2,11 @@ package utils
 
 import (
 	"encoding/json"
+	"fmt"
 	log "github.com/sirupsen/logrus"
 	"runtime/debug"
 	"strconv"
+	"strings"
 )
 
 func IntFromString(s string, defaultValue int) int {
@@ -36,4 +38,15 @@ func Recoverer(maxPanics, id int, f func()) {
 		}
 	}()
 	f()
+}
+
+func SplitUri(uri string, category string) (authorDid string, uriKey string, err error) {
+	parts := strings.Split(
+		strings.TrimPrefix(uri, "at://"),
+		category,
+	)
+	if len(parts) != 2 {
+		return "", "", fmt.Errorf("invalid uri: %s", uri)
+	}
+	return parts[0], parts[1], nil
 }

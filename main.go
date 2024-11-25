@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bsky/backfill"
 	"bsky/firehose"
 	"bsky/monitoring"
 	"bsky/server"
@@ -98,4 +99,7 @@ func runBackgroundTasks(storageManager *storage.Manager) {
 		}
 		statisticsUpdater.Run()
 	})
+
+	backfiller := backfill.NewBackfiller(storageManager)
+	go backfiller.Run()
 }
