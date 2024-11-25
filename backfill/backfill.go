@@ -25,9 +25,12 @@ import (
 	"time"
 )
 
-const AccountDeactivatedError = "AccountDeactivated"
-const InvalidRequestError = "InvalidRequest" // Seen when profile is not found
-const ExpiredToken = "ExpiredToken"
+const (
+	AccountDeactivatedError = "AccountDeactivated"
+	InvalidRequestError     = "InvalidRequest" // Seen when profile is not found
+	ExpiredToken            = "ExpiredToken"
+)
+const NumWorkers = 8
 
 type Backfiller struct {
 	serviceName      string
@@ -78,6 +81,12 @@ func NewBackfiller(serviceName string, storageManager *storage.Manager) *Backfil
 func (b *Backfiller) Run() {
 	ctx := context.Background()
 
+	// Span workers
+	c := make(chan *comatproto.SyncListRepos_Repo)
+	for i := 0; i < NumWorkers; i++ {
+		go b.worker(c)
+	}
+
 	cursor := b.storageManager.GetCursor(b.serviceName)
 	for {
 		response, err := comatproto.SyncListRepos(ctx, b.client, cursor, 1000)
@@ -91,8 +100,7 @@ func (b *Backfiller) Run() {
 			if repoMeta.Active == nil || !*repoMeta.Active {
 				continue
 			}
-			b.processRepo(repoMeta)
-			b.setCreatedAt(repoMeta.Did)
+			c <- repoMeta
 		}
 
 		if response.Cursor == nil {
@@ -101,6 +109,8 @@ func (b *Backfiller) Run() {
 		cursor = *response.Cursor
 		b.storageManager.UpdateCursor(b.serviceName, cursor)
 	}
+
+	close(c)
 }
 
 func (b *Backfiller) handleFollowCreate(did string, uri string, follow *appbsky.GraphFollow) {
@@ -354,4 +364,11 @@ func (b *Backfiller) setCreatedAt(did string) {
 	}
 
 	b.storageManager.SetUserMetadata(did, profile.Handle, createdAt)
+}
+
+func (b *Backfiller) worker(c chan *comatproto.SyncListRepos_Repo) {
+	for repoMeta := range c {
+		b.processRepo(repoMeta)
+		b.setCreatedAt(repoMeta.Did)
+	}
 }
