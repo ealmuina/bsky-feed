@@ -106,14 +106,15 @@ func (s *Subscription) createClient() *jsclient.Client {
 
 func (s *Subscription) getHandle() func(context.Context, *jsmodels.Event) error {
 	var seq uint64 = 0
+	cursor := 0
 	return func(ctx context.Context, evt *jsmodels.Event) error {
 		if evt.Kind != jsmodels.EventKindCommit {
 			return nil
 		}
-		cursor := evt.TimeUS
+		cursor = int(math.Max(float64(evt.TimeUS), float64(cursor)))
 		seq++
 		if seq%100 == 0 {
-			go s.storageManager.UpdateCursor(s.serviceName, strconv.Itoa(int(cursor)))
+			go s.storageManager.UpdateCursor(s.serviceName, strconv.Itoa(cursor))
 		}
 		if err := s.metricsMiddleware.HandleOperation(evt); err != nil {
 			log.Errorf("Error handling operation: %v", err)
