@@ -92,7 +92,7 @@ func (b *Backfiller) Run() {
 		response, err := comatproto.SyncListRepos(ctx, b.client, cursor, 1000)
 		if err != nil {
 			log.Errorf("SyncListRepos failed: %v", err)
-			time.Sleep(10 * time.Second)
+			time.Sleep(30 * time.Second)
 			continue
 		}
 
