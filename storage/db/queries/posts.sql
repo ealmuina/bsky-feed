@@ -17,6 +17,16 @@ FROM tmp_posts
 ON CONFLICT DO NOTHING
 RETURNING id, author_id, reply_root;
 
+-- name: UpsertPost :one
+INSERT INTO posts (uri_key, author_id, reply_parent, reply_root, created_at, language)
+VALUES ($1, $2, $3, $4, $5, $6)
+ON CONFLICT (author_id, uri_key) DO UPDATE
+    SET reply_parent = COALESCE(posts.reply_parent, excluded.reply_parent),
+        reply_root   = COALESCE(posts.reply_root, excluded.reply_root),
+        created_at   = COALESCE(posts.created_at, excluded.created_at),
+        language     = COALESCE(posts.language, excluded.language)
+RETURNING id;
+
 -- name: BulkDeletePosts :many
 DELETE
 FROM posts
@@ -33,3 +43,14 @@ WHERE posts.created_at < current_timestamp - interval '7 days';
 SELECT id, uri_key, author_id
 FROM posts
 WHERE author_id = $1;
+
+-- name: GetPostAuthorId :one
+SELECT author_id
+FROM posts
+WHERE id = $1;
+
+-- name: GetPostId :one
+SELECT id
+FROM posts
+WHERE author_id = $1
+  AND uri_key = $2;

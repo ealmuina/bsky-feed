@@ -145,7 +145,13 @@ func (b *Backfiller) handleFollowCreate(did string, uri string, follow *appbsky.
 	}()
 }
 
-func (b *Backfiller) handleInteractionCreate(did string, uri string, kind models.InteractionType, createdAtStr string, subjectUri string) {
+func (b *Backfiller) handleInteractionCreate(
+	did string,
+	uri string,
+	kind models.InteractionType,
+	createdAtStr string,
+	subjectUri string,
+) {
 	if !strings.Contains(subjectUri, "/app.bsky.feed.post/") {
 		// Likes can be given to feeds too
 		return
@@ -175,14 +181,18 @@ func (b *Backfiller) handleInteractionCreate(did string, uri string, kind models
 			log.Errorf("Error creating user: %v", err)
 			return
 		}
+		postId, err := b.storageManager.GetPostId(postAuthorId, postUriKey)
+		if err != nil {
+			log.Errorf("Error getting post id: %v", err)
+			return
+		}
 		b.storageManager.CreateInteraction(
 			models.Interaction{
-				UriKey:       uriKey,
-				Kind:         kind,
-				AuthorId:     authorId,
-				PostUriKey:   postUriKey,
-				PostAuthorId: postAuthorId,
-				CreatedAt:    createdAt,
+				UriKey:    uriKey,
+				Kind:      kind,
+				AuthorId:  authorId,
+				PostId:    postId,
+				CreatedAt: createdAt,
 			},
 		)
 	}()

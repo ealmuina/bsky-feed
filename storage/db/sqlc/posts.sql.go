@@ -104,6 +104,38 @@ func (q *Queries) GetOldPosts(ctx context.Context) ([]GetOldPostsRow, error) {
 	return items, nil
 }
 
+const getPostAuthorId = `-- name: GetPostAuthorId :one
+SELECT author_id
+FROM posts
+WHERE id = $1
+`
+
+func (q *Queries) GetPostAuthorId(ctx context.Context, id int64) (int32, error) {
+	row := q.db.QueryRow(ctx, getPostAuthorId, id)
+	var author_id int32
+	err := row.Scan(&author_id)
+	return author_id, err
+}
+
+const getPostId = `-- name: GetPostId :one
+SELECT id
+FROM posts
+WHERE author_id = $1
+  AND uri_key = $2
+`
+
+type GetPostIdParams struct {
+	AuthorID int32
+	UriKey   string
+}
+
+func (q *Queries) GetPostId(ctx context.Context, arg GetPostIdParams) (int64, error) {
+	row := q.db.QueryRow(ctx, getPostId, arg.AuthorID, arg.UriKey)
+	var id int64
+	err := row.Scan(&id)
+	return id, err
+}
+
 const getUserPosts = `-- name: GetUserPosts :many
 SELECT id, uri_key, author_id
 FROM posts
@@ -168,4 +200,38 @@ func (q *Queries) InsertFromTempToPosts(ctx context.Context) ([]InsertFromTempTo
 		return nil, err
 	}
 	return items, nil
+}
+
+const upsertPost = `-- name: UpsertPost :one
+INSERT INTO posts (uri_key, author_id, reply_parent, reply_root, created_at, language)
+VALUES ($1, $2, $3, $4, $5, $6)
+ON CONFLICT (author_id, uri_key) DO UPDATE
+    SET reply_parent = COALESCE(posts.reply_parent, excluded.reply_parent),
+        reply_root   = COALESCE(posts.reply_root, excluded.reply_root),
+        created_at   = COALESCE(posts.created_at, excluded.created_at),
+        language     = COALESCE(posts.language, excluded.language)
+RETURNING id
+`
+
+type UpsertPostParams struct {
+	UriKey      string
+	AuthorID    int32
+	ReplyParent []string
+	ReplyRoot   []string
+	CreatedAt   pgtype.Timestamp
+	Language    pgtype.Text
+}
+
+func (q *Queries) UpsertPost(ctx context.Context, arg UpsertPostParams) (int64, error) {
+	row := q.db.QueryRow(ctx, upsertPost,
+		arg.UriKey,
+		arg.AuthorID,
+		arg.ReplyParent,
+		arg.ReplyRoot,
+		arg.CreatedAt,
+		arg.Language,
+	)
+	var id int64
+	err := row.Scan(&id)
+	return id, err
 }

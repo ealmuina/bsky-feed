@@ -12,12 +12,11 @@ import (
 )
 
 type BulkCreateInteractionsParams struct {
-	UriKey       string
-	AuthorID     int32
-	Kind         int16
-	PostUriKey   string
-	PostAuthorID int32
-	CreatedAt    pgtype.Timestamp
+	UriKey    string
+	AuthorID  int32
+	Kind      int16
+	PostID    int64
+	CreatedAt pgtype.Timestamp
 }
 
 const bulkDeleteInteractions = `-- name: BulkDeleteInteractions :many
@@ -25,7 +24,7 @@ DELETE
 FROM interactions
 WHERE author_id = ANY ($1::INT[])
   AND uri_key = ANY ($2::VARCHAR[])
-RETURNING id, post_uri_key, post_author_id
+RETURNING id, post_id
 `
 
 type BulkDeleteInteractionsParams struct {
@@ -34,9 +33,8 @@ type BulkDeleteInteractionsParams struct {
 }
 
 type BulkDeleteInteractionsRow struct {
-	ID           int64
-	PostUriKey   string
-	PostAuthorID int32
+	ID     int64
+	PostID int64
 }
 
 func (q *Queries) BulkDeleteInteractions(ctx context.Context, arg BulkDeleteInteractionsParams) ([]BulkDeleteInteractionsRow, error) {
@@ -48,7 +46,7 @@ func (q *Queries) BulkDeleteInteractions(ctx context.Context, arg BulkDeleteInte
 	var items []BulkDeleteInteractionsRow
 	for rows.Next() {
 		var i BulkDeleteInteractionsRow
-		if err := rows.Scan(&i.ID, &i.PostUriKey, &i.PostAuthorID); err != nil {
+		if err := rows.Scan(&i.ID, &i.PostID); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -63,7 +61,7 @@ const createTempInteractionsTable = `-- name: CreateTempInteractionsTable :exec
 CREATE TEMPORARY TABLE tmp_interactions
     ON COMMIT DROP
 AS
-SELECT id, uri_key, author_id, kind, post_author_id, post_uri_key, created_at
+SELECT id, uri_key, author_id, kind, post_id, created_at
 FROM interactions
     WITH NO DATA
 `
@@ -87,14 +85,8 @@ func (q *Queries) DeleteOldInteractions(ctx context.Context) error {
 const getPostInteractions = `-- name: GetPostInteractions :many
 SELECT id, uri_key, author_id
 FROM interactions
-WHERE post_author_id = $1
-  AND post_uri_key = $2
+WHERE post_id = $1
 `
-
-type GetPostInteractionsParams struct {
-	PostAuthorID int32
-	PostUriKey   string
-}
 
 type GetPostInteractionsRow struct {
 	ID       int64
@@ -102,8 +94,8 @@ type GetPostInteractionsRow struct {
 	AuthorID int32
 }
 
-func (q *Queries) GetPostInteractions(ctx context.Context, arg GetPostInteractionsParams) ([]GetPostInteractionsRow, error) {
-	rows, err := q.db.Query(ctx, getPostInteractions, arg.PostAuthorID, arg.PostUriKey)
+func (q *Queries) GetPostInteractions(ctx context.Context, postID int64) ([]GetPostInteractionsRow, error) {
+	rows, err := q.db.Query(ctx, getPostInteractions, postID)
 	if err != nil {
 		return nil, err
 	}
@@ -123,7 +115,7 @@ func (q *Queries) GetPostInteractions(ctx context.Context, arg GetPostInteractio
 }
 
 const getUserInteractions = `-- name: GetUserInteractions :many
-SELECT id, uri_key, author_id, kind, post_author_id, post_uri_key, created_at
+SELECT id, uri_key, author_id, kind, post_id, created_at
 FROM interactions
 WHERE author_id = $1
 `
@@ -142,8 +134,7 @@ func (q *Queries) GetUserInteractions(ctx context.Context, authorID int32) ([]In
 			&i.UriKey,
 			&i.AuthorID,
 			&i.Kind,
-			&i.PostAuthorID,
-			&i.PostUriKey,
+			&i.PostID,
 			&i.CreatedAt,
 		); err != nil {
 			return nil, err
@@ -157,17 +148,16 @@ func (q *Queries) GetUserInteractions(ctx context.Context, authorID int32) ([]In
 }
 
 const insertFromTempToInteractions = `-- name: InsertFromTempToInteractions :many
-INSERT INTO interactions (uri_key, author_id, kind, post_uri_key, post_author_id, created_at)
-SELECT uri_key, author_id, kind, post_uri_key, post_author_id, created_at
+INSERT INTO interactions (uri_key, author_id, kind, post_id, created_at)
+SELECT uri_key, author_id, kind, post_id, created_at
 FROM tmp_interactions
 ON CONFLICT DO NOTHING
-RETURNING id, post_uri_key, post_author_id
+RETURNING id, post_id
 `
 
 type InsertFromTempToInteractionsRow struct {
-	ID           int64
-	PostUriKey   string
-	PostAuthorID int32
+	ID     int64
+	PostID int64
 }
 
 func (q *Queries) InsertFromTempToInteractions(ctx context.Context) ([]InsertFromTempToInteractionsRow, error) {
@@ -179,7 +169,7 @@ func (q *Queries) InsertFromTempToInteractions(ctx context.Context) ([]InsertFro
 	var items []InsertFromTempToInteractionsRow
 	for rows.Next() {
 		var i InsertFromTempToInteractionsRow
-		if err := rows.Scan(&i.ID, &i.PostUriKey, &i.PostAuthorID); err != nil {
+		if err := rows.Scan(&i.ID, &i.PostID); err != nil {
 			return nil, err
 		}
 		items = append(items, i)

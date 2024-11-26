@@ -222,12 +222,11 @@ func (m *Manager) CreateInteraction(interaction models.Interaction) {
 	buffer = append(
 		buffer,
 		db.BulkCreateInteractionsParams{
-			UriKey:       interaction.UriKey,
-			Kind:         int16(interaction.Kind),
-			AuthorID:     interaction.AuthorId,
-			PostUriKey:   interaction.PostUriKey,
-			PostAuthorID: interaction.PostAuthorId,
-			CreatedAt:    pgtype.Timestamp{Time: interaction.CreatedAt, Valid: true},
+			UriKey:    interaction.UriKey,
+			Kind:      int16(interaction.Kind),
+			AuthorID:  interaction.AuthorId,
+			PostID:    interaction.PostId,
+			CreatedAt: pgtype.Timestamp{Time: interaction.CreatedAt, Valid: true},
 		},
 	)
 	m.buffers.Store(event, buffer)
@@ -260,10 +259,12 @@ func (m *Manager) CreateInteraction(interaction models.Interaction) {
 
 			// Update caches
 			for _, interaction := range createdInteractions {
-				m.postsCache.AddInteraction(interaction.PostAuthorID, interaction.PostUriKey)
-				m.usersCache.UpdateUserStatistics(
-					interaction.PostAuthorID, 0, 0, 0, 1,
-				)
+				m.postsCache.AddInteraction(interaction.PostID)
+				if postAuthorId, err := m.GetPostAuthorId(interaction.PostID); err == nil { // post author found
+					m.usersCache.UpdateUserStatistics(
+						postAuthorId, 0, 0, 0, 1,
+					)
+				}
 			}
 		}()
 
@@ -293,74 +294,33 @@ func (m *Manager) CreatePost(post models.Post) {
 	}()
 
 	// Store in DB
-	event := Event{EntityPost, OperationCreate}
-	mutex := m.mutexes[event]
-	if mutex == nil {
-		log.Errorf("Mutex for posts create buffer not initialized")
+	id, err := m.queries.UpsertPost(ctx, db.UpsertPostParams{
+		UriKey:      post.UriKey,
+		AuthorID:    post.AuthorId,
+		ReplyParent: post.ReplyParent,
+		ReplyRoot:   post.ReplyRoot,
+		CreatedAt:   pgtype.Timestamp{Time: post.CreatedAt, Valid: true},
+		Language:    pgtype.Text{String: post.Language, Valid: post.Language != ""},
+	})
+	if err != nil {
+		log.Errorf("Error upserting post: %v", err)
 		return
 	}
-	mutex.Lock()
-	defer mutex.Unlock()
+	post.ID = id
+	m.postsCache.AddPost(post)
 
-	buffer := getBuffer(event, &m.buffers, make([]db.BulkCreatePostsParams, 0))
-	buffer = append(
-		buffer,
-		db.BulkCreatePostsParams{
-			UriKey:      post.UriKey,
-			AuthorID:    post.AuthorId,
-			ReplyParent: post.ReplyParent,
-			ReplyRoot:   post.ReplyRoot,
-			CreatedAt:   pgtype.Timestamp{Time: post.CreatedAt, Valid: true},
-			Language:    pgtype.Text{String: post.Language, Valid: post.Language != ""},
-		},
-	)
-	m.buffers.Store(event, buffer)
-
-	if len(buffer) >= BulkSize[event.Entity] {
-		go func() {
-			var createdPosts []db.InsertFromTempToPostsRow
-
-			m.executeTransaction(
-				func(ctx context.Context, qtx *db.Queries) {
-					// Create temporary table
-					err := qtx.CreateTempPostsTable(ctx)
-					if err != nil {
-						log.Infof("Error creating tmp_posts: %v", err)
-						return
-					}
-					// Copy data to temporary table
-					if _, err := qtx.BulkCreatePosts(context.Background(), buffer); err != nil {
-						log.Errorf("Error creating posts: %v", err)
-						return
-					}
-					// Move data from temporary table to posts
-					createdPosts, err = qtx.InsertFromTempToPosts(ctx)
-					if err != nil {
-						log.Errorf("Error persisting posts: %v", err)
-						return
-					}
-				},
+	// Add post to user statistics
+	err = m.queries.AddUserPosts(ctx, db.AddUserPostsParams{
+		ID:         post.AuthorId,
+		PostsCount: pgtype.Int4{Int32: 1, Valid: true},
+	})
+	if err == nil {
+		// Update cache (exclude replies)
+		if post.ReplyRoot == nil {
+			m.usersCache.UpdateUserStatistics(
+				post.AuthorId, 0, 0, 1, 0,
 			)
-
-			// Add post to user statistics
-			for _, post := range createdPosts {
-				err := m.queries.AddUserPosts(ctx, db.AddUserPostsParams{
-					ID:         post.AuthorID,
-					PostsCount: pgtype.Int4{Int32: 1, Valid: true},
-				})
-				if err == nil {
-					// Update cache (exclude replies)
-					if post.ReplyRoot == nil {
-						m.usersCache.UpdateUserStatistics(
-							post.AuthorID, 0, 0, 1, 0,
-						)
-					}
-				}
-			}
-		}()
-
-		// Clear buffer
-		m.buffers.Store(event, make([]db.BulkCreatePostsParams, 0, len(buffer)))
+		}
 	}
 }
 
@@ -459,10 +419,12 @@ func (m *Manager) DeleteInteraction(identifier models.Identifier) {
 
 			// Update caches
 			for _, interaction := range deletedInteractions {
-				m.postsCache.DeleteInteraction(interaction.PostAuthorID, interaction.PostUriKey)
-				m.usersCache.UpdateUserStatistics(
-					interaction.PostAuthorID, 0, 0, 0, -1,
-				)
+				m.postsCache.DeleteInteraction(interaction.ID)
+				if postAuthorId, err := m.GetPostAuthorId(interaction.PostID); err == nil { // post author found
+					m.usersCache.UpdateUserStatistics(
+						postAuthorId, 0, 0, 0, 1,
+					)
+				}
 			}
 		}()
 
@@ -522,19 +484,16 @@ func (m *Manager) DeletePost(identifier models.Identifier) {
 				})
 				if err == nil {
 					// Update caches
-					deleted := m.postsCache.DeletePost(post.ID)
-					if deleted {
-						postInteractions := m.postsCache.GetPostInteractions(post.ID)
+					m.postsCache.DeletePost(post.ID)
+					postInteractions := m.postsCache.GetPostInteractions(post.ID)
+					if postInteractions > 0 {
 						m.usersCache.UpdateUserStatistics(
 							post.AuthorID, 0, 0, -1, -postInteractions,
 						)
 					}
 				}
 
-				postInteractions, err := m.queries.GetPostInteractions(ctx, db.GetPostInteractionsParams{
-					PostAuthorID: post.AuthorID,
-					PostUriKey:   post.UriKey,
-				})
+				postInteractions, err := m.queries.GetPostInteractions(ctx, post.ID)
 				if err != nil {
 					log.Errorf("Error getting post interactions: %v", err)
 				}
@@ -646,6 +605,32 @@ func (m *Manager) GetOutdatedUserDids() []string {
 		log.Errorf("Error getting user dids for update: %v", err)
 	}
 	return dids
+}
+
+func (m *Manager) GetPostAuthorId(postId int64) (int32, error) {
+	if authorId, ok := m.postsCache.GetPostAuthorId(postId); ok {
+		return authorId, nil
+	}
+	return m.queries.GetPostAuthorId(context.Background(), postId)
+}
+
+func (m *Manager) GetPostId(authorId int32, uriKey string) (int64, error) {
+	if postId, ok := m.postsCache.GetPostId(authorId, uriKey); ok {
+		return postId, nil
+	}
+	id, err := m.queries.UpsertPost(context.Background(), db.UpsertPostParams{
+		AuthorID: authorId,
+		UriKey:   uriKey,
+	})
+	if err != nil {
+		return 0, err
+	}
+	m.postsCache.AddPost(models.Post{
+		ID:       id,
+		AuthorId: authorId,
+		UriKey:   uriKey,
+	})
+	return id, nil
 }
 
 func (m *Manager) GetTimeline(timelineName string, maxRank float64, limit int64) []models.TimelineEntry {

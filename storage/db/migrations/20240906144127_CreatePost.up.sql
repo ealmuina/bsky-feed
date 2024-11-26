@@ -8,7 +8,7 @@ CREATE TABLE posts
     reply_root   TEXT[],
     language     TEXT,
 
-    created_at TIMESTAMP NOT NULL,
+    created_at TIMESTAMP,
 
     UNIQUE (author_id, uri_key)
 );

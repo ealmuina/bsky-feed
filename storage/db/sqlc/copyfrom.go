@@ -67,8 +67,7 @@ func (r iteratorForBulkCreateInteractions) Values() ([]interface{}, error) {
 		r.rows[0].UriKey,
 		r.rows[0].AuthorID,
 		r.rows[0].Kind,
-		r.rows[0].PostUriKey,
-		r.rows[0].PostAuthorID,
+		r.rows[0].PostID,
 		r.rows[0].CreatedAt,
 	}, nil
 }
@@ -78,7 +77,7 @@ func (r iteratorForBulkCreateInteractions) Err() error {
 }
 
 func (q *Queries) BulkCreateInteractions(ctx context.Context, arg []BulkCreateInteractionsParams) (int64, error) {
-	return q.db.CopyFrom(ctx, []string{"tmp_interactions"}, []string{"uri_key", "author_id", "kind", "post_uri_key", "post_author_id", "created_at"}, &iteratorForBulkCreateInteractions{rows: arg})
+	return q.db.CopyFrom(ctx, []string{"tmp_interactions"}, []string{"uri_key", "author_id", "kind", "post_id", "created_at"}, &iteratorForBulkCreateInteractions{rows: arg})
 }
 
 // iteratorForBulkCreatePosts implements pgx.CopyFromSource.

@@ -17,13 +17,12 @@ type Follow struct {
 }
 
 type Interaction struct {
-	ID           int64
-	UriKey       string
-	AuthorID     int32
-	Kind         int16
-	PostAuthorID int32
-	PostUriKey   string
-	CreatedAt    pgtype.Timestamp
+	ID        int64
+	UriKey    string
+	AuthorID  int32
+	Kind      int16
+	PostID    int64
+	CreatedAt pgtype.Timestamp
 }
 
 type Post struct {
@@ -51,13 +50,12 @@ type TmpFollow struct {
 }
 
 type TmpInteraction struct {
-	ID           int64
-	UriKey       string
-	AuthorID     int32
-	Kind         int16
-	PostAuthorID int32
-	PostUriKey   string
-	CreatedAt    pgtype.Timestamp
+	ID        int64
+	UriKey    string
+	AuthorID  int32
+	Kind      int16
+	PostID    int64
+	CreatedAt pgtype.Timestamp
 }
 
 type TmpPost struct {

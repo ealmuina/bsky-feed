@@ -292,14 +292,18 @@ func (s *Subscription) handleInteractionCreate(evt *jsmodels.Event) error {
 			log.Errorf("Error creating user: %v", err)
 			return
 		}
+		postId, err := s.storageManager.GetPostId(postAuthorId, postUriKey)
+		if err != nil {
+			log.Errorf("Error getting post id: %v", err)
+			return
+		}
 		s.storageManager.CreateInteraction(
 			models.Interaction{
-				UriKey:       evt.Commit.RKey,
-				Kind:         kind,
-				AuthorId:     authorId,
-				PostUriKey:   postUriKey,
-				PostAuthorId: postAuthorId,
-				CreatedAt:    createdAt,
+				UriKey:    evt.Commit.RKey,
+				Kind:      kind,
+				AuthorId:  authorId,
+				PostId:    postId,
+				CreatedAt: createdAt,
 			},
 		)
 	}()
