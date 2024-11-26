@@ -30,7 +30,7 @@ const (
 	InvalidRequestError     = "InvalidRequest" // Seen when profile is not found
 	ExpiredToken            = "ExpiredToken"
 )
-const NumWorkers = 8
+const NumWorkers = 16
 
 type Backfiller struct {
 	serviceName      string
