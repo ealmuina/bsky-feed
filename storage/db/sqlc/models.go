@@ -26,13 +26,13 @@ type Interaction struct {
 }
 
 type Post struct {
-	ID          int64
-	UriKey      string
-	AuthorID    int32
-	ReplyParent []string
-	ReplyRoot   []string
-	Language    pgtype.Text
-	CreatedAt   pgtype.Timestamp
+	ID            int64
+	UriKey        string
+	AuthorID      int32
+	ReplyParentID pgtype.Int8
+	ReplyRootID   pgtype.Int8
+	Language      pgtype.Text
+	CreatedAt     pgtype.Timestamp
 }
 
 type SubscriptionState struct {
@@ -59,13 +59,13 @@ type TmpInteraction struct {
 }
 
 type TmpPost struct {
-	ID          int64
-	UriKey      string
-	AuthorID    int32
-	ReplyParent []string
-	ReplyRoot   []string
-	Language    pgtype.Text
-	CreatedAt   pgtype.Timestamp
+	ID            int64
+	UriKey        string
+	AuthorID      int32
+	ReplyParentID pgtype.Int8
+	ReplyRootID   pgtype.Int8
+	Language      pgtype.Text
+	CreatedAt     pgtype.Timestamp
 }
 
 type User struct {

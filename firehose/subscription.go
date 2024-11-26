@@ -141,9 +141,7 @@ func (s *Subscription) handleFeedPostCreate(evt *jsmodels.Event) error {
 		createdAt = now
 	}
 
-	var replyParent []string
-	var replyRoot []string
-
+	var replyParentId, replyRootId int64
 	if post.Reply != nil {
 		if post.Reply.Parent != nil {
 			authorDid, uriKey, err := utils.SplitUri(post.Reply.Parent.Uri, "/app.bsky.feed.post/")
@@ -154,7 +152,10 @@ func (s *Subscription) handleFeedPostCreate(evt *jsmodels.Event) error {
 			if err != nil {
 				return err
 			}
-			replyParent = []string{strconv.Itoa(int(authorId)), uriKey}
+			replyParentId, err = s.storageManager.GetPostId(authorId, uriKey)
+			if err != nil {
+				return err
+			}
 		}
 		if post.Reply.Root != nil {
 			authorDid, uriKey, err := utils.SplitUri(post.Reply.Root.Uri, "/app.bsky.feed.post/")
@@ -165,7 +166,10 @@ func (s *Subscription) handleFeedPostCreate(evt *jsmodels.Event) error {
 			if err != nil {
 				return err
 			}
-			replyRoot = []string{strconv.Itoa(int(authorId)), uriKey}
+			replyRootId, err = s.storageManager.GetPostId(authorId, uriKey)
+			if err != nil {
+				return err
+			}
 		}
 	}
 
@@ -187,16 +191,16 @@ func (s *Subscription) handleFeedPostCreate(evt *jsmodels.Event) error {
 		}
 		s.storageManager.CreatePost(
 			models.Post{
-				UriKey:      evt.Commit.RKey,
-				AuthorId:    authorId,
-				AuthorDid:   evt.Did,
-				ReplyParent: replyParent,
-				ReplyRoot:   replyRoot,
-				CreatedAt:   createdAt,
-				Language:    language,
-				Rank:        rank,
-				Text:        post.Text,
-				Embed:       post.Embed,
+				UriKey:        evt.Commit.RKey,
+				AuthorId:      authorId,
+				AuthorDid:     evt.Did,
+				ReplyParentId: replyParentId,
+				ReplyRootId:   replyRootId,
+				CreatedAt:     createdAt,
+				Language:      language,
+				Rank:          rank,
+				Text:          post.Text,
+				Embed:         post.Embed,
 			})
 
 	}()

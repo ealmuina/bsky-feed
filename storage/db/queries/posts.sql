@@ -7,24 +7,24 @@ FROM posts
     WITH NO DATA;
 
 -- name: BulkCreatePosts :copyfrom
-INSERT INTO tmp_posts (uri_key, author_id, reply_parent, reply_root, created_at, language)
+INSERT INTO tmp_posts (uri_key, author_id, reply_parent_id, reply_root_id, created_at, language)
 VALUES ($1, $2, $3, $4, $5, $6);
 
 -- name: InsertFromTempToPosts :many
-INSERT INTO posts (uri_key, author_id, reply_parent, reply_root, created_at, language)
-SELECT uri_key, author_id, reply_parent, reply_root, created_at, language
+INSERT INTO posts (uri_key, author_id, reply_parent_id, reply_root_id, created_at, language)
+SELECT uri_key, author_id, reply_parent_id, reply_root_id, created_at, language
 FROM tmp_posts
 ON CONFLICT DO NOTHING
-RETURNING id, author_id, reply_root;
+RETURNING id, author_id, reply_root_id;
 
 -- name: UpsertPost :one
-INSERT INTO posts (uri_key, author_id, reply_parent, reply_root, created_at, language)
+INSERT INTO posts (uri_key, author_id, reply_parent_id, reply_root_id, created_at, language)
 VALUES ($1, $2, $3, $4, $5, $6)
 ON CONFLICT (author_id, uri_key) DO UPDATE
-    SET reply_parent = COALESCE(posts.reply_parent, excluded.reply_parent),
-        reply_root   = COALESCE(posts.reply_root, excluded.reply_root),
-        created_at   = COALESCE(posts.created_at, excluded.created_at),
-        language     = COALESCE(posts.language, excluded.language)
+    SET reply_parent_id = COALESCE(posts.reply_parent_id, excluded.reply_parent_id),
+        reply_root_id   = COALESCE(posts.reply_root_id, excluded.reply_root_id),
+        created_at      = COALESCE(posts.created_at, excluded.created_at),
+        language        = COALESCE(posts.language, excluded.language)
 RETURNING id;
 
 -- name: BulkDeletePosts :many

@@ -12,12 +12,12 @@ import (
 )
 
 type BulkCreatePostsParams struct {
-	UriKey      string
-	AuthorID    int32
-	ReplyParent []string
-	ReplyRoot   []string
-	CreatedAt   pgtype.Timestamp
-	Language    pgtype.Text
+	UriKey        string
+	AuthorID      int32
+	ReplyParentID pgtype.Int8
+	ReplyRootID   pgtype.Int8
+	CreatedAt     pgtype.Timestamp
+	Language      pgtype.Text
 }
 
 const bulkDeletePosts = `-- name: BulkDeletePosts :many
@@ -63,7 +63,7 @@ const createTempPostsTable = `-- name: CreateTempPostsTable :exec
 CREATE TEMPORARY TABLE tmp_posts
     ON COMMIT DROP
 AS
-SELECT id, uri_key, author_id, reply_parent, reply_root, language, created_at
+SELECT id, uri_key, author_id, reply_parent_id, reply_root_id, language, created_at
 FROM posts
     WITH NO DATA
 `
@@ -169,17 +169,17 @@ func (q *Queries) GetUserPosts(ctx context.Context, authorID int32) ([]GetUserPo
 }
 
 const insertFromTempToPosts = `-- name: InsertFromTempToPosts :many
-INSERT INTO posts (uri_key, author_id, reply_parent, reply_root, created_at, language)
-SELECT uri_key, author_id, reply_parent, reply_root, created_at, language
+INSERT INTO posts (uri_key, author_id, reply_parent_id, reply_root_id, created_at, language)
+SELECT uri_key, author_id, reply_parent_id, reply_root_id, created_at, language
 FROM tmp_posts
 ON CONFLICT DO NOTHING
-RETURNING id, author_id, reply_root
+RETURNING id, author_id, reply_root_id
 `
 
 type InsertFromTempToPostsRow struct {
-	ID        int64
-	AuthorID  int32
-	ReplyRoot []string
+	ID          int64
+	AuthorID    int32
+	ReplyRootID pgtype.Int8
 }
 
 func (q *Queries) InsertFromTempToPosts(ctx context.Context) ([]InsertFromTempToPostsRow, error) {
@@ -191,7 +191,7 @@ func (q *Queries) InsertFromTempToPosts(ctx context.Context) ([]InsertFromTempTo
 	var items []InsertFromTempToPostsRow
 	for rows.Next() {
 		var i InsertFromTempToPostsRow
-		if err := rows.Scan(&i.ID, &i.AuthorID, &i.ReplyRoot); err != nil {
+		if err := rows.Scan(&i.ID, &i.AuthorID, &i.ReplyRootID); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -203,31 +203,31 @@ func (q *Queries) InsertFromTempToPosts(ctx context.Context) ([]InsertFromTempTo
 }
 
 const upsertPost = `-- name: UpsertPost :one
-INSERT INTO posts (uri_key, author_id, reply_parent, reply_root, created_at, language)
+INSERT INTO posts (uri_key, author_id, reply_parent_id, reply_root_id, created_at, language)
 VALUES ($1, $2, $3, $4, $5, $6)
 ON CONFLICT (author_id, uri_key) DO UPDATE
-    SET reply_parent = COALESCE(posts.reply_parent, excluded.reply_parent),
-        reply_root   = COALESCE(posts.reply_root, excluded.reply_root),
-        created_at   = COALESCE(posts.created_at, excluded.created_at),
-        language     = COALESCE(posts.language, excluded.language)
+    SET reply_parent_id = COALESCE(posts.reply_parent_id, excluded.reply_parent_id),
+        reply_root_id   = COALESCE(posts.reply_root_id, excluded.reply_root_id),
+        created_at      = COALESCE(posts.created_at, excluded.created_at),
+        language        = COALESCE(posts.language, excluded.language)
 RETURNING id
 `
 
 type UpsertPostParams struct {
-	UriKey      string
-	AuthorID    int32
-	ReplyParent []string
-	ReplyRoot   []string
-	CreatedAt   pgtype.Timestamp
-	Language    pgtype.Text
+	UriKey        string
+	AuthorID      int32
+	ReplyParentID pgtype.Int8
+	ReplyRootID   pgtype.Int8
+	CreatedAt     pgtype.Timestamp
+	Language      pgtype.Text
 }
 
 func (q *Queries) UpsertPost(ctx context.Context, arg UpsertPostParams) (int64, error) {
 	row := q.db.QueryRow(ctx, upsertPost,
 		arg.UriKey,
 		arg.AuthorID,
-		arg.ReplyParent,
-		arg.ReplyRoot,
+		arg.ReplyParentID,
+		arg.ReplyRootID,
 		arg.CreatedAt,
 		arg.Language,
 	)

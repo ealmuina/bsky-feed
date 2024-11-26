@@ -295,12 +295,12 @@ func (m *Manager) CreatePost(post models.Post) {
 
 	// Store in DB
 	id, err := m.queries.UpsertPost(ctx, db.UpsertPostParams{
-		UriKey:      post.UriKey,
-		AuthorID:    post.AuthorId,
-		ReplyParent: post.ReplyParent,
-		ReplyRoot:   post.ReplyRoot,
-		CreatedAt:   pgtype.Timestamp{Time: post.CreatedAt, Valid: true},
-		Language:    pgtype.Text{String: post.Language, Valid: post.Language != ""},
+		UriKey:        post.UriKey,
+		AuthorID:      post.AuthorId,
+		ReplyParentID: pgtype.Int8{Int64: post.ReplyParentId, Valid: post.ReplyParentId != 0},
+		ReplyRootID:   pgtype.Int8{Int64: post.ReplyRootId, Valid: post.ReplyRootId != 0},
+		CreatedAt:     pgtype.Timestamp{Time: post.CreatedAt, Valid: true},
+		Language:      pgtype.Text{String: post.Language, Valid: post.Language != ""},
 	})
 	if err != nil {
 		log.Errorf("Error upserting post: %v", err)
@@ -316,7 +316,7 @@ func (m *Manager) CreatePost(post models.Post) {
 	})
 	if err == nil {
 		// Update cache (exclude replies)
-		if post.ReplyRoot == nil {
+		if post.ReplyRootId == 0 {
 			m.usersCache.UpdateUserStatistics(
 				post.AuthorId, 0, 0, 1, 0,
 			)

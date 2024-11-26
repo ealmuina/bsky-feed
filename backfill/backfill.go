@@ -20,7 +20,6 @@ import (
 	"math"
 	"net/http"
 	"os"
-	"strconv"
 	"strings"
 	"time"
 )
@@ -208,9 +207,7 @@ func (b *Backfiller) handlePostCreate(did string, uri string, post *appbsky.Feed
 	uriParts := strings.Split(uri, "/")
 	uriKey := uriParts[len(uriParts)-1]
 
-	var replyParent []string
-	var replyRoot []string
-
+	var replyParentId, replyRootId int64
 	if post.Reply != nil {
 		if post.Reply.Parent != nil {
 			authorDid, uriKey, err := utils.SplitUri(post.Reply.Parent.Uri, "/app.bsky.feed.post/")
@@ -221,7 +218,10 @@ func (b *Backfiller) handlePostCreate(did string, uri string, post *appbsky.Feed
 			if err != nil {
 				return
 			}
-			replyParent = []string{strconv.Itoa(int(authorId)), uriKey}
+			replyParentId, err = b.storageManager.GetPostId(authorId, uriKey)
+			if err != nil {
+				return
+			}
 		}
 		if post.Reply.Root != nil {
 			authorDid, uriKey, err := utils.SplitUri(post.Reply.Root.Uri, "/app.bsky.feed.post/")
@@ -232,7 +232,10 @@ func (b *Backfiller) handlePostCreate(did string, uri string, post *appbsky.Feed
 			if err != nil {
 				return
 			}
-			replyRoot = []string{strconv.Itoa(int(authorId)), uriKey}
+			replyRootId, err = b.storageManager.GetPostId(authorId, uriKey)
+			if err != nil {
+				return
+			}
 		}
 	}
 
@@ -254,16 +257,16 @@ func (b *Backfiller) handlePostCreate(did string, uri string, post *appbsky.Feed
 		}
 		b.storageManager.CreatePost(
 			models.Post{
-				UriKey:      uriKey,
-				AuthorId:    authorId,
-				AuthorDid:   did,
-				ReplyParent: replyParent,
-				ReplyRoot:   replyRoot,
-				CreatedAt:   createdAt,
-				Language:    language,
-				Rank:        rank,
-				Text:        post.Text,
-				Embed:       post.Embed,
+				UriKey:        uriKey,
+				AuthorId:      authorId,
+				AuthorDid:     did,
+				ReplyParentId: replyParentId,
+				ReplyRootId:   replyRootId,
+				CreatedAt:     createdAt,
+				Language:      language,
+				Rank:          rank,
+				Text:          post.Text,
+				Embed:         post.Embed,
 			})
 
 	}()
