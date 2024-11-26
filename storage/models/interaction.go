@@ -12,7 +12,7 @@ const (
 type Interaction struct {
 	UriKey       string
 	Kind         InteractionType
-	AuthorID     int32
+	AuthorId     int32
 	PostUriKey   string
 	PostAuthorId int32
 	CreatedAt    time.Time

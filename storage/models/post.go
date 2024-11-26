@@ -7,7 +7,7 @@ import (
 )
 
 type Post struct {
-	ID          int32
+	ID          int64
 	UriKey      string
 	Rank        float64
 	CreatedAt   time.Time

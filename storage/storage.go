@@ -132,7 +132,7 @@ func (m *Manager) CleanOldData(persistentDb bool) {
 	if err != nil {
 		log.Errorf("Error retrieving old posts: %v", err)
 	}
-	postIds := make([]int32, 0, len(oldPosts))
+	postIds := make([]int64, 0, len(oldPosts))
 	for _, post := range oldPosts {
 		postIds = append(postIds, post.ID)
 
@@ -224,7 +224,7 @@ func (m *Manager) CreateInteraction(interaction models.Interaction) {
 		db.BulkCreateInteractionsParams{
 			UriKey:       interaction.UriKey,
 			Kind:         int16(interaction.Kind),
-			AuthorID:     interaction.AuthorID,
+			AuthorID:     interaction.AuthorId,
 			PostUriKey:   interaction.PostUriKey,
 			PostAuthorID: interaction.PostAuthorId,
 			CreatedAt:    pgtype.Timestamp{Time: interaction.CreatedAt, Valid: true},
@@ -524,7 +524,7 @@ func (m *Manager) DeletePost(identifier models.Identifier) {
 					// Update caches
 					deleted := m.postsCache.DeletePost(post.ID)
 					if deleted {
-						postInteractions := m.postsCache.GetPostInteractions(post.AuthorID)
+						postInteractions := m.postsCache.GetPostInteractions(post.ID)
 						m.usersCache.UpdateUserStatistics(
 							post.AuthorID, 0, 0, -1, -postInteractions,
 						)

@@ -9,7 +9,7 @@ import (
 	"time"
 )
 
-const PostInteractionsCountCacheRedisKey = "posts_interactions_count"
+const PostInteractionsCountRedisKey = "posts_interactions_count"
 
 type PostsCache struct {
 	redisClient *redis.Client
@@ -23,27 +23,27 @@ func NewPostsCache(redisConnection *redis.Client, expiration time.Duration) Post
 	}
 }
 
-func (c *PostsCache) AddInteraction(authorId int32, uriKey string) {
+func (c *PostsCache) AddInteraction(postId int64) {
 	ctx := context.Background()
-	idStr := fmt.Sprintf("%d/%s", authorId, uriKey)
-	c.redisClient.HIncrBy(ctx, PostInteractionsCountCacheRedisKey, idStr, 1)
-	c.redisClient.HExpire(ctx, PostInteractionsCountCacheRedisKey, c.expiration, idStr)
+	idStr := strconv.FormatInt(postId, 10)
+	c.redisClient.HIncrBy(ctx, PostInteractionsCountRedisKey, idStr, 1)
+	c.redisClient.HExpire(ctx, PostInteractionsCountRedisKey, c.expiration, idStr)
 }
 
-func (c *PostsCache) DeleteInteraction(authorId int32, uriKey string) {
+func (c *PostsCache) DeleteInteraction(postId int64) {
 	ctx := context.Background()
-	idStr := fmt.Sprintf("%d/%s", authorId, uriKey)
-	c.redisClient.HIncrBy(ctx, PostInteractionsCountCacheRedisKey, idStr, -1)
+	idStr := strconv.FormatInt(postId, 10)
+	c.redisClient.HIncrBy(ctx, PostInteractionsCountRedisKey, idStr, -1)
 }
 
-func (c *PostsCache) DeletePost(id int32) bool {
+func (c *PostsCache) DeletePost(id int64) bool {
 	ctx := context.Background()
-	idStr := fmt.Sprintf("%d", id)
-	result := c.redisClient.HDel(ctx, PostInteractionsCountCacheRedisKey, idStr)
+	idStr := strconv.FormatInt(id, 10)
+	result := c.redisClient.HDel(ctx, PostInteractionsCountRedisKey, idStr)
 	return result.Val() != 0
 }
 
-func (c *PostsCache) DeletePosts(id []int32) {
+func (c *PostsCache) DeletePosts(id []int64) {
 	ctx := context.Background()
 
 	idStr := make([]string, len(id))
@@ -51,14 +51,14 @@ func (c *PostsCache) DeletePosts(id []int32) {
 		idStr[i] = fmt.Sprintf("%d", v)
 	}
 
-	c.redisClient.HDel(ctx, PostInteractionsCountCacheRedisKey, idStr...)
+	c.redisClient.HDel(ctx, PostInteractionsCountRedisKey, idStr...)
 }
 
-func (c *PostsCache) GetPostInteractions(id int32) int32 {
-	idStr := fmt.Sprintf("%d", id)
+func (c *PostsCache) GetPostInteractions(id int64) int64 {
+	idStr := strconv.FormatInt(id, 10)
 	interactionsCountStr, err := c.redisClient.HGet(
 		context.Background(),
-		PostInteractionsCountCacheRedisKey,
+		PostInteractionsCountRedisKey,
 		idStr,
 	).Result()
 	if err != nil {
@@ -68,5 +68,5 @@ func (c *PostsCache) GetPostInteractions(id int32) int32 {
 	if err != nil {
 		log.Errorf("Could not convert value to int: %v", err)
 	}
-	return int32(interactionsCount)
+	return int64(interactionsCount)
 }

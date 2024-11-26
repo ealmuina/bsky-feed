@@ -1,6 +1,6 @@
 CREATE TABLE follows
 (
-    id         SERIAL PRIMARY KEY,
+    id BIGSERIAL PRIMARY KEY,
     uri_key    TEXT      NOT NULL,
     author_id  INT       NOT NULL,
 

@@ -32,7 +32,7 @@ type BulkDeleteFollowsParams struct {
 }
 
 type BulkDeleteFollowsRow struct {
-	ID        int32
+	ID        int64
 	AuthorID  int32
 	SubjectID int32
 }
@@ -79,7 +79,7 @@ WHERE author_id = $1
 `
 
 type GetFollowsTouchingUserRow struct {
-	ID       int32
+	ID       int64
 	UriKey   string
 	AuthorID int32
 }
@@ -113,7 +113,7 @@ RETURNING id, author_id, subject_id
 `
 
 type InsertFromTempToFollowsRow struct {
-	ID        int32
+	ID        int64
 	AuthorID  int32
 	SubjectID int32
 }

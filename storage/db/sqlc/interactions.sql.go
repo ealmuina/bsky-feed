@@ -34,7 +34,7 @@ type BulkDeleteInteractionsParams struct {
 }
 
 type BulkDeleteInteractionsRow struct {
-	ID           int32
+	ID           int64
 	PostUriKey   string
 	PostAuthorID int32
 }
@@ -97,7 +97,7 @@ type GetPostInteractionsParams struct {
 }
 
 type GetPostInteractionsRow struct {
-	ID       int32
+	ID       int64
 	UriKey   string
 	AuthorID int32
 }
@@ -165,7 +165,7 @@ RETURNING id, post_uri_key, post_author_id
 `
 
 type InsertFromTempToInteractionsRow struct {
-	ID           int32
+	ID           int64
 	PostUriKey   string
 	PostAuthorID int32
 }

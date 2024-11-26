@@ -18,10 +18,10 @@ const UserDidToIdRedisKey = "users_did_to_id"
 
 type UserStatistics struct {
 	ID                int32
-	FollowersCount    int32
-	FollowsCount      int32
-	PostsCount        int32
-	InteractionsCount int32
+	FollowersCount    int64
+	FollowsCount      int64
+	PostsCount        int64
+	InteractionsCount int64
 }
 
 func (s *UserStatistics) GetEngagementFactor() float64 {
@@ -75,17 +75,17 @@ func (c *UsersCache) GetUserStatistics(id int32) UserStatistics {
 	ctx := context.Background()
 	idStr := fmt.Sprintf("%d", id)
 
-	followersCount, _ := c.redisClient.HGet(ctx, UsersFollowersCountRedisKey, idStr).Int()
-	followsCount, _ := c.redisClient.HGet(ctx, UsersFollowsCountRedisKey, idStr).Int()
-	postsCount, _ := c.redisClient.HGet(ctx, UsersPostsCountRedisKey, idStr).Int()
-	interactionsCount, _ := c.redisClient.HGet(ctx, UsersInteractionsCountRedisKey, idStr).Int()
+	followersCount, _ := c.redisClient.HGet(ctx, UsersFollowersCountRedisKey, idStr).Int64()
+	followsCount, _ := c.redisClient.HGet(ctx, UsersFollowsCountRedisKey, idStr).Int64()
+	postsCount, _ := c.redisClient.HGet(ctx, UsersPostsCountRedisKey, idStr).Int64()
+	interactionsCount, _ := c.redisClient.HGet(ctx, UsersInteractionsCountRedisKey, idStr).Int64()
 
 	return UserStatistics{
 		ID:                id,
-		FollowersCount:    int32(followersCount),
-		FollowsCount:      int32(followsCount),
-		PostsCount:        int32(postsCount),
-		InteractionsCount: int32(interactionsCount),
+		FollowersCount:    followersCount,
+		FollowsCount:      followsCount,
+		PostsCount:        postsCount,
+		InteractionsCount: interactionsCount,
 	}
 }
 
@@ -102,22 +102,22 @@ func (c *UsersCache) SetUserFollows(id int32, followersCount int64, followsCount
 
 func (c *UsersCache) UpdateUserStatistics(
 	id int32,
-	followsDelta int32,
-	followersDelta int32,
-	postsDelta int32,
-	interactionsDelta int32,
+	followsDelta int64,
+	followersDelta int64,
+	postsDelta int64,
+	interactionsDelta int64,
 ) {
 	ctx := context.Background()
 	idStr := fmt.Sprintf("%d", id)
 
-	for redisKey, delta := range map[string]int32{
+	for redisKey, delta := range map[string]int64{
 		UsersFollowersCountRedisKey:    followersDelta,
 		UsersFollowsCountRedisKey:      followsDelta,
 		UsersPostsCountRedisKey:        postsDelta,
 		UsersInteractionsCountRedisKey: interactionsDelta,
 	} {
 		if delta != 0 {
-			c.redisClient.HIncrBy(ctx, redisKey, idStr, int64(delta))
+			c.redisClient.HIncrBy(ctx, redisKey, idStr, delta)
 			c.redisClient.HExpire(ctx, redisKey, c.expiration, idStr)
 		}
 	}
@@ -136,5 +136,5 @@ func (c *UsersCache) UserDidToId(did string) (int32, bool) {
 	if err != nil {
 		return 0, false
 	}
-	return int32(id), true
+	return int32(int64(id)), true
 }

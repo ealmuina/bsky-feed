@@ -296,7 +296,7 @@ func (s *Subscription) handleInteractionCreate(evt *jsmodels.Event) error {
 			models.Interaction{
 				UriKey:       evt.Commit.RKey,
 				Kind:         kind,
-				AuthorID:     authorId,
+				AuthorId:     authorId,
 				PostUriKey:   postUriKey,
 				PostAuthorId: postAuthorId,
 				CreatedAt:    createdAt,

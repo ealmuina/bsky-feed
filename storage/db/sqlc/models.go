@@ -9,7 +9,7 @@ import (
 )
 
 type Follow struct {
-	ID        int32
+	ID        int64
 	UriKey    string
 	AuthorID  int32
 	SubjectID int32
@@ -17,7 +17,7 @@ type Follow struct {
 }
 
 type Interaction struct {
-	ID           int32
+	ID           int64
 	UriKey       string
 	AuthorID     int32
 	Kind         int16
@@ -27,7 +27,7 @@ type Interaction struct {
 }
 
 type Post struct {
-	ID          int32
+	ID          int64
 	UriKey      string
 	AuthorID    int32
 	ReplyParent []string
@@ -43,7 +43,7 @@ type SubscriptionState struct {
 }
 
 type TmpFollow struct {
-	ID        int32
+	ID        int64
 	UriKey    string
 	AuthorID  int32
 	SubjectID int32
@@ -51,7 +51,7 @@ type TmpFollow struct {
 }
 
 type TmpInteraction struct {
-	ID           int32
+	ID           int64
 	UriKey       string
 	AuthorID     int32
 	Kind         int16
@@ -61,7 +61,7 @@ type TmpInteraction struct {
 }
 
 type TmpPost struct {
-	ID          int32
+	ID          int64
 	UriKey      string
 	AuthorID    int32
 	ReplyParent []string

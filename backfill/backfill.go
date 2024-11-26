@@ -179,7 +179,7 @@ func (b *Backfiller) handleInteractionCreate(did string, uri string, kind models
 			models.Interaction{
 				UriKey:       uriKey,
 				Kind:         kind,
-				AuthorID:     authorId,
+				AuthorId:     authorId,
 				PostUriKey:   postUriKey,
 				PostAuthorId: postAuthorId,
 				CreatedAt:    createdAt,

@@ -34,7 +34,7 @@ type BulkDeletePostsParams struct {
 }
 
 type BulkDeletePostsRow struct {
-	ID       int32
+	ID       int64
 	AuthorID int32
 	UriKey   string
 }
@@ -80,7 +80,7 @@ WHERE posts.created_at < current_timestamp - interval '7 days'
 `
 
 type GetOldPostsRow struct {
-	ID       int32
+	ID       int64
 	AuthorID int32
 }
 
@@ -111,7 +111,7 @@ WHERE author_id = $1
 `
 
 type GetUserPostsRow struct {
-	ID       int32
+	ID       int64
 	UriKey   string
 	AuthorID int32
 }
@@ -145,7 +145,7 @@ RETURNING id, author_id, reply_root
 `
 
 type InsertFromTempToPostsRow struct {
-	ID        int32
+	ID        int64
 	AuthorID  int32
 	ReplyRoot []string
 }
