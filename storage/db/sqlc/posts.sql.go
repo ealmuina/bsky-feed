@@ -23,14 +23,14 @@ type BulkCreatePostsParams struct {
 const bulkDeletePosts = `-- name: BulkDeletePosts :many
 DELETE
 FROM posts
-WHERE uri_key = ANY ($1::VARCHAR[])
-  AND author_id = ANY ($2::INT[])
+WHERE author_id = ANY ($1::INT[])
+  AND uri_key = ANY ($2::VARCHAR[])
 RETURNING id, author_id, uri_key
 `
 
 type BulkDeletePostsParams struct {
-	UriKeys   []string
 	AuthorIds []int32
+	UriKeys   []string
 }
 
 type BulkDeletePostsRow struct {
@@ -40,7 +40,7 @@ type BulkDeletePostsRow struct {
 }
 
 func (q *Queries) BulkDeletePosts(ctx context.Context, arg BulkDeletePostsParams) ([]BulkDeletePostsRow, error) {
-	rows, err := q.db.Query(ctx, bulkDeletePosts, arg.UriKeys, arg.AuthorIds)
+	rows, err := q.db.Query(ctx, bulkDeletePosts, arg.AuthorIds, arg.UriKeys)
 	if err != nil {
 		return nil, err
 	}

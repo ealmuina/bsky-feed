@@ -23,14 +23,14 @@ type BulkCreateInteractionsParams struct {
 const bulkDeleteInteractions = `-- name: BulkDeleteInteractions :many
 DELETE
 FROM interactions
-WHERE uri_key = ANY ($1::VARCHAR[])
-  AND author_id = ANY ($2::INT[])
+WHERE author_id = ANY ($1::INT[])
+  AND uri_key = ANY ($2::VARCHAR[])
 RETURNING id, post_uri_key, post_author_id
 `
 
 type BulkDeleteInteractionsParams struct {
-	UriKeys   []string
 	AuthorIds []int32
+	UriKeys   []string
 }
 
 type BulkDeleteInteractionsRow struct {
@@ -40,7 +40,7 @@ type BulkDeleteInteractionsRow struct {
 }
 
 func (q *Queries) BulkDeleteInteractions(ctx context.Context, arg BulkDeleteInteractionsParams) ([]BulkDeleteInteractionsRow, error) {
-	rows, err := q.db.Query(ctx, bulkDeleteInteractions, arg.UriKeys, arg.AuthorIds)
+	rows, err := q.db.Query(ctx, bulkDeleteInteractions, arg.AuthorIds, arg.UriKeys)
 	if err != nil {
 		return nil, err
 	}

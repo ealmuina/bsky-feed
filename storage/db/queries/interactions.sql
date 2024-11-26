@@ -20,8 +20,8 @@ RETURNING id, post_uri_key, post_author_id;
 -- name: BulkDeleteInteractions :many
 DELETE
 FROM interactions
-WHERE uri_key = ANY (@uri_keys::VARCHAR[])
-  AND author_id = ANY (@author_ids::INT[])
+WHERE author_id = ANY (@author_ids::INT[])
+  AND uri_key = ANY (@uri_keys::VARCHAR[])
 RETURNING id, post_uri_key, post_author_id;
 
 -- name: GetUserInteractions :many

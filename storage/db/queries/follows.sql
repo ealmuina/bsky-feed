@@ -20,8 +20,8 @@ RETURNING id, author_id, subject_id;
 -- name: BulkDeleteFollows :many
 DELETE
 FROM follows
-WHERE uri_key = ANY (@uri_keys::VARCHAR[])
-  AND author_id = ANY (@author_ids::INT[])
+WHERE author_id = ANY (@author_ids::INT[])
+  AND uri_key = ANY (@uri_keys::VARCHAR[])
 RETURNING id, author_id, subject_id;
 
 -- name: GetFollowsTouchingUser :many

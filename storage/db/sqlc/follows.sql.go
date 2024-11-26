@@ -21,14 +21,14 @@ type BulkCreateFollowsParams struct {
 const bulkDeleteFollows = `-- name: BulkDeleteFollows :many
 DELETE
 FROM follows
-WHERE uri_key = ANY ($1::VARCHAR[])
-  AND author_id = ANY ($2::INT[])
+WHERE author_id = ANY ($1::INT[])
+  AND uri_key = ANY ($2::VARCHAR[])
 RETURNING id, author_id, subject_id
 `
 
 type BulkDeleteFollowsParams struct {
-	UriKeys   []string
 	AuthorIds []int32
+	UriKeys   []string
 }
 
 type BulkDeleteFollowsRow struct {
@@ -38,7 +38,7 @@ type BulkDeleteFollowsRow struct {
 }
 
 func (q *Queries) BulkDeleteFollows(ctx context.Context, arg BulkDeleteFollowsParams) ([]BulkDeleteFollowsRow, error) {
-	rows, err := q.db.Query(ctx, bulkDeleteFollows, arg.UriKeys, arg.AuthorIds)
+	rows, err := q.db.Query(ctx, bulkDeleteFollows, arg.AuthorIds, arg.UriKeys)
 	if err != nil {
 		return nil, err
 	}

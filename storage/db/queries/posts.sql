@@ -20,8 +20,8 @@ RETURNING id, author_id, reply_root;
 -- name: BulkDeletePosts :many
 DELETE
 FROM posts
-WHERE uri_key = ANY (@uri_keys::VARCHAR[])
-  AND author_id = ANY (@author_ids::INT[])
+WHERE author_id = ANY (@author_ids::INT[])
+  AND uri_key = ANY (@uri_keys::VARCHAR[])
 RETURNING id, author_id, uri_key;
 
 -- name: GetOldPosts :many
