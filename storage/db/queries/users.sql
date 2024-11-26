@@ -49,24 +49,7 @@ LIMIT 1;
 SELECT users.did
 FROM users
 WHERE last_update IS NULL
-   OR last_update < current_timestamp - (refresh_frequency || ' days')::interval;
-
--- name: SetUserFollow :exec
-UPDATE users
-SET follows = COALESCE(follows, '{}'::jsonb) || ('{"' || @rkey::text || '":' || @subject_id::int || '}')::jsonb
-WHERE id = @id;
-
--- name: RemoveUserFollow :one
-WITH deleted_key AS (SELECT u.id,
-                            u.follows -> @rkey::text AS deleted_value,
-                            u.follows - @rkey::text  AS updated_follows
-                     FROM users u
-                     WHERE u.id = @id)
-UPDATE users
-SET follows = deleted_key.updated_follows
-FROM deleted_key
-WHERE users.id = deleted_key.id
-RETURNING deleted_key.deleted_value;
+   OR last_update < current_timestamp - (COALESCE(refresh_frequency, 30) || ' days')::interval;
 
 -- name: SetUserMetadata :exec
 UPDATE users

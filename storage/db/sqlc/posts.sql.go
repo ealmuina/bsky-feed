@@ -25,7 +25,7 @@ DELETE
 FROM posts
 WHERE uri_key = ANY ($1::VARCHAR[])
   AND author_id = ANY ($2::INT[])
-RETURNING id, author_id
+RETURNING id, author_id, uri_key
 `
 
 type BulkDeletePostsParams struct {
@@ -36,6 +36,7 @@ type BulkDeletePostsParams struct {
 type BulkDeletePostsRow struct {
 	ID       int32
 	AuthorID int32
+	UriKey   string
 }
 
 func (q *Queries) BulkDeletePosts(ctx context.Context, arg BulkDeletePostsParams) ([]BulkDeletePostsRow, error) {
@@ -47,7 +48,7 @@ func (q *Queries) BulkDeletePosts(ctx context.Context, arg BulkDeletePostsParams
 	var items []BulkDeletePostsRow
 	for rows.Next() {
 		var i BulkDeletePostsRow
-		if err := rows.Scan(&i.ID, &i.AuthorID); err != nil {
+		if err := rows.Scan(&i.ID, &i.AuthorID, &i.UriKey); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -72,17 +73,6 @@ func (q *Queries) CreateTempPostsTable(ctx context.Context) error {
 	return err
 }
 
-const deleteUserPosts = `-- name: DeleteUserPosts :exec
-DELETE
-FROM posts
-WHERE author_id = $1
-`
-
-func (q *Queries) DeleteUserPosts(ctx context.Context, authorID int32) error {
-	_, err := q.db.Exec(ctx, deleteUserPosts, authorID)
-	return err
-}
-
 const getOldPosts = `-- name: GetOldPosts :many
 SELECT id, author_id
 FROM posts
@@ -104,6 +94,38 @@ func (q *Queries) GetOldPosts(ctx context.Context) ([]GetOldPostsRow, error) {
 	for rows.Next() {
 		var i GetOldPostsRow
 		if err := rows.Scan(&i.ID, &i.AuthorID); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getUserPosts = `-- name: GetUserPosts :many
+SELECT id, uri_key, author_id
+FROM posts
+WHERE author_id = $1
+`
+
+type GetUserPostsRow struct {
+	ID       int32
+	UriKey   string
+	AuthorID int32
+}
+
+func (q *Queries) GetUserPosts(ctx context.Context, authorID int32) ([]GetUserPostsRow, error) {
+	rows, err := q.db.Query(ctx, getUserPosts, authorID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetUserPostsRow
+	for rows.Next() {
+		var i GetUserPostsRow
+		if err := rows.Scan(&i.ID, &i.UriKey, &i.AuthorID); err != nil {
 			return nil, err
 		}
 		items = append(items, i)

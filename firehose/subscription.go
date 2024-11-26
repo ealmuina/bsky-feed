@@ -210,6 +210,12 @@ func (s *Subscription) handleGraphFollowCreate(evt *jsmodels.Event) error {
 		return fmt.Errorf("failed to unmarshal follow: %w", err)
 	}
 
+	createdAt, err := utils.ParseTime(follow.CreatedAt)
+	if err != nil {
+		log.Errorf("Error parsing created at: %s", err)
+		return err
+	}
+
 	go func() {
 		authorId, err := s.storageManager.GetOrCreateUser(evt.Did)
 		if err != nil {
@@ -226,6 +232,7 @@ func (s *Subscription) handleGraphFollowCreate(evt *jsmodels.Event) error {
 				UriKey:    evt.Commit.RKey,
 				AuthorID:  authorId,
 				SubjectID: subjectId,
+				CreatedAt: createdAt,
 			},
 		)
 	}()

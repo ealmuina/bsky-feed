@@ -8,13 +8,21 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+type Follow struct {
+	ID        int32
+	UriKey    string
+	AuthorID  int32
+	SubjectID int32
+	CreatedAt pgtype.Timestamp
+}
+
 type Interaction struct {
 	ID           int32
 	UriKey       string
 	AuthorID     int32
 	Kind         int16
-	PostUriKey   string
 	PostAuthorID int32
+	PostUriKey   string
 	CreatedAt    pgtype.Timestamp
 }
 
@@ -34,13 +42,21 @@ type SubscriptionState struct {
 	Cursor  string
 }
 
+type TmpFollow struct {
+	ID        int32
+	UriKey    string
+	AuthorID  int32
+	SubjectID int32
+	CreatedAt pgtype.Timestamp
+}
+
 type TmpInteraction struct {
 	ID           int32
 	UriKey       string
 	AuthorID     int32
 	Kind         int16
-	PostUriKey   string
 	PostAuthorID int32
+	PostUriKey   string
 	CreatedAt    pgtype.Timestamp
 }
 
@@ -61,8 +77,7 @@ type User struct {
 	FollowersCount   pgtype.Int4
 	FollowsCount     pgtype.Int4
 	PostsCount       pgtype.Int4
-	Follows          []byte
 	CreatedAt        pgtype.Timestamp
 	LastUpdate       pgtype.Timestamp
-	RefreshFrequency int32
+	RefreshFrequency pgtype.Int4
 }

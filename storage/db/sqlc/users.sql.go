@@ -98,7 +98,7 @@ func (q *Queries) DeleteUser(ctx context.Context, id int32) error {
 }
 
 const getUser = `-- name: GetUser :one
-SELECT id, did, handle, followers_count, follows_count, posts_count, follows, created_at, last_update, refresh_frequency
+SELECT id, did, handle, followers_count, follows_count, posts_count, created_at, last_update, refresh_frequency
 FROM users
 WHERE id = $1
 LIMIT 1
@@ -114,7 +114,6 @@ func (q *Queries) GetUser(ctx context.Context, id int32) (User, error) {
 		&i.FollowersCount,
 		&i.FollowsCount,
 		&i.PostsCount,
-		&i.Follows,
 		&i.CreatedAt,
 		&i.LastUpdate,
 		&i.RefreshFrequency,
@@ -126,7 +125,7 @@ const getUserDidsToRefreshStatistics = `-- name: GetUserDidsToRefreshStatistics 
 SELECT users.did
 FROM users
 WHERE last_update IS NULL
-   OR last_update < current_timestamp - (refresh_frequency || ' days')::interval
+   OR last_update < current_timestamp - (COALESCE(refresh_frequency, 30) || ' days')::interval
 `
 
 func (q *Queries) GetUserDidsToRefreshStatistics(ctx context.Context) ([]string, error) {
@@ -161,48 +160,6 @@ func (q *Queries) GetUserId(ctx context.Context, did string) (int32, error) {
 	var id int32
 	err := row.Scan(&id)
 	return id, err
-}
-
-const removeUserFollow = `-- name: RemoveUserFollow :one
-WITH deleted_key AS (SELECT u.id,
-                            u.follows -> $1::text AS deleted_value,
-                            u.follows - $1::text  AS updated_follows
-                     FROM users u
-                     WHERE u.id = $2)
-UPDATE users
-SET follows = deleted_key.updated_follows
-FROM deleted_key
-WHERE users.id = deleted_key.id
-RETURNING deleted_key.deleted_value
-`
-
-type RemoveUserFollowParams struct {
-	Rkey string
-	ID   int32
-}
-
-func (q *Queries) RemoveUserFollow(ctx context.Context, arg RemoveUserFollowParams) (interface{}, error) {
-	row := q.db.QueryRow(ctx, removeUserFollow, arg.Rkey, arg.ID)
-	var deleted_value interface{}
-	err := row.Scan(&deleted_value)
-	return deleted_value, err
-}
-
-const setUserFollow = `-- name: SetUserFollow :exec
-UPDATE users
-SET follows = COALESCE(follows, '{}'::jsonb) || ('{"' || $1::text || '":' || $2::int || '}')::jsonb
-WHERE id = $3
-`
-
-type SetUserFollowParams struct {
-	Rkey      string
-	SubjectID int32
-	ID        int32
-}
-
-func (q *Queries) SetUserFollow(ctx context.Context, arg SetUserFollowParams) error {
-	_, err := q.db.Exec(ctx, setUserFollow, arg.Rkey, arg.SubjectID, arg.ID)
-	return err
 }
 
 const setUserMetadata = `-- name: SetUserMetadata :exec

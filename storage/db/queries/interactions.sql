@@ -24,10 +24,16 @@ WHERE uri_key = ANY (@uri_keys::VARCHAR[])
   AND author_id = ANY (@author_ids::INT[])
 RETURNING id, post_uri_key, post_author_id;
 
--- name: DeleteUserInteractions :exec
-DELETE
+-- name: GetUserInteractions :many
+SELECT *
 FROM interactions
 WHERE author_id = $1;
+
+-- name: GetPostInteractions :many
+SELECT id, uri_key, author_id
+FROM interactions
+WHERE post_author_id = $1
+  AND post_uri_key = $2;
 
 -- name: DeleteOldInteractions :exec
 DELETE

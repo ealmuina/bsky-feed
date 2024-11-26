@@ -8,12 +8,11 @@ CREATE TABLE users
     follows_count     INT,
     posts_count       INT,
 
-    follows           JSONB,
-
     created_at        TIMESTAMP,
     last_update       TIMESTAMP,
-    refresh_frequency INT  NOT NULL DEFAULT 30
+    refresh_frequency INT
 );
 
-CREATE INDEX IF NOT EXISTS "idx_users_did" ON "users" ("did");
-CREATE INDEX IF NOT EXISTS "idx_users_last_update" ON "users" ("last_update");
+CREATE INDEX IF NOT EXISTS idx_users_did ON users (did);
+CREATE INDEX IF NOT EXISTS idx_users_created_at ON users (created_at);
+CREATE INDEX IF NOT EXISTS idx_users_last_update ON users (last_update);

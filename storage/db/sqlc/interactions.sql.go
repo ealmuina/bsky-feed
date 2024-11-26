@@ -63,7 +63,7 @@ const createTempInteractionsTable = `-- name: CreateTempInteractionsTable :exec
 CREATE TEMPORARY TABLE tmp_interactions
     ON COMMIT DROP
 AS
-SELECT id, uri_key, author_id, kind, post_uri_key, post_author_id, created_at
+SELECT id, uri_key, author_id, kind, post_author_id, post_uri_key, created_at
 FROM interactions
     WITH NO DATA
 `
@@ -84,15 +84,76 @@ func (q *Queries) DeleteOldInteractions(ctx context.Context) error {
 	return err
 }
 
-const deleteUserInteractions = `-- name: DeleteUserInteractions :exec
-DELETE
+const getPostInteractions = `-- name: GetPostInteractions :many
+SELECT id, uri_key, author_id
+FROM interactions
+WHERE post_author_id = $1
+  AND post_uri_key = $2
+`
+
+type GetPostInteractionsParams struct {
+	PostAuthorID int32
+	PostUriKey   string
+}
+
+type GetPostInteractionsRow struct {
+	ID       int32
+	UriKey   string
+	AuthorID int32
+}
+
+func (q *Queries) GetPostInteractions(ctx context.Context, arg GetPostInteractionsParams) ([]GetPostInteractionsRow, error) {
+	rows, err := q.db.Query(ctx, getPostInteractions, arg.PostAuthorID, arg.PostUriKey)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetPostInteractionsRow
+	for rows.Next() {
+		var i GetPostInteractionsRow
+		if err := rows.Scan(&i.ID, &i.UriKey, &i.AuthorID); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getUserInteractions = `-- name: GetUserInteractions :many
+SELECT id, uri_key, author_id, kind, post_author_id, post_uri_key, created_at
 FROM interactions
 WHERE author_id = $1
 `
 
-func (q *Queries) DeleteUserInteractions(ctx context.Context, authorID int32) error {
-	_, err := q.db.Exec(ctx, deleteUserInteractions, authorID)
-	return err
+func (q *Queries) GetUserInteractions(ctx context.Context, authorID int32) ([]Interaction, error) {
+	rows, err := q.db.Query(ctx, getUserInteractions, authorID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Interaction
+	for rows.Next() {
+		var i Interaction
+		if err := rows.Scan(
+			&i.ID,
+			&i.UriKey,
+			&i.AuthorID,
+			&i.Kind,
+			&i.PostAuthorID,
+			&i.PostUriKey,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const insertFromTempToInteractions = `-- name: InsertFromTempToInteractions :many

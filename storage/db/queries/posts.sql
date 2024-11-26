@@ -22,14 +22,14 @@ DELETE
 FROM posts
 WHERE uri_key = ANY (@uri_keys::VARCHAR[])
   AND author_id = ANY (@author_ids::INT[])
-RETURNING id, author_id;
+RETURNING id, author_id, uri_key;
 
 -- name: GetOldPosts :many
 SELECT id, author_id
 FROM posts
 WHERE posts.created_at < current_timestamp - interval '7 days';
 
--- name: DeleteUserPosts :exec
-DELETE
+-- name: GetUserPosts :many
+SELECT id, uri_key, author_id
 FROM posts
 WHERE author_id = $1;

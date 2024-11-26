@@ -117,6 +117,12 @@ func (b *Backfiller) handleFollowCreate(did string, uri string, follow *appbsky.
 	uriParts := strings.Split(uri, "/")
 	uriKey := uriParts[len(uriParts)-1]
 
+	createdAt, err := utils.ParseTime(follow.CreatedAt)
+	if err != nil {
+		log.Errorf("Error parsing created at: %s", err)
+		return
+	}
+
 	go func() {
 		authorId, err := b.storageManager.GetOrCreateUser(did)
 		if err != nil {
@@ -133,6 +139,7 @@ func (b *Backfiller) handleFollowCreate(did string, uri string, follow *appbsky.
 				UriKey:    uriKey,
 				AuthorID:  authorId,
 				SubjectID: subjectId,
+				CreatedAt: createdAt,
 			},
 		)
 	}()

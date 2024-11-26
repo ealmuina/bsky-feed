@@ -145,39 +145,66 @@ func (m *Manager) CleanOldData(persistentDb bool) {
 }
 
 func (m *Manager) CreateFollow(follow models.Follow) {
-	ctx := context.Background()
-
 	if m.persistFollows {
-		// Set user follow on DB
-		err := m.queries.SetUserFollow(ctx, db.SetUserFollowParams{
-			ID:        follow.AuthorID,
-			Rkey:      follow.UriKey,
-			SubjectID: follow.SubjectID,
-		})
-		if err != nil {
-			log.Errorf("Error setting follow: %v", err)
+		event := Event{EntityFollow, OperationCreate}
+		mutex := m.mutexes[event]
+		if mutex == nil {
+			log.Errorf("Mutex for follows create buffer not initialized")
 			return
 		}
-	}
+		mutex.Lock()
+		defer mutex.Unlock()
 
-	// Add follow to user statistics
-	err := m.queries.AddUserFollows(ctx, db.AddUserFollowsParams{
-		ID:           follow.AuthorID,
-		FollowsCount: pgtype.Int4{Int32: 1, Valid: true},
-	})
-	if err == nil {
-		m.usersCache.UpdateUserStatistics(
-			follow.AuthorID, 1, 0, 0, 0,
+		buffer := getBuffer(event, &m.buffers, make([]db.BulkCreateFollowsParams, 0))
+		buffer = append(
+			buffer,
+			db.BulkCreateFollowsParams{
+				UriKey:    follow.UriKey,
+				AuthorID:  follow.AuthorID,
+				SubjectID: follow.SubjectID,
+				CreatedAt: pgtype.Timestamp{Time: follow.CreatedAt, Valid: true},
+			},
 		)
-	}
-	err = m.queries.AddUserFollowers(ctx, db.AddUserFollowersParams{
-		ID:             follow.SubjectID,
-		FollowersCount: pgtype.Int4{Int32: 1, Valid: true},
-	})
-	if err == nil {
-		m.usersCache.UpdateUserStatistics(
-			follow.SubjectID, 0, 1, 0, 0,
-		)
+		m.buffers.Store(event, buffer)
+
+		if len(buffer) >= BulkSize[event.Entity] {
+			go func() {
+				var createdFollows []db.InsertFromTempToFollowsRow
+
+				m.executeTransaction(
+					func(ctx context.Context, qtx *db.Queries) {
+						// Create temporary table
+						err := qtx.CreateTempFollowsTable(ctx)
+						if err != nil {
+							log.Infof("Error creating tmp_follows: %v", err)
+							return
+						}
+						// Copy data to temporary table
+						if _, err := qtx.BulkCreateFollows(ctx, buffer); err != nil {
+							log.Errorf("Error creating follows: %v", err)
+							return
+						}
+						// Move data from temporary table to follows
+						createdFollows, err = qtx.InsertFromTempToFollows(ctx)
+						if err != nil {
+							log.Errorf("Error persisting follows: %v", err)
+							return
+						}
+					},
+				)
+
+				// Update statistics
+				for _, follow := range createdFollows {
+					m.refreshFollowStatistics(follow.AuthorID, follow.SubjectID, 1)
+				}
+			}()
+
+			// Clear buffer
+			m.buffers.Store(event, make([]db.BulkCreateFollowsParams, 0, len(buffer)))
+		}
+	} else {
+		// Do not persist. Just update statistics
+		m.refreshFollowStatistics(follow.AuthorID, follow.SubjectID, 1)
 	}
 }
 
@@ -341,43 +368,59 @@ func (m *Manager) DeleteFollow(identifier models.Identifier) {
 	ctx := context.Background()
 
 	if m.persistFollows {
-		// Delete from DB
-		subjectIdBytes, err := m.queries.RemoveUserFollow(ctx, db.RemoveUserFollowParams{
-			ID:   identifier.AuthorId,
-			Rkey: identifier.UriKey,
-		})
-		if err != nil {
-			log.Errorf("Error removing follow: %v", err)
+		event := Event{EntityFollow, OperationDelete}
+		mutex := m.mutexes[event]
+		if mutex == nil {
+			log.Errorf("Mutex for follows delete buffer not initialized")
 			return
 		}
-		if subjectIdBytes == nil {
-			// Follow not found
-			return
-		}
-		subjectId := int32(subjectIdBytes.(float64))
+		mutex.Lock()
+		defer mutex.Unlock()
 
-		// Discount from followed statistics
-		err = m.queries.AddUserFollowers(ctx, db.AddUserFollowersParams{
-			ID:             subjectId,
-			FollowersCount: pgtype.Int4{Int32: -1, Valid: true},
+		buffer := getBuffer(event, &m.buffers, make([]models.Identifier, 0))
+		buffer = append(buffer, identifier)
+		m.buffers.Store(event, buffer)
+
+		if len(buffer) >= BulkSize[event.Entity] {
+			go func() {
+				uriKeys := make([]string, len(buffer))
+				authorIds := make([]int32, len(buffer))
+
+				for i, identifier := range buffer {
+					uriKeys[i] = identifier.UriKey
+					authorIds[i] = identifier.AuthorId
+				}
+
+				deletedFollows, err := m.queries.BulkDeleteFollows(ctx, db.BulkDeleteFollowsParams{
+					UriKeys:   uriKeys,
+					AuthorIds: authorIds,
+				})
+				if err != nil {
+					log.Errorf("Error deleting follows: %v", err)
+				}
+
+				// Update caches
+				for _, follow := range deletedFollows {
+					m.refreshFollowStatistics(follow.AuthorID, follow.SubjectID, -1)
+				}
+			}()
+
+			// Clear buffer
+			m.buffers.Store(event, make([]models.Identifier, 0, len(buffer)))
+		}
+	} else {
+		// Discount from follower statistics directly
+		err := m.queries.AddUserFollows(ctx, db.AddUserFollowsParams{
+			ID:           identifier.AuthorId,
+			FollowsCount: pgtype.Int4{Int32: -1, Valid: true},
 		})
 		if err == nil {
 			m.usersCache.UpdateUserStatistics(
-				subjectId, 0, -1, 0, 0,
+				identifier.AuthorId, -1, 0, 0, 0,
 			)
 		}
 	}
 
-	// Discount from follower statistics
-	err := m.queries.AddUserFollows(ctx, db.AddUserFollowsParams{
-		ID:           identifier.AuthorId,
-		FollowsCount: pgtype.Int4{Int32: -1, Valid: true},
-	})
-	if err == nil {
-		m.usersCache.UpdateUserStatistics(
-			identifier.AuthorId, -1, 0, 0, 0,
-		)
-	}
 }
 
 func (m *Manager) DeleteInteraction(identifier models.Identifier) {
@@ -471,7 +514,7 @@ func (m *Manager) DeletePost(identifier models.Identifier) {
 				},
 			)
 
-			// Remove post from user statistics
+			// Remove post from user statistics and its corresponding interactions
 			for _, post := range deletedPosts {
 				err := m.queries.AddUserPosts(ctx, db.AddUserPostsParams{
 					ID:         post.AuthorID,
@@ -486,6 +529,20 @@ func (m *Manager) DeletePost(identifier models.Identifier) {
 							post.AuthorID, 0, 0, -1, -postInteractions,
 						)
 					}
+				}
+
+				postInteractions, err := m.queries.GetPostInteractions(ctx, db.GetPostInteractionsParams{
+					PostAuthorID: post.AuthorID,
+					PostUriKey:   post.UriKey,
+				})
+				if err != nil {
+					log.Errorf("Error getting post interactions: %v", err)
+				}
+				for _, interaction := range postInteractions {
+					m.DeleteInteraction(models.Identifier{
+						UriKey:   interaction.UriKey,
+						AuthorId: interaction.AuthorID,
+					})
 				}
 			}
 		}()
@@ -502,18 +559,46 @@ func (m *Manager) DeleteUser(did string) {
 		return
 	}
 
+	// Delete posts
+	userPosts, err := m.queries.GetUserPosts(ctx, id)
+	if err != nil {
+		log.Errorf("Error getting user '%s' posts: %v", did, err)
+	}
+	for _, post := range userPosts {
+		m.DeletePost(models.Identifier{
+			UriKey:   post.UriKey,
+			AuthorId: post.AuthorID,
+		})
+	}
+	// Delete interactions
+	userInteractions, err := m.queries.GetUserInteractions(ctx, id)
+	if err != nil {
+		log.Errorf("Error getting user '%s' interactions: %v", did, err)
+	}
+	for _, interaction := range userInteractions {
+		m.DeleteFollow(models.Identifier{
+			UriKey:   interaction.UriKey,
+			AuthorId: interaction.AuthorID,
+		})
+	}
+	if m.persistFollows {
+		// Delete follows "touching" the user (follower or followed)
+		userFollows, err := m.queries.GetFollowsTouchingUser(ctx, id)
+		if err != nil {
+			log.Errorf("Error getting user '%s' follows: %v", did, err)
+		}
+		for _, follow := range userFollows {
+			m.DeleteFollow(models.Identifier{
+				UriKey:   follow.UriKey,
+				AuthorId: follow.AuthorID,
+			})
+		}
+	}
+
 	// Delete user from DB
 	if err := m.queries.DeleteUser(ctx, id); err != nil {
 		log.Errorf("Error deleting user %s: %v", did, err)
 		return
-	}
-	// Delete user's posts
-	if err := m.queries.DeleteUserPosts(ctx, id); err != nil {
-		log.Errorf("Error deleting posts for user %s: %v", did, err)
-	}
-	// Delete user's interactions
-	if err := m.queries.DeleteUser(ctx, id); err != nil {
-		log.Errorf("Error deleting user %s: %v", did, err)
 	}
 
 	// Delete user from cache
@@ -646,5 +731,29 @@ func (m *Manager) initializeAlgorithms() {
 func (m *Manager) initializeTimelines() {
 	for feedName := range algorithms.ImplementedAlgorithms {
 		m.timelines[feedName] = cache.NewTimeline(feedName, m.redisConnection)
+	}
+}
+
+func (m *Manager) refreshFollowStatistics(authorId, subjectId, delta int32) {
+	ctx := context.Background()
+
+	// Add follow to user statistics
+	err := m.queries.AddUserFollows(ctx, db.AddUserFollowsParams{
+		ID:           authorId,
+		FollowsCount: pgtype.Int4{Int32: delta, Valid: true},
+	})
+	if err == nil {
+		m.usersCache.UpdateUserStatistics(
+			authorId, delta, 0, 0, 0,
+		)
+	}
+	err = m.queries.AddUserFollowers(ctx, db.AddUserFollowersParams{
+		ID:             subjectId,
+		FollowersCount: pgtype.Int4{Int32: delta, Valid: true},
+	})
+	if err == nil {
+		m.usersCache.UpdateUserStatistics(
+			subjectId, 0, delta, 0, 0,
+		)
 	}
 }

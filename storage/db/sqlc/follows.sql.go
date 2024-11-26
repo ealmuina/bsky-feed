@@ -7,12 +7,15 @@ package db
 
 import (
 	"context"
+
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 type BulkCreateFollowsParams struct {
 	UriKey    string
 	AuthorID  int32
 	SubjectID int32
+	CreatedAt pgtype.Timestamp
 }
 
 const bulkDeleteFollows = `-- name: BulkDeleteFollows :many
@@ -58,7 +61,7 @@ const createTempFollowsTable = `-- name: CreateTempFollowsTable :exec
 CREATE TEMPORARY TABLE tmp_follows
     ON COMMIT DROP
 AS
-SELECT id, uri_key, author_id, subject_id
+SELECT id, uri_key, author_id, subject_id, created_at
 FROM follows
     WITH NO DATA
 `
@@ -68,16 +71,49 @@ func (q *Queries) CreateTempFollowsTable(ctx context.Context) error {
 	return err
 }
 
+const getFollowsTouchingUser = `-- name: GetFollowsTouchingUser :many
+SELECT id, uri_key, author_id
+FROM follows
+WHERE author_id = $1
+   OR subject_id = $1
+`
+
+type GetFollowsTouchingUserRow struct {
+	ID       int32
+	UriKey   string
+	AuthorID int32
+}
+
+func (q *Queries) GetFollowsTouchingUser(ctx context.Context, authorID int32) ([]GetFollowsTouchingUserRow, error) {
+	rows, err := q.db.Query(ctx, getFollowsTouchingUser, authorID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetFollowsTouchingUserRow
+	for rows.Next() {
+		var i GetFollowsTouchingUserRow
+		if err := rows.Scan(&i.ID, &i.UriKey, &i.AuthorID); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const insertFromTempToFollows = `-- name: InsertFromTempToFollows :many
-INSERT INTO follows (uri_key, author_id, subject_id)
-SELECT uri_key, author_id, subject_id
+INSERT INTO follows (uri_key, author_id, subject_id, created_at)
+SELECT uri_key, author_id, subject_id, created_at
 FROM tmp_follows
 ON CONFLICT DO NOTHING
-RETURNING uri_key, author_id, subject_id
+RETURNING id, author_id, subject_id
 `
 
 type InsertFromTempToFollowsRow struct {
-	UriKey    string
+	ID        int32
 	AuthorID  int32
 	SubjectID int32
 }
@@ -91,7 +127,7 @@ func (q *Queries) InsertFromTempToFollows(ctx context.Context) ([]InsertFromTemp
 	var items []InsertFromTempToFollowsRow
 	for rows.Next() {
 		var i InsertFromTempToFollowsRow
-		if err := rows.Scan(&i.UriKey, &i.AuthorID, &i.SubjectID); err != nil {
+		if err := rows.Scan(&i.ID, &i.AuthorID, &i.SubjectID); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
