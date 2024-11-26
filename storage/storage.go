@@ -744,7 +744,7 @@ func (m *Manager) refreshFollowStatistics(authorId, subjectId, delta int32) {
 	})
 	if err == nil {
 		m.usersCache.UpdateUserStatistics(
-			authorId, delta, 0, 0, 0,
+			authorId, int64(delta), 0, 0, 0,
 		)
 	}
 	err = m.queries.AddUserFollowers(ctx, db.AddUserFollowersParams{
@@ -753,7 +753,7 @@ func (m *Manager) refreshFollowStatistics(authorId, subjectId, delta int32) {
 	})
 	if err == nil {
 		m.usersCache.UpdateUserStatistics(
-			subjectId, 0, delta, 0, 0,
+			subjectId, 0, int64(delta), 0, 0,
 		)
 	}
 }

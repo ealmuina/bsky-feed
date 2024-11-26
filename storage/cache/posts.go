@@ -23,22 +23,22 @@ func NewPostsCache(redisConnection *redis.Client, expiration time.Duration) Post
 	}
 }
 
-func (c *PostsCache) AddInteraction(postId int64) {
+func (c *PostsCache) AddInteraction(authorId int32, uriKey string) {
 	ctx := context.Background()
-	idStr := strconv.FormatInt(postId, 10)
+	idStr := fmt.Sprintf("%d/%s", authorId, uriKey)
 	c.redisClient.HIncrBy(ctx, PostInteractionsCountRedisKey, idStr, 1)
 	c.redisClient.HExpire(ctx, PostInteractionsCountRedisKey, c.expiration, idStr)
 }
 
-func (c *PostsCache) DeleteInteraction(postId int64) {
+func (c *PostsCache) DeleteInteraction(authorId int32, uriKey string) {
 	ctx := context.Background()
-	idStr := strconv.FormatInt(postId, 10)
+	idStr := fmt.Sprintf("%d/%s", authorId, uriKey)
 	c.redisClient.HIncrBy(ctx, PostInteractionsCountRedisKey, idStr, -1)
 }
 
 func (c *PostsCache) DeletePost(id int64) bool {
 	ctx := context.Background()
-	idStr := strconv.FormatInt(id, 10)
+	idStr := fmt.Sprintf("%d", id)
 	result := c.redisClient.HDel(ctx, PostInteractionsCountRedisKey, idStr)
 	return result.Val() != 0
 }
@@ -55,7 +55,7 @@ func (c *PostsCache) DeletePosts(id []int64) {
 }
 
 func (c *PostsCache) GetPostInteractions(id int64) int64 {
-	idStr := strconv.FormatInt(id, 10)
+	idStr := fmt.Sprintf("%d", id)
 	interactionsCountStr, err := c.redisClient.HGet(
 		context.Background(),
 		PostInteractionsCountRedisKey,
