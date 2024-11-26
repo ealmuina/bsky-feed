@@ -7,7 +7,7 @@ import (
 
 type TopLanguageAlgorithm struct {
 	languageCode  string
-	minFollowers  int32
+	minFollowers  int64
 	minEngagement float64
 }
 
