@@ -88,7 +88,7 @@ func (b *Backfiller) Run() {
 	// Span workers
 	wg := sync.WaitGroup{}
 	repoChan := make(chan *comatproto.SyncListRepos_Repo)
-	metadataChan := make(chan string, 1000000)
+	metadataChan := make(chan string, 100000)
 
 	for i := 0; i < NumRepoWorkers; i++ {
 		wg.Add(1)
