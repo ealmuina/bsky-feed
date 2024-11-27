@@ -25,7 +25,7 @@ ON CONFLICT (author_id, uri_key) DO UPDATE
         reply_root_id   = COALESCE(posts.reply_root_id, excluded.reply_root_id),
         created_at      = COALESCE(posts.created_at, excluded.created_at),
         language        = COALESCE(posts.language, excluded.language)
-RETURNING id;
+RETURNING id, XMAX = 0 AS is_created;
 
 -- name: BulkDeletePosts :many
 DELETE

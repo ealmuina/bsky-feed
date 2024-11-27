@@ -210,7 +210,7 @@ ON CONFLICT (author_id, uri_key) DO UPDATE
         reply_root_id   = COALESCE(posts.reply_root_id, excluded.reply_root_id),
         created_at      = COALESCE(posts.created_at, excluded.created_at),
         language        = COALESCE(posts.language, excluded.language)
-RETURNING id
+RETURNING id, XMAX = 0 AS is_created
 `
 
 type UpsertPostParams struct {
@@ -222,7 +222,12 @@ type UpsertPostParams struct {
 	Language      pgtype.Text
 }
 
-func (q *Queries) UpsertPost(ctx context.Context, arg UpsertPostParams) (int64, error) {
+type UpsertPostRow struct {
+	ID        int64
+	IsCreated bool
+}
+
+func (q *Queries) UpsertPost(ctx context.Context, arg UpsertPostParams) (UpsertPostRow, error) {
 	row := q.db.QueryRow(ctx, upsertPost,
 		arg.UriKey,
 		arg.AuthorID,
@@ -231,7 +236,7 @@ func (q *Queries) UpsertPost(ctx context.Context, arg UpsertPostParams) (int64, 
 		arg.CreatedAt,
 		arg.Language,
 	)
-	var id int64
-	err := row.Scan(&id)
-	return id, err
+	var i UpsertPostRow
+	err := row.Scan(&i.ID, &i.IsCreated)
+	return i, err
 }
