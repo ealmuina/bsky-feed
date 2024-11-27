@@ -313,18 +313,16 @@ func (m *Manager) CreatePost(post models.Post) {
 		m.postsCache.AddPost(post)
 
 		// Add post to user statistics
-		err = m.queries.AddUserPosts(ctx, db.AddUserPostsParams{
+		_ = m.queries.AddUserPosts(ctx, db.AddUserPostsParams{
 			ID:         post.AuthorId,
 			PostsCount: pgtype.Int4{Int32: 1, Valid: true},
 		})
-		if err == nil {
-			// Update cache (exclude replies)
-			if post.ReplyRootId == 0 {
-				m.usersCache.UpdateUserStatistics(
-					post.AuthorId, 0, 0, 1, 0,
-				)
-			}
-		}
+	}
+	// Update cache (exclude replies)
+	if post.ReplyRootId == 0 {
+		m.usersCache.UpdateUserStatistics(
+			post.AuthorId, 0, 0, 1, 0,
+		)
 	}
 }
 
@@ -619,10 +617,12 @@ func (m *Manager) GetPostAuthorId(postId int64) (int32, error) {
 }
 
 func (m *Manager) GetPostId(authorId int32, uriKey string) (int64, error) {
+	ctx := context.Background()
+
 	if postId, ok := m.postsCache.GetPostId(authorId, uriKey); ok {
 		return postId, nil
 	}
-	upsertResult, err := m.queries.UpsertPost(context.Background(), db.UpsertPostParams{
+	upsertResult, err := m.queries.UpsertPost(ctx, db.UpsertPostParams{
 		AuthorID: authorId,
 		UriKey:   uriKey,
 	})
@@ -634,6 +634,14 @@ func (m *Manager) GetPostId(authorId int32, uriKey string) (int64, error) {
 		AuthorId: authorId,
 		UriKey:   uriKey,
 	})
+
+	if upsertResult.IsCreated {
+		// Add post to user statistics
+		_ = m.queries.AddUserPosts(ctx, db.AddUserPostsParams{
+			ID:         authorId,
+			PostsCount: pgtype.Int4{Int32: 1, Valid: true},
+		})
+	}
 	return upsertResult.ID, nil
 }
 
