@@ -88,7 +88,8 @@ func NewManager(dbConnection *pgxpool.Pool, redisConnection *redis.Client, persi
 		),
 		postsCache: cache.NewPostsCache(
 			redisConnection,
-			7*24*time.Hour, // expire entries after 7 days
+			//7*24*time.Hour, // expire entries after 7 days
+			5*time.Minute, // expire entries after 5 minutes
 		),
 		timelines:  make(map[string]cache.Timeline),
 		algorithms: make(map[string]algorithms.Algorithm),
