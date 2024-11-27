@@ -27,11 +27,10 @@ services:
       retries: 5
     ports:
       - "5432:5432"
-    command: -c config_file=/etc/postgresql.conf
+    command: -c shared_buffers=3GB
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./storage/db/db_init:/docker-entrypoint-initdb.d
-      - ./storage/db/postgresql.conf:/etc/postgresql.conf
     restart: unless-stopped
 
   db-exporter:
