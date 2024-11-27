@@ -59,6 +59,27 @@ func (q *Queries) AddUserPosts(ctx context.Context, arg AddUserPostsParams) erro
 	return err
 }
 
+const applyFollowToUsers = `-- name: ApplyFollowToUsers :exec
+UPDATE users AS u
+SET followers_count = COALESCE(followers_count, 0) + c.followers_count_delta,
+    follows_count   = COALESCE(follows_count, 0) + c.follows_count_delta
+FROM (VALUES ($1::int, 0, $2::int),
+             ($3::int, $2::int, 0))
+         AS c (id, followers_count_delta, follows_count_delta)
+WHERE u.id = c.id
+`
+
+type ApplyFollowToUsersParams struct {
+	AuthorID  int32
+	Delta     int32
+	SubjectID int32
+}
+
+func (q *Queries) ApplyFollowToUsers(ctx context.Context, arg ApplyFollowToUsersParams) error {
+	_, err := q.db.Exec(ctx, applyFollowToUsers, arg.AuthorID, arg.Delta, arg.SubjectID)
+	return err
+}
+
 const createUser = `-- name: CreateUser :exec
 INSERT INTO users (did, handle, followers_count, follows_count, posts_count, last_update)
 VALUES ($1, $2, $3, $4, $5, $6)

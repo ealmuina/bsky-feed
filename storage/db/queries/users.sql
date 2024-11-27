@@ -28,6 +28,15 @@ UPDATE users
 SET follows_count = COALESCE(follows_count, 0) + $2
 WHERE id = $1;
 
+-- name: ApplyFollowToUsers :exec
+UPDATE users AS u
+SET followers_count = COALESCE(followers_count, 0) + c.followers_count_delta,
+    follows_count   = COALESCE(follows_count, 0) + c.follows_count_delta
+FROM (VALUES (@author_id::int, 0, @delta::int),
+             (@subject_id::int, @delta::int, 0))
+         AS c (id, followers_count_delta, follows_count_delta)
+WHERE u.id = c.id;
+
 -- name: AddUserPosts :exec
 UPDATE users
 SET posts_count = COALESCE(posts_count, 0) + $2
