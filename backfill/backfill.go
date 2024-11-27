@@ -24,6 +24,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -32,7 +33,8 @@ const (
 	InvalidRequestError     = "InvalidRequest" // Seen when profile is not found
 	ExpiredToken            = "ExpiredToken"
 )
-const NumWorkers = 128
+const NumRepoWorkers = 128
+const NumMetadataWorkers = 32
 
 type Backfiller struct {
 	serviceName      string
@@ -84,9 +86,17 @@ func (b *Backfiller) Run() {
 	ctx := context.Background()
 
 	// Span workers
-	c := make(chan *comatproto.SyncListRepos_Repo)
-	for i := 0; i < NumWorkers; i++ {
-		go b.worker(c)
+	wg := sync.WaitGroup{}
+	repoChan := make(chan *comatproto.SyncListRepos_Repo)
+	metadataChan := make(chan string)
+
+	for i := 0; i < NumRepoWorkers; i++ {
+		wg.Add(1)
+		go b.repoWorker(&wg, repoChan, metadataChan)
+	}
+	for i := 0; i < NumMetadataWorkers; i++ {
+		wg.Add(1)
+		go b.metadataWorker(&wg, metadataChan)
 	}
 
 	cursor := b.storageManager.GetCursor(b.serviceName)
@@ -98,11 +108,11 @@ func (b *Backfiller) Run() {
 			continue
 		}
 
-		for _, repoMeta := range response.Repos {
-			if repoMeta.Active == nil || !*repoMeta.Active {
+		for _, repoDescription := range response.Repos {
+			if repoDescription.Active == nil || !*repoDescription.Active {
 				continue
 			}
-			c <- repoMeta
+			repoChan <- repoDescription
 		}
 
 		if response.Cursor == nil {
@@ -112,7 +122,9 @@ func (b *Backfiller) Run() {
 		b.storageManager.UpdateCursor(b.serviceName, cursor)
 	}
 
-	close(c)
+	close(repoChan)
+	close(metadataChan)
+	wg.Wait()
 }
 
 func (b *Backfiller) getPlcProfile(did string) (Profile, error) {
@@ -308,6 +320,13 @@ func (b *Backfiller) handlePostCreate(did string, uri string, post *appbsky.Feed
 	}()
 }
 
+func (b *Backfiller) metadataWorker(wg *sync.WaitGroup, metadataChan chan string) {
+	for did := range metadataChan {
+		b.setCreatedAt(did, false)
+	}
+	wg.Done()
+}
+
 func (b *Backfiller) processBskyError(did string, err error, callback func()) {
 	retry := false
 	var bskyErr *xrpc.Error
@@ -402,6 +421,18 @@ func (b *Backfiller) processRepo(repoMeta *comatproto.SyncListRepos_Repo) {
 	})
 }
 
+func (b *Backfiller) repoWorker(
+	wg *sync.WaitGroup,
+	repoChan chan *comatproto.SyncListRepos_Repo,
+	metadataChan chan string,
+) {
+	for repoMeta := range repoChan {
+		b.processRepo(repoMeta)
+		metadataChan <- repoMeta.Did
+	}
+	wg.Done()
+}
+
 func (b *Backfiller) setCreatedAt(did string, askBluesky bool) {
 	var profile Profile
 
@@ -436,11 +467,4 @@ func (b *Backfiller) setCreatedAt(did string, askBluesky bool) {
 	}
 
 	b.storageManager.SetUserMetadata(did, profile.Handle, createdAt)
-}
-
-func (b *Backfiller) worker(c chan *comatproto.SyncListRepos_Repo) {
-	for repoMeta := range c {
-		b.processRepo(repoMeta)
-		b.setCreatedAt(repoMeta.Did, false)
-	}
 }
