@@ -6,7 +6,9 @@ import (
 	"bsky/utils"
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
 	comatproto "github.com/bluesky-social/indigo/api/atproto"
 	appbsky "github.com/bluesky-social/indigo/api/bsky"
 	"github.com/bluesky-social/indigo/repo"
@@ -17,6 +19,7 @@ import (
 	"go.uber.org/zap"
 	"hash"
 	"hash/fnv"
+	"io"
 	"math"
 	"net/http"
 	"os"
@@ -110,6 +113,39 @@ func (b *Backfiller) Run() {
 	}
 
 	close(c)
+}
+
+func (b *Backfiller) getPlcProfile(did string) (Profile, error) {
+	var profile Profile
+	response, err := http.Get(
+		fmt.Sprintf("https://plc.directory/%s/log/audit", did),
+	)
+	if err != nil {
+		return profile, err
+	}
+	defer response.Body.Close()
+
+	responseBytes, err := io.ReadAll(response.Body)
+	if err != nil {
+		return profile, err
+	}
+
+	var plcProfileData []PlcLogAuditEntry
+	err = json.Unmarshal(responseBytes, &plcProfileData)
+	if err != nil {
+		return profile, err
+	}
+
+	if len(plcProfileData) == 0 || len(plcProfileData[len(plcProfileData)-1].Operation.AlsoKnownAs) == 0 {
+		return profile, errors.New("missing plc data")
+	}
+
+	alsoKnownAs := plcProfileData[len(plcProfileData)-1].Operation.AlsoKnownAs[0]
+	profile.Handle = strings.Replace(alsoKnownAs, "at://", "", -1)
+
+	profile.CreatedAt = plcProfileData[0].CreatedAt
+
+	return profile, nil
 }
 
 func (b *Backfiller) handleFollowCreate(did string, uri string, follow *appbsky.GraphFollow) {
@@ -366,18 +402,34 @@ func (b *Backfiller) processRepo(repoMeta *comatproto.SyncListRepos_Repo) {
 	})
 }
 
-func (b *Backfiller) setCreatedAt(did string) {
-	profile, err := appbsky.ActorGetProfile(context.Background(), b.client, did)
-	if err != nil {
-		log.Errorf("Error getting actor '%s': %v", did, err)
-		b.processBskyError(did, err, func() { b.setCreatedAt(did) })
-		return
-	}
-	if profile.CreatedAt == nil {
-		return
+func (b *Backfiller) setCreatedAt(did string, askBluesky bool) {
+	var profile Profile
+
+	if strings.HasPrefix(did, "did:plc") && !askBluesky {
+		plcProfile, err := b.getPlcProfile(did)
+		if err != nil {
+			log.Errorf("Error getting plc profile: %v", err)
+			b.setCreatedAt(did, true)
+			return
+		}
+		profile = plcProfile
+	} else {
+		bskyProfile, err := appbsky.ActorGetProfile(context.Background(), b.client, did)
+		if err != nil {
+			log.Errorf("Error getting actor '%s': %v", did, err)
+			b.processBskyError(did, err, func() { b.setCreatedAt(did, true) })
+			return
+		}
+		if bskyProfile.CreatedAt == nil {
+			return
+		}
+		profile = Profile{
+			Handle:    bskyProfile.Handle,
+			CreatedAt: *bskyProfile.CreatedAt,
+		}
 	}
 
-	createdAt, err := utils.ParseTime(*profile.CreatedAt)
+	createdAt, err := utils.ParseTime(profile.CreatedAt)
 	if err != nil {
 		log.Errorf("Error parsing created at: %s", err)
 		return
@@ -389,6 +441,6 @@ func (b *Backfiller) setCreatedAt(did string) {
 func (b *Backfiller) worker(c chan *comatproto.SyncListRepos_Repo) {
 	for repoMeta := range c {
 		b.processRepo(repoMeta)
-		b.setCreatedAt(repoMeta.Did)
+		b.setCreatedAt(repoMeta.Did, false)
 	}
 }
