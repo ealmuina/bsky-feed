@@ -57,34 +57,6 @@ func (q *Queries) BulkDeleteInteractions(ctx context.Context, arg BulkDeleteInte
 	return items, nil
 }
 
-const createInteraction = `-- name: CreateInteraction :one
-INSERT INTO interactions (uri_key, author_id, kind, post_id, created_at)
-VALUES ($1, $2, $3, $4, $5)
-ON CONFLICT DO NOTHING
-RETURNING id
-`
-
-type CreateInteractionParams struct {
-	UriKey    string
-	AuthorID  int32
-	Kind      int16
-	PostID    int64
-	CreatedAt pgtype.Timestamp
-}
-
-func (q *Queries) CreateInteraction(ctx context.Context, arg CreateInteractionParams) (int64, error) {
-	row := q.db.QueryRow(ctx, createInteraction,
-		arg.UriKey,
-		arg.AuthorID,
-		arg.Kind,
-		arg.PostID,
-		arg.CreatedAt,
-	)
-	var id int64
-	err := row.Scan(&id)
-	return id, err
-}
-
 const createTempInteractionsTable = `-- name: CreateTempInteractionsTable :exec
 CREATE TEMPORARY TABLE tmp_interactions
     ON COMMIT DROP
@@ -97,31 +69,6 @@ FROM interactions
 func (q *Queries) CreateTempInteractionsTable(ctx context.Context) error {
 	_, err := q.db.Exec(ctx, createTempInteractionsTable)
 	return err
-}
-
-const deleteInteraction = `-- name: DeleteInteraction :one
-DELETE
-FROM interactions
-WHERE author_id = $1
-  AND uri_key = $2
-RETURNING id, post_id
-`
-
-type DeleteInteractionParams struct {
-	AuthorID int32
-	UriKey   string
-}
-
-type DeleteInteractionRow struct {
-	ID     int64
-	PostID int64
-}
-
-func (q *Queries) DeleteInteraction(ctx context.Context, arg DeleteInteractionParams) (DeleteInteractionRow, error) {
-	row := q.db.QueryRow(ctx, deleteInteraction, arg.AuthorID, arg.UriKey)
-	var i DeleteInteractionRow
-	err := row.Scan(&i.ID, &i.PostID)
-	return i, err
 }
 
 const deleteOldInteractions = `-- name: DeleteOldInteractions :exec

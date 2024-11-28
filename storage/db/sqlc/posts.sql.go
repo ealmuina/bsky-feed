@@ -73,32 +73,6 @@ func (q *Queries) CreateTempPostsTable(ctx context.Context) error {
 	return err
 }
 
-const deletePost = `-- name: DeletePost :one
-DELETE
-FROM posts
-WHERE author_id = $1
-  AND uri_key = $2
-RETURNING id, author_id, uri_key
-`
-
-type DeletePostParams struct {
-	AuthorID int32
-	UriKey   string
-}
-
-type DeletePostRow struct {
-	ID       int64
-	AuthorID int32
-	UriKey   string
-}
-
-func (q *Queries) DeletePost(ctx context.Context, arg DeletePostParams) (DeletePostRow, error) {
-	row := q.db.QueryRow(ctx, deletePost, arg.AuthorID, arg.UriKey)
-	var i DeletePostRow
-	err := row.Scan(&i.ID, &i.AuthorID, &i.UriKey)
-	return i, err
-}
-
 const getOldPosts = `-- name: GetOldPosts :many
 SELECT id, author_id
 FROM posts

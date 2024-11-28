@@ -10,12 +10,6 @@ FROM interactions
 INSERT INTO tmp_interactions (uri_key, author_id, kind, post_id, created_at)
 VALUES ($1, $2, $3, $4, $5);
 
--- name: CreateInteraction :one
-INSERT INTO interactions (uri_key, author_id, kind, post_id, created_at)
-VALUES ($1, $2, $3, $4, $5)
-ON CONFLICT DO NOTHING
-RETURNING id;
-
 -- name: InsertFromTempToInteractions :many
 INSERT INTO interactions (uri_key, author_id, kind, post_id, created_at)
 SELECT uri_key, author_id, kind, post_id, created_at
@@ -28,13 +22,6 @@ DELETE
 FROM interactions
 WHERE author_id = ANY (@author_ids::INT[])
   AND uri_key = ANY (@uri_keys::VARCHAR[])
-RETURNING id, post_id;
-
--- name: DeleteInteraction :one
-DELETE
-FROM interactions
-WHERE author_id = $1
-  AND uri_key = $2
 RETURNING id, post_id;
 
 -- name: GetUserInteractions :many
