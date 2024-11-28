@@ -170,26 +170,24 @@ func (b *Backfiller) handleFollowCreate(did string, uri string, follow *appbsky.
 		return
 	}
 
-	go func() {
-		authorId, err := b.storageManager.GetOrCreateUser(did)
-		if err != nil {
-			log.Errorf("Error creating user: %v", err)
-			return
-		}
-		subjectId, err := b.storageManager.GetOrCreateUser(follow.Subject)
-		if err != nil {
-			log.Errorf("Error creating user: %v", err)
-			return
-		}
-		b.storageManager.CreateFollow(
-			models.Follow{
-				UriKey:    uriKey,
-				AuthorID:  authorId,
-				SubjectID: subjectId,
-				CreatedAt: createdAt,
-			},
-		)
-	}()
+	authorId, err := b.storageManager.GetOrCreateUser(did)
+	if err != nil {
+		log.Errorf("Error creating user: %v", err)
+		return
+	}
+	subjectId, err := b.storageManager.GetOrCreateUser(follow.Subject)
+	if err != nil {
+		log.Errorf("Error creating user: %v", err)
+		return
+	}
+	b.storageManager.CreateFollow(
+		models.Follow{
+			UriKey:    uriKey,
+			AuthorID:  authorId,
+			SubjectID: subjectId,
+			CreatedAt: createdAt,
+		},
+	)
 }
 
 func (b *Backfiller) handleInteractionCreate(
@@ -212,37 +210,35 @@ func (b *Backfiller) handleInteractionCreate(
 		return
 	}
 
-	go func() {
-		authorId, err := b.storageManager.GetOrCreateUser(did)
-		if err != nil {
-			log.Errorf("Error creating user: %v", err)
-			return
-		}
-		postAuthorDid, postUriKey, err := utils.SplitUri(subjectUri, "/app.bsky.feed.post/")
-		if err != nil {
-			log.Errorf("Error parsing post uri: %v", err)
-			return
-		}
-		postAuthorId, err := b.storageManager.GetOrCreateUser(postAuthorDid)
-		if err != nil {
-			log.Errorf("Error creating user: %v", err)
-			return
-		}
-		postId, err := b.storageManager.GetPostId(postAuthorId, postUriKey)
-		if err != nil {
-			log.Errorf("Error getting post id: %v", err)
-			return
-		}
-		b.storageManager.CreateInteraction(
-			models.Interaction{
-				UriKey:    uriKey,
-				Kind:      kind,
-				AuthorId:  authorId,
-				PostId:    postId,
-				CreatedAt: createdAt,
-			},
-		)
-	}()
+	authorId, err := b.storageManager.GetOrCreateUser(did)
+	if err != nil {
+		log.Errorf("Error creating user: %v", err)
+		return
+	}
+	postAuthorDid, postUriKey, err := utils.SplitUri(subjectUri, "/app.bsky.feed.post/")
+	if err != nil {
+		log.Errorf("Error parsing post uri: %v", err)
+		return
+	}
+	postAuthorId, err := b.storageManager.GetOrCreateUser(postAuthorDid)
+	if err != nil {
+		log.Errorf("Error creating user: %v", err)
+		return
+	}
+	postId, err := b.storageManager.GetPostId(postAuthorId, postUriKey)
+	if err != nil {
+		log.Errorf("Error getting post id: %v", err)
+		return
+	}
+	b.storageManager.CreateInteraction(
+		models.Interaction{
+			UriKey:    uriKey,
+			Kind:      kind,
+			AuthorId:  authorId,
+			PostId:    postId,
+			CreatedAt: createdAt,
+		},
+	)
 }
 
 func (b *Backfiller) handlePostCreate(did string, uri string, post *appbsky.FeedPost) {
@@ -287,37 +283,34 @@ func (b *Backfiller) handlePostCreate(did string, uri string, post *appbsky.Feed
 		}
 	}
 
-	go func() {
-		language := b.languageDetector.DetectLanguage(post.Text, post.Langs)
+	language := b.languageDetector.DetectLanguage(post.Text, post.Langs)
 
-		// Calculate rank
-		b.hasher.Write([]byte(uri))
-		hash := b.hasher.Sum32()
-		b.hasher.Reset()
-		decimalPlaces := int(math.Log10(float64(hash))) + 1
-		divisor := math.Pow10(decimalPlaces)
-		rank := float64(createdAt.Unix()) + float64(hash)/divisor
+	// Calculate rank
+	b.hasher.Write([]byte(uri))
+	hash := b.hasher.Sum32()
+	b.hasher.Reset()
+	decimalPlaces := int(math.Log10(float64(hash))) + 1
+	divisor := math.Pow10(decimalPlaces)
+	rank := float64(createdAt.Unix()) + float64(hash)/divisor
 
-		authorId, err := b.storageManager.GetOrCreateUser(did)
-		if err != nil {
-			log.Errorf("Error creating user: %v", err)
-			return
-		}
-		b.storageManager.CreatePost(
-			models.Post{
-				UriKey:        uriKey,
-				AuthorId:      authorId,
-				AuthorDid:     did,
-				ReplyParentId: replyParentId,
-				ReplyRootId:   replyRootId,
-				CreatedAt:     createdAt,
-				Language:      language,
-				Rank:          rank,
-				Text:          post.Text,
-				Embed:         post.Embed,
-			})
-
-	}()
+	authorId, err := b.storageManager.GetOrCreateUser(did)
+	if err != nil {
+		log.Errorf("Error creating user: %v", err)
+		return
+	}
+	b.storageManager.CreatePost(
+		models.Post{
+			UriKey:        uriKey,
+			AuthorId:      authorId,
+			AuthorDid:     did,
+			ReplyParentId: replyParentId,
+			ReplyRootId:   replyRootId,
+			CreatedAt:     createdAt,
+			Language:      language,
+			Rank:          rank,
+			Text:          post.Text,
+			Embed:         post.Embed,
+		})
 }
 
 func (b *Backfiller) metadataWorker(wg *sync.WaitGroup, metadataChan chan string) {

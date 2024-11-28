@@ -34,6 +34,13 @@ WHERE author_id = ANY (@author_ids::INT[])
   AND uri_key = ANY (@uri_keys::VARCHAR[])
 RETURNING id, author_id, uri_key;
 
+-- name: DeletePost :one
+DELETE
+FROM posts
+WHERE author_id = $1
+  AND uri_key = $2
+RETURNING id, author_id, uri_key;
+
 -- name: GetOldPosts :many
 SELECT id, author_id
 FROM posts
