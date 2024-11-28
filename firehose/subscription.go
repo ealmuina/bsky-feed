@@ -10,7 +10,7 @@ import (
 	"fmt"
 	appbsky "github.com/bluesky-social/indigo/api/bsky"
 	jsclient "github.com/bluesky-social/jetstream/pkg/client"
-	jsscheduler "github.com/bluesky-social/jetstream/pkg/client/schedulers/parallel"
+	jsscheduler "github.com/bluesky-social/jetstream/pkg/client/schedulers/sequential"
 	jsmodels "github.com/bluesky-social/jetstream/pkg/models"
 	log "github.com/sirupsen/logrus"
 	"hash"
@@ -23,8 +23,6 @@ import (
 	"strings"
 	"time"
 )
-
-const NumWorkers = 16
 
 type Subscription struct {
 	serviceName       string
@@ -98,7 +96,7 @@ func (s *Subscription) createClient() *jsclient.Client {
 			WantedCollections: []string{},
 		},
 		slog.Default(),
-		jsscheduler.NewScheduler(NumWorkers, "data_stream", slog.Default(), s.getHandle()),
+		jsscheduler.NewScheduler("data_stream", slog.Default(), s.getHandle()),
 	)
 	if err != nil {
 		log.Fatalf("Error creating Jetstream client: %v", err)
@@ -116,7 +114,7 @@ func (s *Subscription) getHandle() func(context.Context, *jsmodels.Event) error 
 		cursor = int(math.Max(float64(evt.TimeUS), float64(cursor)))
 		seq++
 		if seq%100 == 0 {
-			s.storageManager.UpdateCursor(s.serviceName, strconv.Itoa(cursor))
+			go s.storageManager.UpdateCursor(s.serviceName, strconv.Itoa(cursor))
 		}
 		if err := s.metricsMiddleware.HandleOperation(evt); err != nil {
 			log.Errorf("Error handling operation: %v", err)
@@ -175,34 +173,37 @@ func (s *Subscription) handleFeedPostCreate(evt *jsmodels.Event) error {
 		}
 	}
 
-	language := s.languageDetector.DetectLanguage(post.Text, post.Langs)
+	go func() {
+		language := s.languageDetector.DetectLanguage(post.Text, post.Langs)
 
-	// Calculate rank
-	s.hasher.Write([]byte(uri))
-	hash := s.hasher.Sum32()
-	s.hasher.Reset()
-	decimalPlaces := int(math.Log10(float64(hash))) + 1
-	divisor := math.Pow10(decimalPlaces)
-	rank := float64(createdAt.Unix()) + float64(hash)/divisor
+		// Calculate rank
+		s.hasher.Write([]byte(uri))
+		hash := s.hasher.Sum32()
+		s.hasher.Reset()
+		decimalPlaces := int(math.Log10(float64(hash))) + 1
+		divisor := math.Pow10(decimalPlaces)
+		rank := float64(createdAt.Unix()) + float64(hash)/divisor
 
-	authorId, err := s.storageManager.GetOrCreateUser(evt.Did)
-	if err != nil {
-		log.Errorf("Error creating user: %v", err)
-		return err
-	}
-	s.storageManager.CreatePost(
-		models.Post{
-			UriKey:        evt.Commit.RKey,
-			AuthorId:      authorId,
-			AuthorDid:     evt.Did,
-			ReplyParentId: replyParentId,
-			ReplyRootId:   replyRootId,
-			CreatedAt:     createdAt,
-			Language:      language,
-			Rank:          rank,
-			Text:          post.Text,
-			Embed:         post.Embed,
-		})
+		authorId, err := s.storageManager.GetOrCreateUser(evt.Did)
+		if err != nil {
+			log.Errorf("Error creating user: %v", err)
+			return
+		}
+		s.storageManager.CreatePost(
+			models.Post{
+				UriKey:        evt.Commit.RKey,
+				AuthorId:      authorId,
+				AuthorDid:     evt.Did,
+				ReplyParentId: replyParentId,
+				ReplyRootId:   replyRootId,
+				CreatedAt:     createdAt,
+				Language:      language,
+				Rank:          rank,
+				Text:          post.Text,
+				Embed:         post.Embed,
+			})
+
+	}()
 
 	return nil
 }
@@ -219,24 +220,26 @@ func (s *Subscription) handleGraphFollowCreate(evt *jsmodels.Event) error {
 		return err
 	}
 
-	authorId, err := s.storageManager.GetOrCreateUser(evt.Did)
-	if err != nil {
-		log.Errorf("Error creating user: %v", err)
-		return err
-	}
-	subjectId, err := s.storageManager.GetOrCreateUser(follow.Subject)
-	if err != nil {
-		log.Errorf("Error creating user: %v", err)
-		return err
-	}
-	s.storageManager.CreateFollow(
-		models.Follow{
-			UriKey:    evt.Commit.RKey,
-			AuthorID:  authorId,
-			SubjectID: subjectId,
-			CreatedAt: createdAt,
-		},
-	)
+	go func() {
+		authorId, err := s.storageManager.GetOrCreateUser(evt.Did)
+		if err != nil {
+			log.Errorf("Error creating user: %v", err)
+			return
+		}
+		subjectId, err := s.storageManager.GetOrCreateUser(follow.Subject)
+		if err != nil {
+			log.Errorf("Error creating user: %v", err)
+			return
+		}
+		s.storageManager.CreateFollow(
+			models.Follow{
+				UriKey:    evt.Commit.RKey,
+				AuthorID:  authorId,
+				SubjectID: subjectId,
+				CreatedAt: createdAt,
+			},
+		)
+	}()
 
 	return nil
 }
@@ -277,35 +280,37 @@ func (s *Subscription) handleInteractionCreate(evt *jsmodels.Event) error {
 		return err
 	}
 
-	authorId, err := s.storageManager.GetOrCreateUser(evt.Did)
-	if err != nil {
-		log.Errorf("Error creating user: %v", err)
-		return err
-	}
-	postAuthorDid, postUriKey, err := utils.SplitUri(postUri, "/app.bsky.feed.post/")
-	if err != nil {
-		log.Errorf("Error parsing post uri: %v", err)
-		return err
-	}
-	postAuthorId, err := s.storageManager.GetOrCreateUser(postAuthorDid)
-	if err != nil {
-		log.Errorf("Error creating user: %v", err)
-		return err
-	}
-	postId, err := s.storageManager.GetPostId(postAuthorId, postUriKey)
-	if err != nil {
-		log.Errorf("Error getting post id: %v", err)
-		return err
-	}
-	s.storageManager.CreateInteraction(
-		models.Interaction{
-			UriKey:    evt.Commit.RKey,
-			Kind:      kind,
-			AuthorId:  authorId,
-			PostId:    postId,
-			CreatedAt: createdAt,
-		},
-	)
+	go func() {
+		authorId, err := s.storageManager.GetOrCreateUser(evt.Did)
+		if err != nil {
+			log.Errorf("Error creating user: %v", err)
+			return
+		}
+		postAuthorDid, postUriKey, err := utils.SplitUri(postUri, "/app.bsky.feed.post/")
+		if err != nil {
+			log.Errorf("Error parsing post uri: %v", err)
+			return
+		}
+		postAuthorId, err := s.storageManager.GetOrCreateUser(postAuthorDid)
+		if err != nil {
+			log.Errorf("Error creating user: %v", err)
+			return
+		}
+		postId, err := s.storageManager.GetPostId(postAuthorId, postUriKey)
+		if err != nil {
+			log.Errorf("Error getting post id: %v", err)
+			return
+		}
+		s.storageManager.CreateInteraction(
+			models.Interaction{
+				UriKey:    evt.Commit.RKey,
+				Kind:      kind,
+				AuthorId:  authorId,
+				PostId:    postId,
+				CreatedAt: createdAt,
+			},
+		)
+	}()
 
 	return nil
 }
