@@ -50,7 +50,7 @@ func NewUsersCache(redisConnection *redis.Client, expiration time.Duration) User
 func (c *UsersCache) AddUser(id int32, did string) {
 	idStr := fmt.Sprintf("%d", id)
 	c.hSetWithExpiration(UserIdToDidRedisKey, idStr, did)
-	c.hSetWithExpiration(UserIdToDidRedisKey, did, idStr)
+	c.hSetWithExpiration(UserDidToIdRedisKey, did, idStr)
 }
 
 func (c *UsersCache) DeleteUser(id int32) {
@@ -95,7 +95,7 @@ func (c *UsersCache) RequiresReload() bool {
 func (c *UsersCache) SetUserFollows(id int32, followersCount int64, followsCount int64) {
 	idStr := fmt.Sprintf("%d", id)
 	c.hSetWithExpiration(UsersFollowersCountRedisKey, idStr, strconv.Itoa(int(followersCount)))
-	c.hSetWithExpiration(UsersFollowersCountRedisKey, idStr, strconv.Itoa(int(followsCount)))
+	c.hSetWithExpiration(UsersFollowsCountRedisKey, idStr, strconv.Itoa(int(followsCount)))
 }
 
 func (c *UsersCache) UpdateUserStatistics(
