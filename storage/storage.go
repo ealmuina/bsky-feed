@@ -36,7 +36,8 @@ func NewManager(dbConnection *pgxpool.Pool, redisConnection *redis.Client, persi
 
 		usersCache: cache.NewUsersCache(
 			redisConnection,
-			30*24*time.Hour, // expire entries after 30 days
+			//30*24*time.Hour, // expire entries after 30 days
+			5*time.Minute, // expire entries after 5 minutes
 		),
 		postsCache: cache.NewPostsCache(
 			redisConnection,
