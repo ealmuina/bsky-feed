@@ -57,6 +57,32 @@ func (q *Queries) BulkDeleteFollows(ctx context.Context, arg BulkDeleteFollowsPa
 	return items, nil
 }
 
+const createFollow = `-- name: CreateFollow :one
+INSERT INTO follows (uri_key, author_id, subject_id, created_at)
+VALUES ($1, $2, $3, $4)
+ON CONFLICT DO NOTHING
+RETURNING id
+`
+
+type CreateFollowParams struct {
+	UriKey    string
+	AuthorID  int32
+	SubjectID int32
+	CreatedAt pgtype.Timestamp
+}
+
+func (q *Queries) CreateFollow(ctx context.Context, arg CreateFollowParams) (int64, error) {
+	row := q.db.QueryRow(ctx, createFollow,
+		arg.UriKey,
+		arg.AuthorID,
+		arg.SubjectID,
+		arg.CreatedAt,
+	)
+	var id int64
+	err := row.Scan(&id)
+	return id, err
+}
+
 const createTempFollowsTable = `-- name: CreateTempFollowsTable :exec
 CREATE TEMPORARY TABLE tmp_follows
     ON COMMIT DROP
@@ -69,6 +95,32 @@ FROM follows
 func (q *Queries) CreateTempFollowsTable(ctx context.Context) error {
 	_, err := q.db.Exec(ctx, createTempFollowsTable)
 	return err
+}
+
+const deleteFollow = `-- name: DeleteFollow :one
+DELETE
+FROM follows
+WHERE author_id = $1
+  AND uri_key = $2
+RETURNING id, author_id, subject_id
+`
+
+type DeleteFollowParams struct {
+	AuthorID int32
+	UriKey   string
+}
+
+type DeleteFollowRow struct {
+	ID        int64
+	AuthorID  int32
+	SubjectID int32
+}
+
+func (q *Queries) DeleteFollow(ctx context.Context, arg DeleteFollowParams) (DeleteFollowRow, error) {
+	row := q.db.QueryRow(ctx, deleteFollow, arg.AuthorID, arg.UriKey)
+	var i DeleteFollowRow
+	err := row.Scan(&i.ID, &i.AuthorID, &i.SubjectID)
+	return i, err
 }
 
 const getFollowsTouchingUser = `-- name: GetFollowsTouchingUser :many
