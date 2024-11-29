@@ -95,7 +95,15 @@ func runBackgroundTasks(storageManager *storage.Manager) {
 
 	if runBackfill {
 		// Backfill
-		backfiller := backfill.NewBackfiller("backfill", storageManager)
+		numRepoWorkersStr := os.Getenv("BACKFILL_REPO_WORKERS")
+		numMetadataWorkersStr := os.Getenv("BACKFILL_METADATA_WORKERS")
+
+		backfiller := backfill.NewBackfiller(
+			"backfill",
+			storageManager,
+			utils.IntFromString(numRepoWorkersStr, 8),
+			utils.IntFromString(numMetadataWorkersStr, 4),
+		)
 		go backfiller.Run()
 	} else {
 		// Statistics updater

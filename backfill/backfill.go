@@ -33,15 +33,15 @@ const (
 	InvalidRequestError     = "InvalidRequest" // Seen when profile is not found
 	ExpiredToken            = "ExpiredToken"
 )
-const NumRepoWorkers = 32
-const NumMetadataWorkers = 16
 
 type Backfiller struct {
-	serviceName      string
-	storageManager   *storage.Manager
-	client           *xrpc.Client
-	languageDetector *utils.LanguageDetector
-	hasher           hash.Hash32
+	serviceName        string
+	numRepoWorkers     int
+	numMetadataWorkers int
+	storageManager     *storage.Manager
+	client             *xrpc.Client
+	languageDetector   *utils.LanguageDetector
+	hasher             hash.Hash32
 }
 
 func getXrpcClient() *xrpc.Client {
@@ -72,13 +72,20 @@ func getXrpcClient() *xrpc.Client {
 	return xrpcClient
 }
 
-func NewBackfiller(serviceName string, storageManager *storage.Manager) *Backfiller {
+func NewBackfiller(
+	serviceName string,
+	storageManager *storage.Manager,
+	numRepoWorkers int,
+	numMetadataWorkers int,
+) *Backfiller {
 	return &Backfiller{
-		serviceName:      serviceName,
-		storageManager:   storageManager,
-		client:           getXrpcClient(),
-		languageDetector: utils.NewLanguageDetector(),
-		hasher:           fnv.New32a(),
+		serviceName:        serviceName,
+		numRepoWorkers:     numRepoWorkers,
+		numMetadataWorkers: numMetadataWorkers,
+		storageManager:     storageManager,
+		client:             getXrpcClient(),
+		languageDetector:   utils.NewLanguageDetector(),
+		hasher:             fnv.New32a(),
 	}
 }
 
@@ -90,11 +97,11 @@ func (b *Backfiller) Run() {
 	repoChan := make(chan *comatproto.SyncListRepos_Repo)
 	metadataChan := make(chan string, 100000)
 
-	for i := 0; i < NumRepoWorkers; i++ {
+	for i := 0; i < b.numRepoWorkers; i++ {
 		wg.Add(1)
 		go b.repoWorker(&wg, repoChan, metadataChan)
 	}
-	for i := 0; i < NumMetadataWorkers; i++ {
+	for i := 0; i < b.numMetadataWorkers; i++ {
 		wg.Add(1)
 		go b.metadataWorker(&wg, metadataChan)
 	}
