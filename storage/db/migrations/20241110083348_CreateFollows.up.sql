@@ -11,6 +11,5 @@ CREATE TABLE follows
     UNIQUE (author_id, uri_key)
 );
 
-CREATE INDEX IF NOT EXISTS idx_follows_key ON follows (author_id, uri_key);
 CREATE INDEX IF NOT EXISTS idx_follows_created_at ON follows (created_at);
 CREATE INDEX IF NOT EXISTS idx_follows_subject_id ON follows (subject_id);

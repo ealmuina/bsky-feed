@@ -12,6 +12,5 @@ CREATE TABLE interactions
     UNIQUE (author_id, uri_key)
 );
 
-CREATE INDEX IF NOT EXISTS idx_interactions_keyt ON interactions (author_id, uri_key);
 CREATE INDEX IF NOT EXISTS idx_interactions_created_at ON interactions (created_at);
 CREATE INDEX IF NOT EXISTS idx_interactions_post_id ON interactions (post_id);
