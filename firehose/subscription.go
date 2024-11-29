@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/araddon/dateparse"
 	appbsky "github.com/bluesky-social/indigo/api/bsky"
 	jsclient "github.com/bluesky-social/jetstream/pkg/client"
 	jsscheduler "github.com/bluesky-social/jetstream/pkg/client/schedulers/sequential"
@@ -131,7 +132,7 @@ func (s *Subscription) handleFeedPostCreate(evt *jsmodels.Event) error {
 
 	uri := s.calculateUri(evt)
 
-	createdAt, err := utils.ParseTime(post.CreatedAt)
+	createdAt, err := dateparse.ParseAny(post.CreatedAt)
 	if err != nil {
 		log.Errorf("Error parsing created at: %s", err)
 		return err
@@ -214,7 +215,7 @@ func (s *Subscription) handleGraphFollowCreate(evt *jsmodels.Event) error {
 		return fmt.Errorf("failed to unmarshal follow: %w", err)
 	}
 
-	createdAt, err := utils.ParseTime(follow.CreatedAt)
+	createdAt, err := dateparse.ParseAny(follow.CreatedAt)
 	if err != nil {
 		log.Errorf("Error parsing created at: %s", err)
 		return err
@@ -274,7 +275,7 @@ func (s *Subscription) handleInteractionCreate(evt *jsmodels.Event) error {
 		return nil
 	}
 
-	createdAt, err := utils.ParseTime(createdAtStr)
+	createdAt, err := dateparse.ParseAny(createdAtStr)
 	if err != nil {
 		log.Errorf("Error parsing created at: %s", err)
 		return err

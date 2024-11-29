@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/araddon/dateparse"
 	comatproto "github.com/bluesky-social/indigo/api/atproto"
 	appbsky "github.com/bluesky-social/indigo/api/bsky"
 	"github.com/bluesky-social/indigo/repo"
@@ -171,7 +172,7 @@ func (b *Backfiller) handleFollowCreate(did string, uri string, follow *appbsky.
 	uriParts := strings.Split(uri, "/")
 	uriKey := uriParts[len(uriParts)-1]
 
-	createdAt, err := utils.ParseTime(follow.CreatedAt)
+	createdAt, err := dateparse.ParseAny(follow.CreatedAt)
 	if err != nil {
 		log.Errorf("Error parsing created at: %s", err)
 		return
@@ -211,7 +212,7 @@ func (b *Backfiller) handleInteractionCreate(
 	uriParts := strings.Split(uri, "/")
 	uriKey := uriParts[len(uriParts)-1]
 
-	createdAt, err := utils.ParseTime(createdAtStr)
+	createdAt, err := dateparse.ParseAny(createdAtStr)
 	if err != nil {
 		log.Errorf("Error parsing created at: %s", err)
 		return
@@ -249,7 +250,7 @@ func (b *Backfiller) handleInteractionCreate(
 }
 
 func (b *Backfiller) handlePostCreate(did string, uri string, post *appbsky.FeedPost) {
-	createdAt, err := utils.ParseTime(post.CreatedAt)
+	createdAt, err := dateparse.ParseAny(post.CreatedAt)
 	if err != nil {
 		log.Errorf("Error parsing created at: %s", err)
 		return
@@ -460,7 +461,7 @@ func (b *Backfiller) setCreatedAt(did string, askBluesky bool) {
 		}
 	}
 
-	createdAt, err := utils.ParseTime(profile.CreatedAt)
+	createdAt, err := dateparse.ParseAny(profile.CreatedAt)
 	if err != nil {
 		log.Errorf("Error parsing created at: %s", err)
 		return
