@@ -18,6 +18,11 @@ DELETE
 FROM users
 WHERE id = $1;
 
+-- name: DeleteUserByDid :exec
+DELETE
+FROM users
+WHERE did = $1;
+
 -- name: AddUserFollowers :exec
 UPDATE users
 SET followers_count = COALESCE(followers_count, 0) + $2
@@ -26,11 +31,6 @@ WHERE id = $1;
 -- name: AddUserFollows :exec
 UPDATE users
 SET follows_count = COALESCE(follows_count, 0) + $2
-WHERE id = $1;
-
--- name: AddUserPosts :exec
-UPDATE users
-SET posts_count = COALESCE(posts_count, 0) + $2
 WHERE id = $1;
 
 -- name: GetUser :one

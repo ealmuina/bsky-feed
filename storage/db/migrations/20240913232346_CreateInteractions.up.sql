@@ -2,10 +2,10 @@ CREATE TABLE interactions
 (
     id         BIGSERIAL PRIMARY KEY,
     uri_key    TEXT      NOT NULL,
-    author_id  INT       NOT NULL,
+    author_id INT    NOT NULL REFERENCES users ON DELETE CASCADE,
 
     kind       SMALLINT  NOT NULL,
-    post_id    BIGINT    NOT NULL,
+    post_id   BIGINT NOT NULL REFERENCES posts ON DELETE CASCADE,
 
     created_at TIMESTAMP NOT NULL,
 

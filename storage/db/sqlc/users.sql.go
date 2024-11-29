@@ -43,22 +43,6 @@ func (q *Queries) AddUserFollows(ctx context.Context, arg AddUserFollowsParams) 
 	return err
 }
 
-const addUserPosts = `-- name: AddUserPosts :exec
-UPDATE users
-SET posts_count = COALESCE(posts_count, 0) + $2
-WHERE id = $1
-`
-
-type AddUserPostsParams struct {
-	ID         int32
-	PostsCount pgtype.Int4
-}
-
-func (q *Queries) AddUserPosts(ctx context.Context, arg AddUserPostsParams) error {
-	_, err := q.db.Exec(ctx, addUserPosts, arg.ID, arg.PostsCount)
-	return err
-}
-
 const createUser = `-- name: CreateUser :exec
 INSERT INTO users (did, handle, followers_count, follows_count, posts_count, last_update)
 VALUES ($1, $2, $3, $4, $5, $6)
@@ -94,6 +78,17 @@ WHERE id = $1
 
 func (q *Queries) DeleteUser(ctx context.Context, id int32) error {
 	_, err := q.db.Exec(ctx, deleteUser, id)
+	return err
+}
+
+const deleteUserByDid = `-- name: DeleteUserByDid :exec
+DELETE
+FROM users
+WHERE did = $1
+`
+
+func (q *Queries) DeleteUserByDid(ctx context.Context, did string) error {
+	_, err := q.db.Exec(ctx, deleteUserByDid, did)
 	return err
 }
 

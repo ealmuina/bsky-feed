@@ -242,105 +242,50 @@ func (m *Manager) DeleteInteraction(identifier models.Identifier) {
 	}
 
 	// Update caches
-	m.postsCache.DeleteInteraction(interaction.ID)
-	if postAuthorId, err := m.GetPostAuthorId(interaction.PostID); err == nil { // post author found
-		m.usersCache.UpdateUserStatistics(
-			postAuthorId, 0, 0, 0, 1,
-		)
+	if m.postsCache.DeleteInteraction(interaction.PostID) {
+		if postAuthorId, err := m.GetPostAuthorId(interaction.PostID); err == nil { // post author found
+			m.usersCache.UpdateUserStatistics(
+				postAuthorId, 0, 0, 0, -1,
+			)
+		}
 	}
 }
 
 func (m *Manager) DeletePost(identifier models.Identifier) {
-	var post db.DeletePostRow
-	var postInteractions []db.GetPostInteractionsRow
+	ctx := context.Background()
 
-	m.executeTransaction(
-		func(ctx context.Context, qtx *db.Queries) {
-			// Delete posts
-			var err error
-			post, err = m.queries.DeletePost(ctx, db.DeletePostParams{
-				UriKey:   identifier.UriKey,
-				AuthorID: identifier.AuthorId,
-			})
-			if err != nil {
-				log.Errorf("Error deleting post: %v", err)
-				return
-			}
-
-			// Remove corresponding interactions
-			postInteractions, err = qtx.GetPostInteractions(ctx, post.ID)
-			if err != nil {
-				log.Errorf("Error getting post interactions: %v", err)
-			}
-			for _, interaction := range postInteractions {
-				m.DeleteInteraction(models.Identifier{
-					UriKey:   interaction.UriKey,
-					AuthorId: interaction.AuthorID,
-				})
-			}
-		},
-	)
+	post, err := m.queries.DeletePost(ctx, db.DeletePostParams{
+		UriKey:   identifier.UriKey,
+		AuthorID: identifier.AuthorId,
+	})
+	if err != nil {
+		log.Errorf("Error deleting post: %v", err)
+		return
+	}
 
 	// Update caches
 	m.postsCache.DeletePost(post.ID)
-	if len(postInteractions) > 0 {
+	postInteractionsCount := m.postsCache.GetPostInteractions(post.ID)
+	if postInteractionsCount > 0 {
 		m.usersCache.UpdateUserStatistics(
-			post.AuthorID, 0, 0, -1, int64(-len(postInteractions)),
+			post.AuthorID, 0, 0, -1, postInteractionsCount,
 		)
 	}
 }
 
 func (m *Manager) DeleteUser(did string) {
 	ctx := context.Background()
-	id, ok := m.usersCache.UserDidToId(did) // TODO: Query DB too
-	if !ok {
-		return
-	}
-
-	// Delete posts
-	userPosts, err := m.queries.GetUserPosts(ctx, id)
-	if err != nil {
-		log.Errorf("Error getting user '%s' posts: %v", did, err)
-	}
-	for _, post := range userPosts {
-		m.DeletePost(models.Identifier{
-			UriKey:   post.UriKey,
-			AuthorId: post.AuthorID,
-		})
-	}
-	// Delete interactions
-	userInteractions, err := m.queries.GetUserInteractions(ctx, id)
-	if err != nil {
-		log.Errorf("Error getting user '%s' interactions: %v", did, err)
-	}
-	for _, interaction := range userInteractions {
-		m.DeleteFollow(models.Identifier{
-			UriKey:   interaction.UriKey,
-			AuthorId: interaction.AuthorID,
-		})
-	}
-	if m.persistFollows {
-		// Delete follows "touching" the user (follower or followed)
-		userFollows, err := m.queries.GetFollowsTouchingUser(ctx, id)
-		if err != nil {
-			log.Errorf("Error getting user '%s' follows: %v", did, err)
-		}
-		for _, follow := range userFollows {
-			m.DeleteFollow(models.Identifier{
-				UriKey:   follow.UriKey,
-				AuthorId: follow.AuthorID,
-			})
-		}
-	}
 
 	// Delete user from DB
-	if err := m.queries.DeleteUser(ctx, id); err != nil {
+	if err := m.queries.DeleteUserByDid(ctx, did); err != nil {
 		log.Errorf("Error deleting user %s: %v", did, err)
-		return
 	}
 
 	// Delete user from cache
-	m.usersCache.DeleteUser(id)
+	id, ok := m.usersCache.UserDidToId(did)
+	if ok {
+		m.usersCache.DeleteUser(id)
+	}
 }
 
 func (m *Manager) GetCursor(service string) string {
@@ -412,13 +357,6 @@ func (m *Manager) GetPostId(authorId int32, uriKey string) (int64, error) {
 		UriKey:   uriKey,
 	})
 
-	if upsertResult.IsCreated {
-		// Add post to user statistics
-		_ = m.queries.AddUserPosts(ctx, db.AddUserPostsParams{
-			ID:         authorId,
-			PostsCount: pgtype.Int4{Int32: 1, Valid: true},
-		})
-	}
 	return upsertResult.ID, nil
 }
 

@@ -42,10 +42,14 @@ func (c *PostsCache) AddPost(post models.Post) {
 	c.hSetWithExpiration(PostAuthorIdRedisKey, idStr, authorIdStr)
 }
 
-func (c *PostsCache) DeleteInteraction(postId int64) {
+func (c *PostsCache) DeleteInteraction(postId int64) bool {
 	ctx := context.Background()
 	idStr := strconv.FormatInt(postId, 10)
-	c.redisClient.HIncrBy(ctx, PostInteractionsCountRedisKey, idStr, -1)
+	result, err := c.redisClient.HIncrBy(ctx, PostInteractionsCountRedisKey, idStr, -1).Result()
+	if err != nil {
+		return false
+	}
+	return result > 0
 }
 
 func (c *PostsCache) DeletePost(id int64) {

@@ -2,7 +2,7 @@ CREATE TABLE posts
 (
     id              BIGSERIAL PRIMARY KEY,
     uri_key         TEXT NOT NULL,
-    author_id       INT  NOT NULL,
+    author_id INT NOT NULL REFERENCES users ON DELETE CASCADE,
 
     reply_parent_id BIGINT,
     reply_root_id   BIGINT,
@@ -11,6 +11,7 @@ CREATE TABLE posts
     created_at      TIMESTAMP,
 
     UNIQUE (author_id, uri_key)
+
 );
 
 CREATE INDEX IF NOT EXISTS idx_posts_key ON posts (author_id, uri_key);

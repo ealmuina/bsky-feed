@@ -1,10 +1,10 @@
 CREATE TABLE follows
 (
-    id BIGSERIAL PRIMARY KEY,
+    id         BIGSERIAL PRIMARY KEY,
     uri_key    TEXT      NOT NULL,
-    author_id  INT       NOT NULL,
+    author_id  INT NOT NULL REFERENCES users ON DELETE CASCADE,
 
-    subject_id INT       NOT NULL,
+    subject_id INT NOT NULL REFERENCES users ON DELETE CASCADE,
 
     created_at TIMESTAMP NOT NULL,
 
