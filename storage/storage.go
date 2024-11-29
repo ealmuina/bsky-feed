@@ -96,30 +96,26 @@ func (m *Manager) CleanOldData(persistentDb bool) {
 }
 
 func (m *Manager) CreateFollow(follow models.Follow) {
-	if m.persistFollows {
-		m.executeTransaction(
-			func(ctx context.Context, qtx *db.Queries) {
-				// Create follow
-				_, err := qtx.CreateFollow(ctx, db.CreateFollowParams{
-					UriKey:    follow.UriKey,
-					AuthorID:  follow.AuthorID,
-					SubjectID: follow.SubjectID,
-					CreatedAt: pgtype.Timestamp{Time: follow.CreatedAt, Valid: true},
-				})
-				if err != nil {
-					if !strings.Contains(err.Error(), "no rows in result set") {
-						log.Errorf("Error creating follow: %v", err)
-					}
-					return
-				}
+	ctx := context.Background()
 
-				// Update statistics
-				m.refreshFollowStatistics(ctx, qtx, follow.AuthorID, follow.SubjectID, 1)
-			},
-		)
+	if m.persistFollows {
+		_, err := m.queries.CreateFollow(ctx, db.CreateFollowParams{
+			UriKey:    follow.UriKey,
+			AuthorID:  follow.AuthorID,
+			SubjectID: follow.SubjectID,
+			CreatedAt: pgtype.Timestamp{Time: follow.CreatedAt, Valid: true},
+		})
+		if err != nil {
+			if !strings.Contains(err.Error(), "no rows in result set") {
+				log.Errorf("Error creating follow: %v", err)
+			}
+			return
+		}
+		// Write to DB is done by trigger. Just update caches
+		m.refreshFollowStatistics(follow.AuthorID, follow.SubjectID, 1, false)
 	} else {
 		// Do not persist. Just update statistics
-		m.refreshFollowStatistics(context.Background(), m.queries, follow.AuthorID, follow.SubjectID, 1)
+		m.refreshFollowStatistics(follow.AuthorID, follow.SubjectID, 1, true)
 	}
 }
 
@@ -153,6 +149,8 @@ func (m *Manager) CreateInteraction(interaction models.Interaction) {
 }
 
 func (m *Manager) CreatePost(post models.Post) {
+	ctx := context.Background()
+
 	// Add post to corresponding timelines
 	authorStatistics := m.usersCache.GetUserStatistics(post.AuthorId)
 	go func() {
@@ -170,42 +168,30 @@ func (m *Manager) CreatePost(post models.Post) {
 		}
 	}()
 
-	m.executeTransaction(
-		func(ctx context.Context, qtx *db.Queries) {
-			upsertResult, err := qtx.UpsertPost(ctx, db.UpsertPostParams{
-				UriKey:        post.UriKey,
-				AuthorID:      post.AuthorId,
-				ReplyParentID: pgtype.Int8{Int64: post.ReplyParentId, Valid: post.ReplyParentId != 0},
-				ReplyRootID:   pgtype.Int8{Int64: post.ReplyRootId, Valid: post.ReplyRootId != 0},
-				CreatedAt:     pgtype.Timestamp{Time: post.CreatedAt, Valid: true},
-				Language:      pgtype.Text{String: post.Language, Valid: post.Language != ""},
-			})
-			if err != nil {
-				log.Errorf("Error upserting post: %v", err)
-				return
-			}
-			post.ID = upsertResult.ID
+	upsertResult, err := m.queries.UpsertPost(ctx, db.UpsertPostParams{
+		UriKey:        post.UriKey,
+		AuthorID:      post.AuthorId,
+		ReplyParentID: pgtype.Int8{Int64: post.ReplyParentId, Valid: post.ReplyParentId != 0},
+		ReplyRootID:   pgtype.Int8{Int64: post.ReplyRootId, Valid: post.ReplyRootId != 0},
+		CreatedAt:     pgtype.Timestamp{Time: post.CreatedAt, Valid: true},
+		Language:      pgtype.Text{String: post.Language, Valid: post.Language != ""},
+	})
+	if err != nil {
+		log.Errorf("Error upserting post: %v", err)
+		return
+	}
+	post.ID = upsertResult.ID
 
-			if upsertResult.IsCreated {
-				m.postsCache.AddPost(post)
+	// Update caches. DB update is done by trigger
+	if upsertResult.IsCreated {
+		m.postsCache.AddPost(post)
 
-				// Add post to user statistics
-				err = qtx.AddUserPosts(ctx, db.AddUserPostsParams{
-					ID:         post.AuthorId,
-					PostsCount: pgtype.Int4{Int32: 1, Valid: true},
-				})
-				if err != nil {
-					log.Errorf("Error adding post to user '%d': %v", post.AuthorId, err)
-				}
-			}
-		},
-	)
-
-	// Update cache (exclude replies)
-	if post.ReplyRootId == 0 {
-		m.usersCache.UpdateUserStatistics(
-			post.AuthorId, 0, 0, 1, 0,
-		)
+		// Exclude replies in users cache
+		if post.ReplyRootId == 0 {
+			m.usersCache.UpdateUserStatistics(
+				post.AuthorId, 0, 0, 1, 0,
+			)
+		}
 	}
 }
 
@@ -213,23 +199,20 @@ func (m *Manager) DeleteFollow(identifier models.Identifier) {
 	ctx := context.Background()
 
 	if m.persistFollows {
-		m.executeTransaction(
-			func(ctx context.Context, qtx *db.Queries) {
-				// Delete follow
-				follow, err := qtx.DeleteFollow(ctx, db.DeleteFollowParams{
-					UriKey:   identifier.UriKey,
-					AuthorID: identifier.AuthorId,
-				})
-				if err != nil {
-					if !strings.Contains(err.Error(), "no rows in result set") {
-						log.Errorf("Error deleting follow: %v", err)
-					}
-					return
-				}
+		// Delete follow
+		follow, err := m.queries.DeleteFollow(ctx, db.DeleteFollowParams{
+			UriKey:   identifier.UriKey,
+			AuthorID: identifier.AuthorId,
+		})
+		if err != nil {
+			if !strings.Contains(err.Error(), "no rows in result set") {
+				log.Errorf("Error deleting follow: %v", err)
+			}
+			return
+		}
 
-				// Update user statistics
-				m.refreshFollowStatistics(ctx, qtx, follow.AuthorID, follow.SubjectID, -1)
-			})
+		// Write to DB is done by trigger. Just update caches
+		m.refreshFollowStatistics(follow.AuthorID, follow.SubjectID, -1, false)
 	} else {
 		// Discount from follower statistics directly
 		err := m.queries.AddUserFollows(ctx, db.AddUserFollowsParams{
@@ -281,16 +264,6 @@ func (m *Manager) DeletePost(identifier models.Identifier) {
 			})
 			if err != nil {
 				log.Errorf("Error deleting post: %v", err)
-				return
-			}
-
-			// Remove post from user statistics
-			err = qtx.AddUserPosts(ctx, db.AddUserPostsParams{
-				ID:         post.AuthorID,
-				PostsCount: pgtype.Int4{Int32: -1, Valid: true},
-			})
-			if err != nil {
-				log.Errorf("Error removing post to user '%d': %v", post.AuthorID, err)
 				return
 			}
 
@@ -538,16 +511,17 @@ func (m *Manager) initializeTimelines() {
 	}
 }
 
-func (m *Manager) refreshFollowStatistics(
-	ctx context.Context,
-	queries *db.Queries,
-	authorId, subjectId, delta int32,
-) {
+func (m *Manager) refreshFollowStatistics(authorId, subjectId, delta int32, writeToDb bool) {
+	ctx := context.Background()
+	var err error
+
 	// Count on follower
-	err := queries.AddUserFollows(ctx, db.AddUserFollowsParams{
-		ID:           authorId,
-		FollowsCount: pgtype.Int4{Int32: delta, Valid: true},
-	})
+	if writeToDb {
+		err = m.queries.AddUserFollows(ctx, db.AddUserFollowsParams{
+			ID:           authorId,
+			FollowsCount: pgtype.Int4{Int32: delta, Valid: true},
+		})
+	}
 	if err == nil {
 		m.usersCache.UpdateUserStatistics(
 			authorId, int64(delta), 0, 0, 0,
@@ -555,10 +529,12 @@ func (m *Manager) refreshFollowStatistics(
 	}
 
 	// Count on followed
-	err = queries.AddUserFollowers(ctx, db.AddUserFollowersParams{
-		ID:             subjectId,
-		FollowersCount: pgtype.Int4{Int32: delta, Valid: true},
-	})
+	if writeToDb {
+		err = m.queries.AddUserFollowers(ctx, db.AddUserFollowersParams{
+			ID:             subjectId,
+			FollowersCount: pgtype.Int4{Int32: delta, Valid: true},
+		})
+	}
 	if err == nil {
 		m.usersCache.UpdateUserStatistics(
 			subjectId, 0, int64(delta), 0, 0,
