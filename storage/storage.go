@@ -319,7 +319,7 @@ func (m *Manager) DeletePost(identifier models.Identifier) {
 
 func (m *Manager) DeleteUser(did string) {
 	ctx := context.Background()
-	id, ok := m.usersCache.UserDidToId(did)
+	id, ok := m.usersCache.UserDidToId(did) // TODO: Query DB too
 	if !ok {
 		return
 	}
@@ -543,15 +543,23 @@ func (m *Manager) refreshFollowStatistics(
 	queries *db.Queries,
 	authorId, subjectId, delta int32,
 ) {
-	err := queries.ApplyFollowToUsers(ctx, db.ApplyFollowToUsersParams{
-		AuthorID:  authorId,
-		SubjectID: subjectId,
-		Delta:     delta,
+	// Count on follower
+	err := queries.AddUserFollows(ctx, db.AddUserFollowsParams{
+		ID:           authorId,
+		FollowsCount: pgtype.Int4{Int32: delta, Valid: true},
 	})
 	if err == nil {
 		m.usersCache.UpdateUserStatistics(
 			authorId, int64(delta), 0, 0, 0,
 		)
+	}
+
+	// Count on followed
+	err = queries.AddUserFollowers(ctx, db.AddUserFollowersParams{
+		ID:             subjectId,
+		FollowersCount: pgtype.Int4{Int32: delta, Valid: true},
+	})
+	if err == nil {
 		m.usersCache.UpdateUserStatistics(
 			subjectId, 0, int64(delta), 0, 0,
 		)
