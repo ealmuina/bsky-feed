@@ -14,8 +14,13 @@ VALUES ($1, $2, $3, $4, $5);
 INSERT INTO interactions (uri_key, author_id, kind, post_id, created_at)
 VALUES ($1, $2, $3, $4, $5)
 ON CONFLICT (author_id, post_id, kind) DO UPDATE
-    SET uri_key    = excluded.uri_key,
-        created_at = excluded.created_at
+    SET uri_key    = CASE
+                         WHEN excluded.created_at > interactions.created_at
+                             THEN excluded.uri_key
+                         ELSE
+                             interactions.created_at
+        END,
+        created_at = GREATEST(interactions.created_at, excluded.created_at)
 RETURNING id, XMAX = 0 AS is_created;
 
 -- name: InsertFromTempToInteractions :many

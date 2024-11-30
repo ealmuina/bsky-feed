@@ -61,8 +61,13 @@ const createFollow = `-- name: CreateFollow :one
 INSERT INTO follows (uri_key, author_id, subject_id, created_at)
 VALUES ($1, $2, $3, $4)
 ON CONFLICT (author_id, subject_id) DO UPDATE
-    SET uri_key    = excluded.uri_key,
-        created_at = excluded.created_at
+    SET uri_key    = CASE
+                         WHEN excluded.created_at > follows.created_at
+                             THEN excluded.uri_key
+                         ELSE
+                             follows.created_at
+        END,
+        created_at = GREATEST(follows.created_at, excluded.created_at)
 RETURNING id, XMAX = 0 AS is_created
 `
 
