@@ -9,7 +9,8 @@ CREATE TABLE interactions
 
     created_at TIMESTAMP NOT NULL,
 
-    UNIQUE (author_id, uri_key)
+    UNIQUE (author_id, uri_key),
+    UNIQUE (author_id, post_id, kind)
 );
 
 CREATE INDEX IF NOT EXISTS idx_interactions_created_at ON interactions (created_at);

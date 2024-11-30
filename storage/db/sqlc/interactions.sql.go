@@ -60,8 +60,10 @@ func (q *Queries) BulkDeleteInteractions(ctx context.Context, arg BulkDeleteInte
 const createInteraction = `-- name: CreateInteraction :one
 INSERT INTO interactions (uri_key, author_id, kind, post_id, created_at)
 VALUES ($1, $2, $3, $4, $5)
-ON CONFLICT DO NOTHING
-RETURNING id
+ON CONFLICT (author_id, post_id, kind) DO UPDATE
+    SET uri_key    = excluded.uri_key,
+        created_at = excluded.created_at
+RETURNING id, XMAX = 0 AS is_created
 `
 
 type CreateInteractionParams struct {
@@ -72,7 +74,12 @@ type CreateInteractionParams struct {
 	CreatedAt pgtype.Timestamp
 }
 
-func (q *Queries) CreateInteraction(ctx context.Context, arg CreateInteractionParams) (int64, error) {
+type CreateInteractionRow struct {
+	ID        int64
+	IsCreated bool
+}
+
+func (q *Queries) CreateInteraction(ctx context.Context, arg CreateInteractionParams) (CreateInteractionRow, error) {
 	row := q.db.QueryRow(ctx, createInteraction,
 		arg.UriKey,
 		arg.AuthorID,
@@ -80,9 +87,9 @@ func (q *Queries) CreateInteraction(ctx context.Context, arg CreateInteractionPa
 		arg.PostID,
 		arg.CreatedAt,
 	)
-	var id int64
-	err := row.Scan(&id)
-	return id, err
+	var i CreateInteractionRow
+	err := row.Scan(&i.ID, &i.IsCreated)
+	return i, err
 }
 
 const createTempInteractionsTable = `-- name: CreateTempInteractionsTable :exec

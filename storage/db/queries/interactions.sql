@@ -13,8 +13,10 @@ VALUES ($1, $2, $3, $4, $5);
 -- name: CreateInteraction :one
 INSERT INTO interactions (uri_key, author_id, kind, post_id, created_at)
 VALUES ($1, $2, $3, $4, $5)
-ON CONFLICT DO NOTHING
-RETURNING id;
+ON CONFLICT (author_id, post_id, kind) DO UPDATE
+    SET uri_key    = excluded.uri_key,
+        created_at = excluded.created_at
+RETURNING id, XMAX = 0 AS is_created;
 
 -- name: InsertFromTempToInteractions :many
 INSERT INTO interactions (uri_key, author_id, kind, post_id, created_at)

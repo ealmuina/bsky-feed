@@ -13,8 +13,10 @@ VALUES ($1, $2, $3, $4);
 -- name: CreateFollow :one
 INSERT INTO follows (uri_key, author_id, subject_id, created_at)
 VALUES ($1, $2, $3, $4)
-ON CONFLICT DO NOTHING
-RETURNING id;
+ON CONFLICT (author_id, subject_id) DO UPDATE
+    SET uri_key    = excluded.uri_key,
+        created_at = excluded.created_at
+RETURNING id, XMAX = 0 AS is_created;
 
 -- name: InsertFromTempToFollows :many
 INSERT INTO follows (uri_key, author_id, subject_id, created_at)

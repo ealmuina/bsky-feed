@@ -60,8 +60,10 @@ func (q *Queries) BulkDeleteFollows(ctx context.Context, arg BulkDeleteFollowsPa
 const createFollow = `-- name: CreateFollow :one
 INSERT INTO follows (uri_key, author_id, subject_id, created_at)
 VALUES ($1, $2, $3, $4)
-ON CONFLICT DO NOTHING
-RETURNING id
+ON CONFLICT (author_id, subject_id) DO UPDATE
+    SET uri_key    = excluded.uri_key,
+        created_at = excluded.created_at
+RETURNING id, XMAX = 0 AS is_created
 `
 
 type CreateFollowParams struct {
@@ -71,16 +73,21 @@ type CreateFollowParams struct {
 	CreatedAt pgtype.Timestamp
 }
 
-func (q *Queries) CreateFollow(ctx context.Context, arg CreateFollowParams) (int64, error) {
+type CreateFollowRow struct {
+	ID        int64
+	IsCreated bool
+}
+
+func (q *Queries) CreateFollow(ctx context.Context, arg CreateFollowParams) (CreateFollowRow, error) {
 	row := q.db.QueryRow(ctx, createFollow,
 		arg.UriKey,
 		arg.AuthorID,
 		arg.SubjectID,
 		arg.CreatedAt,
 	)
-	var id int64
-	err := row.Scan(&id)
-	return id, err
+	var i CreateFollowRow
+	err := row.Scan(&i.ID, &i.IsCreated)
+	return i, err
 }
 
 const createTempFollowsTable = `-- name: CreateTempFollowsTable :exec

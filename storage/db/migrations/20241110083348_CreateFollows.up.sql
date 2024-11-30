@@ -8,7 +8,8 @@ CREATE TABLE follows
 
     created_at TIMESTAMP NOT NULL,
 
-    UNIQUE (author_id, uri_key)
+    UNIQUE (author_id, uri_key),
+    UNIQUE (author_id, subject_id)
 );
 
 CREATE INDEX IF NOT EXISTS idx_follows_created_at ON follows (created_at);

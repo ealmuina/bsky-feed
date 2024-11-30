@@ -99,20 +99,20 @@ func (m *Manager) CreateFollow(follow models.Follow) {
 	ctx := context.Background()
 
 	if m.persistFollows {
-		_, err := m.queries.CreateFollow(ctx, db.CreateFollowParams{
+		result, err := m.queries.CreateFollow(ctx, db.CreateFollowParams{
 			UriKey:    follow.UriKey,
 			AuthorID:  follow.AuthorID,
 			SubjectID: follow.SubjectID,
 			CreatedAt: pgtype.Timestamp{Time: follow.CreatedAt, Valid: true},
 		})
 		if err != nil {
-			if !strings.Contains(err.Error(), "no rows in result set") {
-				log.Errorf("Error creating follow: %v", err)
-			}
+			log.Errorf("Error creating follow: %v", err)
 			return
 		}
 		// Write to DB is done by trigger. Just update caches
-		m.refreshFollowStatistics(follow.AuthorID, follow.SubjectID, 1, false)
+		if result.IsCreated {
+			m.refreshFollowStatistics(follow.AuthorID, follow.SubjectID, 1, false)
+		}
 	} else {
 		// Do not persist. Just update statistics
 		m.refreshFollowStatistics(follow.AuthorID, follow.SubjectID, 1, true)
@@ -120,31 +120,29 @@ func (m *Manager) CreateFollow(follow models.Follow) {
 }
 
 func (m *Manager) CreateInteraction(interaction models.Interaction) {
-	m.executeTransaction(
-		func(ctx context.Context, qtx *db.Queries) {
-			// Create interaction
-			_, err := qtx.CreateInteraction(ctx, db.CreateInteractionParams{
-				UriKey:    interaction.UriKey,
-				Kind:      int16(interaction.Kind),
-				AuthorID:  interaction.AuthorId,
-				PostID:    interaction.PostId,
-				CreatedAt: pgtype.Timestamp{Time: interaction.CreatedAt, Valid: true},
-			})
-			if err != nil {
-				if !strings.Contains(err.Error(), "no rows in result set") {
-					log.Errorf("Error creating interaction: %v", err)
-				}
-				return
-			}
-		},
-	)
+	ctx := context.Background()
+
+	// Create interaction
+	result, err := m.queries.CreateInteraction(ctx, db.CreateInteractionParams{
+		UriKey:    interaction.UriKey,
+		Kind:      int16(interaction.Kind),
+		AuthorID:  interaction.AuthorId,
+		PostID:    interaction.PostId,
+		CreatedAt: pgtype.Timestamp{Time: interaction.CreatedAt, Valid: true},
+	})
+	if err != nil {
+		log.Errorf("Error creating interaction: %v", err)
+		return
+	}
 
 	// Update caches
-	m.postsCache.AddInteraction(interaction.PostId)
-	if postAuthorId, err := m.GetPostAuthorId(interaction.PostId); err == nil { // post author found
-		m.usersCache.UpdateUserStatistics(
-			postAuthorId, 0, 0, 0, 1,
-		)
+	if result.IsCreated {
+		m.postsCache.AddInteraction(interaction.PostId)
+		if postAuthorId, err := m.GetPostAuthorId(interaction.PostId); err == nil { // post author found
+			m.usersCache.UpdateUserStatistics(
+				postAuthorId, 0, 0, 0, 1,
+			)
+		}
 	}
 }
 
