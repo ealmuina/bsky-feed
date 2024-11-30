@@ -94,17 +94,18 @@ func (b *Backfiller) Run() {
 	ctx := context.Background()
 
 	// Span workers
-	wg := sync.WaitGroup{}
+	wgRepo := sync.WaitGroup{}
 	repoChan := make(chan *comatproto.SyncListRepos_Repo)
+	wgMetadata := sync.WaitGroup{}
 	metadataChan := make(chan string, 100000)
 
 	for i := 0; i < b.numRepoWorkers; i++ {
-		wg.Add(1)
-		go b.repoWorker(&wg, repoChan, metadataChan)
+		wgRepo.Add(1)
+		go b.repoWorker(&wgRepo, repoChan, metadataChan)
 	}
 	for i := 0; i < b.numMetadataWorkers; i++ {
-		wg.Add(1)
-		go b.metadataWorker(&wg, metadataChan)
+		wgMetadata.Add(1)
+		go b.metadataWorker(&wgMetadata, metadataChan)
 	}
 
 	cursor := b.storageManager.GetCursor(b.serviceName)
@@ -131,8 +132,10 @@ func (b *Backfiller) Run() {
 	}
 
 	close(repoChan)
+	wgRepo.Wait()
+
 	close(metadataChan)
-	wg.Wait()
+	wgMetadata.Wait()
 }
 
 func (b *Backfiller) getPlcProfile(did string) (Profile, error) {
