@@ -65,7 +65,7 @@ ON CONFLICT (author_id, post_id, kind) DO UPDATE
                          WHEN excluded.created_at > interactions.created_at
                              THEN excluded.uri_key
                          ELSE
-                             interactions.created_at
+                             interactions.uri_key
         END,
         created_at = GREATEST(interactions.created_at, excluded.created_at)
 RETURNING id, XMAX = 0 AS is_created

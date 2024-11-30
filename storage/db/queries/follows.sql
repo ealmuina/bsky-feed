@@ -18,7 +18,7 @@ ON CONFLICT (author_id, subject_id) DO UPDATE
                          WHEN excluded.created_at > follows.created_at
                              THEN excluded.uri_key
                          ELSE
-                             follows.created_at
+                             follows.uri_key
         END,
         created_at = GREATEST(follows.created_at, excluded.created_at)
 RETURNING id, XMAX = 0 AS is_created;
