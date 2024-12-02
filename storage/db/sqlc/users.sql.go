@@ -160,7 +160,7 @@ func (q *Queries) GetUserId(ctx context.Context, did string) (int32, error) {
 const setUserMetadata = `-- name: SetUserMetadata :exec
 UPDATE users
 SET handle     = $2,
-    created_at = $3
+    created_at = LEAST(created_at, $3)
 WHERE did = $1
 `
 

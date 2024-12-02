@@ -54,5 +54,5 @@ WHERE last_update IS NULL
 -- name: SetUserMetadata :exec
 UPDATE users
 SET handle     = $2,
-    created_at = $3
+    created_at = LEAST(created_at, $3)
 WHERE did = $1;

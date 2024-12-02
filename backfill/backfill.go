@@ -4,6 +4,7 @@ import (
 	"bsky/storage"
 	"bsky/storage/models"
 	"bsky/utils"
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -17,13 +18,10 @@ import (
 	"github.com/ipfs/go-cid"
 	log "github.com/sirupsen/logrus"
 	"github.com/whyrusleeping/cbor-gen"
-	"go.uber.org/zap"
 	"hash"
 	"hash/fnv"
-	"io"
 	"math"
 	"net/http"
-	"os"
 	"strings"
 	"sync"
 	"time"
@@ -32,45 +30,20 @@ import (
 const (
 	AccountDeactivatedError = "AccountDeactivated"
 	InvalidRequestError     = "InvalidRequest" // Seen when profile is not found
-	ExpiredToken            = "ExpiredToken"
 )
+
+type RepoMeta struct {
+	Data   *comatproto.SyncListRepos_Repo
+	PdsUrl string
+}
 
 type Backfiller struct {
 	serviceName        string
 	numRepoWorkers     int
 	numMetadataWorkers int
 	storageManager     *storage.Manager
-	client             *xrpc.Client
 	languageDetector   *utils.LanguageDetector
 	hasher             hash.Hash32
-}
-
-func getXrpcClient() *xrpc.Client {
-	ctx := context.Background()
-
-	xrpcClient := &xrpc.Client{
-		Host:   "https://bsky.social",
-		Client: http.DefaultClient,
-	}
-
-	auth, err := comatproto.ServerCreateSession(ctx, xrpcClient, &comatproto.ServerCreateSession_Input{
-		Identifier: os.Getenv("STATISTICS_USER"),
-		Password:   os.Getenv("STATISTICS_PASSWORD"),
-	})
-	if err != nil {
-		zap.L().Error("create session failed", zap.Error(err), zap.String("username", os.Getenv("STATISTICS_USER")))
-
-		return nil
-	}
-
-	xrpcClient.Auth = &xrpc.AuthInfo{
-		AccessJwt:  auth.AccessJwt,
-		RefreshJwt: auth.RefreshJwt,
-		Handle:     auth.Handle,
-		Did:        auth.Did,
-	}
-
-	return xrpcClient
 }
 
 func NewBackfiller(
@@ -84,91 +57,96 @@ func NewBackfiller(
 		numRepoWorkers:     numRepoWorkers,
 		numMetadataWorkers: numMetadataWorkers,
 		storageManager:     storageManager,
-		client:             getXrpcClient(),
 		languageDetector:   utils.NewLanguageDetector(),
 		hasher:             fnv.New32a(),
 	}
 }
 
 func (b *Backfiller) Run() {
-	ctx := context.Background()
+	now := time.Now()
 
 	// Span workers
 	wgRepo := sync.WaitGroup{}
-	repoChan := make(chan *comatproto.SyncListRepos_Repo)
-	wgMetadata := sync.WaitGroup{}
-	metadataChan := make(chan string, 100000)
+	repoChan := make(chan *RepoMeta)
 
 	for i := 0; i < b.numRepoWorkers; i++ {
 		wgRepo.Add(1)
-		go b.repoWorker(&wgRepo, repoChan, metadataChan)
-	}
-	for i := 0; i < b.numMetadataWorkers; i++ {
-		wgMetadata.Add(1)
-		go b.metadataWorker(&wgMetadata, metadataChan)
+		go b.repoWorker(&wgRepo, repoChan)
 	}
 
 	cursor := b.storageManager.GetCursor(b.serviceName)
 	for {
-		response, err := comatproto.SyncListRepos(ctx, b.client, cursor, 1000)
+		response, err := http.Get(
+			fmt.Sprintf("https://plc.directory/export?count=1000&after=%s", cursor),
+		)
 		if err != nil {
-			log.Errorf("SyncListRepos failed: %v", err)
+			log.Errorf("PLC export failed: %v", err)
 			time.Sleep(30 * time.Second)
 			continue
 		}
 
-		for _, repoDescription := range response.Repos {
-			if repoDescription.Active == nil || !*repoDescription.Active {
+		scanner := bufio.NewScanner(response.Body)
+
+		// Read each line from the response
+		for scanner.Scan() {
+			line := scanner.Bytes()
+
+			var plcEntry PlcLogEntry
+			err = json.Unmarshal(line, &plcEntry)
+			if err != nil {
+				log.Errorf("Invalid PLC export content format: %v", err)
 				continue
 			}
-			repoChan <- repoDescription
+
+			// Update user metadata
+			createdAt, err := dateparse.ParseAny(plcEntry.CreatedAt)
+			if err != nil {
+				log.Errorf("Unable to parse time: %v", err)
+				break
+			}
+			handle := ""
+			if len(plcEntry.Operation.AlsoKnownAs) > 0 {
+				handle = strings.Replace(plcEntry.Operation.AlsoKnownAs[0], "at://", "", -1)
+			}
+			_, err = b.storageManager.GetOrCreateUser(plcEntry.Did)
+			if err == nil {
+				b.storageManager.SetUserMetadata(
+					plcEntry.Did,
+					handle,
+					createdAt,
+				)
+			}
+
+			// Process corresponding PDS
+			services := plcEntry.Operation.Services
+			if services != nil {
+				b.processPds(services.AtProtoPds.Endpoint, repoChan)
+			}
+
+			// Update cursor
+			cursor = plcEntry.CreatedAt
 		}
 
-		if response.Cursor == nil {
+		// Check for errors that may have occurred during scanning
+		if err := scanner.Err(); err != nil {
+			log.Errorf("Error reading response: %v", err)
+		}
+
+		cursorTime, err := dateparse.ParseAny(cursor)
+		if err != nil {
+			log.Errorf("Unable to parse cursor time: %v", err)
 			break
 		}
-		cursor = *response.Cursor
-		b.storageManager.UpdateCursor(b.serviceName, cursor)
+		if now.Before(cursorTime) {
+			// All entries prior to start have been processed. Sync finished
+			break
+		}
+
+		_ = response.Body.Close()
 	}
 
 	close(repoChan)
 	wgRepo.Wait()
-
-	close(metadataChan)
-	wgMetadata.Wait()
-}
-
-func (b *Backfiller) getPlcProfile(did string) (Profile, error) {
-	var profile Profile
-	response, err := http.Get(
-		fmt.Sprintf("https://plc.directory/%s/log/audit", did),
-	)
-	if err != nil {
-		return profile, err
-	}
-	defer response.Body.Close()
-
-	responseBytes, err := io.ReadAll(response.Body)
-	if err != nil {
-		return profile, err
-	}
-
-	var plcProfileData []PlcLogAuditEntry
-	err = json.Unmarshal(responseBytes, &plcProfileData)
-	if err != nil {
-		return profile, err
-	}
-
-	if len(plcProfileData) == 0 || len(plcProfileData[len(plcProfileData)-1].Operation.AlsoKnownAs) == 0 {
-		return profile, errors.New("missing plc data")
-	}
-
-	alsoKnownAs := plcProfileData[len(plcProfileData)-1].Operation.AlsoKnownAs[0]
-	profile.Handle = strings.Replace(alsoKnownAs, "at://", "", -1)
-
-	profile.CreatedAt = plcProfileData[0].CreatedAt
-
-	return profile, nil
 }
 
 func (b *Backfiller) handleFollowCreate(did string, uri string, follow *appbsky.GraphFollow) {
@@ -324,13 +302,6 @@ func (b *Backfiller) handlePostCreate(did string, uri string, post *appbsky.Feed
 		})
 }
 
-func (b *Backfiller) metadataWorker(wg *sync.WaitGroup, metadataChan chan string) {
-	for did := range metadataChan {
-		b.setCreatedAt(did, false)
-	}
-	wg.Done()
-}
-
 func (b *Backfiller) processBskyError(did string, err error, callback func()) {
 	retry := false
 	var bskyErr *xrpc.Error
@@ -344,9 +315,6 @@ func (b *Backfiller) processBskyError(did string, err error, callback func()) {
 				case AccountDeactivatedError, InvalidRequestError:
 					// Delete user if profile does not exist anymore
 					b.storageManager.DeleteUser(did)
-				case ExpiredToken:
-					b.client = getXrpcClient()
-					retry = true
 				}
 			}
 		}
@@ -361,6 +329,61 @@ func (b *Backfiller) processBskyError(did string, err error, callback func()) {
 	if retry {
 		callback()
 	}
+}
+
+func (b *Backfiller) processPds(url string, repoChan chan *RepoMeta) {
+	ctx := context.Background()
+	cursorFinished := "done"
+
+	if url == "https://bsky.social" {
+		// Skip all single-PDS
+		return
+	}
+
+	cursor := b.storageManager.GetCursor(url)
+	if cursor == cursorFinished {
+		return
+	}
+
+	xrpcClient := &xrpc.Client{
+		Host:   url,
+		Client: http.DefaultClient,
+	}
+
+	attempts := 0
+	for {
+		response, err := comatproto.SyncListRepos(ctx, xrpcClient, cursor, 1000)
+		if err != nil {
+			log.Errorf("SyncListRepos failed: %v", err)
+			time.Sleep(30 * time.Second)
+			attempts++
+			if attempts < 3 {
+				continue
+			} else {
+				log.Errorf("Skipped SyncListRepos for '%s'", url)
+				break
+			}
+		}
+		attempts = 0
+
+		for _, repoDescription := range response.Repos {
+			if repoDescription.Active == nil || !*repoDescription.Active {
+				continue
+			}
+			repoChan <- &RepoMeta{
+				Data:   repoDescription,
+				PdsUrl: url,
+			}
+		}
+
+		if response.Cursor == nil {
+			break
+		}
+		cursor = *response.Cursor
+		b.storageManager.UpdateCursor(url, cursor)
+	}
+
+	b.storageManager.UpdateCursor(url, cursorFinished)
 }
 
 func (b *Backfiller) processRecord(repoDid string, uri string, record typegen.CBORMarshaler) {
@@ -392,20 +415,26 @@ func (b *Backfiller) processRecord(repoDid string, uri string, record typegen.CB
 	}
 }
 
-func (b *Backfiller) processRepo(repoMeta *comatproto.SyncListRepos_Repo) {
+func (b *Backfiller) processRepo(repoMeta *RepoMeta) {
 	ctx := context.Background()
-	log.Warnf("Backfilling '%s'", repoMeta.Did)
+	did := repoMeta.Data.Did
+	log.Warnf("Backfilling '%s'", did)
 
-	repoBytes, err := comatproto.SyncGetRepo(ctx, b.client, repoMeta.Did, "")
+	xrpcClient := &xrpc.Client{
+		Host:   repoMeta.PdsUrl,
+		Client: http.DefaultClient,
+	}
+
+	repoBytes, err := comatproto.SyncGetRepo(ctx, xrpcClient, did, "")
 	if err != nil {
-		log.Errorf("SyncGetRepo failed for did '%s': %v", repoMeta.Did, err)
-		b.processBskyError(repoMeta.Did, err, func() { b.processRepo(repoMeta) })
+		log.Errorf("SyncGetRepo failed for did '%s': %v", did, err)
+		b.processBskyError(did, err, func() { b.processRepo(repoMeta) })
 		return
 	}
 
 	repoData, err := repo.ReadRepoFromCar(ctx, bytes.NewReader(repoBytes))
 	if err != nil {
-		log.Errorf("ReadRepoFromCar failed for did '%s': %v", repoMeta.Did, err)
+		log.Errorf("ReadRepoFromCar failed for did '%s': %v", did, err)
 		return
 	}
 
@@ -420,55 +449,14 @@ func (b *Backfiller) processRepo(repoMeta *comatproto.SyncListRepos_Repo) {
 			return err
 		}
 
-		b.processRecord(repoMeta.Did, k, record)
+		b.processRecord(did, k, record)
 		return nil
 	})
 }
 
-func (b *Backfiller) repoWorker(
-	wg *sync.WaitGroup,
-	repoChan chan *comatproto.SyncListRepos_Repo,
-	metadataChan chan string,
-) {
+func (b *Backfiller) repoWorker(wg *sync.WaitGroup, repoChan chan *RepoMeta) {
 	for repoMeta := range repoChan {
 		b.processRepo(repoMeta)
-		metadataChan <- repoMeta.Did
 	}
 	wg.Done()
-}
-
-func (b *Backfiller) setCreatedAt(did string, askBluesky bool) {
-	var profile Profile
-
-	if strings.HasPrefix(did, "did:plc") && !askBluesky {
-		plcProfile, err := b.getPlcProfile(did)
-		if err != nil {
-			log.Errorf("Error getting plc profile: %v", err)
-			b.setCreatedAt(did, true)
-			return
-		}
-		profile = plcProfile
-	} else {
-		bskyProfile, err := appbsky.ActorGetProfile(context.Background(), b.client, did)
-		if err != nil {
-			log.Errorf("Error getting actor '%s': %v", did, err)
-			b.processBskyError(did, err, func() { b.setCreatedAt(did, true) })
-			return
-		}
-		if bskyProfile.CreatedAt == nil {
-			return
-		}
-		profile = Profile{
-			Handle:    bskyProfile.Handle,
-			CreatedAt: *bskyProfile.CreatedAt,
-		}
-	}
-
-	createdAt, err := dateparse.ParseAny(profile.CreatedAt)
-	if err != nil {
-		log.Errorf("Error parsing created at: %s", err)
-		return
-	}
-
-	b.storageManager.SetUserMetadata(did, profile.Handle, createdAt)
 }
