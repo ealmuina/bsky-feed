@@ -64,7 +64,6 @@ func NewBackfiller(
 
 func (b *Backfiller) Run() {
 	now := time.Now()
-	wgPdsPullers := sync.WaitGroup{}
 
 	// Span workers
 	wgRepo := sync.WaitGroup{}
@@ -121,11 +120,7 @@ func (b *Backfiller) Run() {
 			// Process corresponding PDS
 			services := plcEntry.Operation.Services
 			if services != nil {
-				wgPdsPullers.Add(1)
-				go func() {
-					defer wgPdsPullers.Done()
-					b.processPds(services.AtProtoPds.Endpoint, repoChan)
-				}()
+				b.processPds(services.AtProtoPds.Endpoint, repoChan)
 			}
 
 			// Update cursor
@@ -151,7 +146,6 @@ func (b *Backfiller) Run() {
 		_ = response.Body.Close()
 	}
 
-	wgPdsPullers.Wait()
 	close(repoChan)
 	wgRepo.Wait()
 }
@@ -462,8 +456,8 @@ func (b *Backfiller) processRepo(repoMeta *RepoMeta) {
 }
 
 func (b *Backfiller) repoWorker(wg *sync.WaitGroup, repoChan chan *RepoMeta) {
-	defer wg.Done()
 	for repoMeta := range repoChan {
 		b.processRepo(repoMeta)
 	}
+	wg.Done()
 }
