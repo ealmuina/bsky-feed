@@ -125,6 +125,7 @@ func (b *Backfiller) Run() {
 
 			// Update cursor
 			cursor = plcEntry.CreatedAt
+			b.storageManager.UpdateCursor(b.serviceName, cursor)
 		}
 
 		// Check for errors that may have occurred during scanning
