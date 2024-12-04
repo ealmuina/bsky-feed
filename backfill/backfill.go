@@ -39,27 +39,20 @@ type RepoMeta struct {
 }
 
 type Backfiller struct {
-	serviceName        string
-	numRepoWorkers     int
-	numMetadataWorkers int
-	storageManager     *storage.Manager
-	languageDetector   *utils.LanguageDetector
-	hasher             hash.Hash32
+	serviceName      string
+	numRepoWorkers   int
+	storageManager   *storage.Manager
+	languageDetector *utils.LanguageDetector
+	hasher           hash.Hash32
 }
 
-func NewBackfiller(
-	serviceName string,
-	storageManager *storage.Manager,
-	numRepoWorkers int,
-	numMetadataWorkers int,
-) *Backfiller {
+func NewBackfiller(serviceName string, storageManager *storage.Manager, numRepoWorkers int) *Backfiller {
 	return &Backfiller{
-		serviceName:        serviceName,
-		numRepoWorkers:     numRepoWorkers,
-		numMetadataWorkers: numMetadataWorkers,
-		storageManager:     storageManager,
-		languageDetector:   utils.NewLanguageDetector(),
-		hasher:             fnv.New32a(),
+		serviceName:      serviceName,
+		numRepoWorkers:   numRepoWorkers,
+		storageManager:   storageManager,
+		languageDetector: utils.NewLanguageDetector(),
+		hasher:           fnv.New32a(),
 	}
 }
 

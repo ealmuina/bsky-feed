@@ -5,12 +5,14 @@ import (
 	"bsky/storage/cache"
 	db "bsky/storage/db/sqlc"
 	"bsky/storage/models"
+	"bsky/utils"
 	"context"
 	"fmt"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
 	log "github.com/sirupsen/logrus"
+	"os"
 	"strings"
 	"time"
 )
@@ -28,6 +30,13 @@ type Manager struct {
 }
 
 func NewManager(dbConnection *pgxpool.Pool, redisConnection *redis.Client, persistFollows bool) *Manager {
+	usersCacheExpiration := utils.IntFromString(
+		os.Getenv("USERS_CACHE_EXPIRATION_MINUTES"), 43200,
+	)
+	postsCacheExpiration := utils.IntFromString(
+		os.Getenv("POSTS_CACHE_EXPIRATION_MINUTES"), 1080,
+	)
+
 	storageManager := Manager{
 		redisConnection: redisConnection,
 		dbConnection:    dbConnection,
@@ -36,19 +45,18 @@ func NewManager(dbConnection *pgxpool.Pool, redisConnection *redis.Client, persi
 
 		usersCache: cache.NewUsersCache(
 			redisConnection,
-			//30*24*time.Hour, // expire entries after 30 days
-			5*time.Minute, // expire entries after 5 minutes
+			time.Duration(usersCacheExpiration)*time.Minute,
 		),
 		postsCache: cache.NewPostsCache(
 			redisConnection,
-			//7*24*time.Hour, // expire entries after 7 days
-			5*time.Minute, // expire entries after 5 minutes
+			time.Duration(postsCacheExpiration)*time.Minute,
 		),
 		timelines:  make(map[string]cache.Timeline),
 		algorithms: make(map[string]algorithms.Algorithm),
 	}
 	storageManager.initializeTimelines()
 	storageManager.initializeAlgorithms()
+
 	return &storageManager
 }
 
