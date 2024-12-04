@@ -75,7 +75,7 @@ func runBackgroundTasks(storageManager *storage.Manager) {
 
 	// DB cleanup
 	go utils.Recoverer(math.MaxInt, 1, func() {
-		tasks.CleanOldData(storageManager, runBackfill)
+		tasks.CleanOldData(storageManager, false)
 	})
 
 	// Firehose consumer
