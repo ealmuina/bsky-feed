@@ -202,6 +202,57 @@ func (b *Backfiller) handleFollowCreate(did string, uri string, follow *appbsky.
 	)
 }
 
+func (b *Backfiller) handleInteractionCreate(
+	did string,
+	uri string,
+	kind models.InteractionType,
+	createdAtStr string,
+	subjectUri string,
+) {
+	if !strings.Contains(subjectUri, "/app.bsky.feed.post/") {
+		// Likes can be given to feeds too
+		return
+	}
+	uriParts := strings.Split(uri, "/")
+	uriKey := uriParts[len(uriParts)-1]
+
+	createdAt, err := dateparse.ParseAny(createdAtStr)
+	if err != nil {
+		log.Errorf("Error parsing created at: %s", err)
+		return
+	}
+
+	authorId, err := b.storageManager.GetOrCreateUser(did)
+	if err != nil {
+		log.Errorf("Error creating user: %v", err)
+		return
+	}
+	postAuthorDid, postUriKey, err := utils.SplitUri(subjectUri, "/app.bsky.feed.post/")
+	if err != nil {
+		log.Errorf("Error parsing post uri: %v", err)
+		return
+	}
+	postAuthorId, err := b.storageManager.GetOrCreateUser(postAuthorDid)
+	if err != nil {
+		log.Errorf("Error creating user: %v", err)
+		return
+	}
+	postId, err := b.storageManager.GetPostId(postAuthorId, postUriKey)
+	if err != nil {
+		log.Errorf("Error getting post id: %v", err)
+		return
+	}
+	b.storageManager.CreateInteraction(
+		models.Interaction{
+			UriKey:    uriKey,
+			Kind:      kind,
+			AuthorId:  authorId,
+			PostId:    postId,
+			CreatedAt: createdAt,
+		},
+	)
+}
+
 func (b *Backfiller) handlePostCreate(did string, uri string, post *appbsky.FeedPost) {
 	createdAt, err := dateparse.ParseAny(post.CreatedAt)
 	if err != nil {
@@ -363,6 +414,22 @@ func (b *Backfiller) processRecord(repoDid string, uri string, record typegen.CB
 	case *appbsky.FeedPost:
 		b.handlePostCreate(
 			repoDid, uri, data,
+		)
+	case *appbsky.FeedLike:
+		b.handleInteractionCreate(
+			repoDid,
+			uri,
+			models.Like,
+			data.CreatedAt,
+			data.Subject.Uri,
+		)
+	case *appbsky.FeedRepost:
+		b.handleInteractionCreate(
+			repoDid,
+			uri,
+			models.Repost,
+			data.CreatedAt,
+			data.Subject.Uri,
 		)
 	case *appbsky.GraphFollow:
 		b.handleFollowCreate(
