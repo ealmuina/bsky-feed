@@ -329,6 +329,15 @@ func (m *Manager) GetOutdatedUserDids() []string {
 	return dids
 }
 
+func (m *Manager) GetPdsSubscriptions() []string {
+	result, err := m.queries.GetPdsSubscriptions(context.Background())
+	if err != nil {
+		log.Errorf("Error getting open pds subscriptions: %v", err)
+		return nil
+	}
+	return result
+}
+
 func (m *Manager) GetPostAuthorId(postId int64) (int32, error) {
 	if authorId, ok := m.postsCache.GetPostAuthorId(postId); ok {
 		return authorId, nil

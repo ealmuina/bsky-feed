@@ -9,6 +9,32 @@ import (
 	"context"
 )
 
+const getPdsSubscriptions = `-- name: GetPdsSubscriptions :many
+SELECT service
+FROM subscription_state
+WHERE service NOT IN ('firehose', 'backfill')
+`
+
+func (q *Queries) GetPdsSubscriptions(ctx context.Context) ([]string, error) {
+	rows, err := q.db.Query(ctx, getPdsSubscriptions)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []string
+	for rows.Next() {
+		var service string
+		if err := rows.Scan(&service); err != nil {
+			return nil, err
+		}
+		items = append(items, service)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getSubscriptionState = `-- name: GetSubscriptionState :one
 SELECT id, service, cursor
 FROM subscription_state

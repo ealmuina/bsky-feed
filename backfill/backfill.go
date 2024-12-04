@@ -22,6 +22,7 @@ import (
 	"hash/fnv"
 	"math"
 	"net/http"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -65,6 +66,9 @@ func NewBackfiller(
 func (b *Backfiller) Run() {
 	now := time.Now()
 
+	wgPds := sync.WaitGroup{}
+	pdsInProcess := make([]string, 0)
+
 	// Span workers
 	wgRepo := sync.WaitGroup{}
 	repoChan := make(chan *RepoMeta)
@@ -72,6 +76,16 @@ func (b *Backfiller) Run() {
 	for i := 0; i < b.numRepoWorkers; i++ {
 		wgRepo.Add(1)
 		go b.repoWorker(&wgRepo, repoChan)
+	}
+
+	pendingPdsSubscriptions := b.storageManager.GetPdsSubscriptions()
+	for _, pdsUrl := range pendingPdsSubscriptions {
+		wgPds.Add(1)
+		go func() {
+			defer wgPds.Done()
+			b.processPds(pdsUrl, repoChan)
+		}()
+		pdsInProcess = append(pdsInProcess, pdsUrl)
 	}
 
 	cursor := b.storageManager.GetCursor(b.serviceName)
@@ -119,8 +133,14 @@ func (b *Backfiller) Run() {
 
 			// Process corresponding PDS
 			services := plcEntry.Operation.Services
-			if services != nil {
-				b.processPds(services.AtProtoPds.Endpoint, repoChan)
+			if services != nil && !slices.Contains(pdsInProcess, services.AtProtoPds.Endpoint) {
+				pdsUrl := services.AtProtoPds.Endpoint
+				wgPds.Add(1)
+				go func() {
+					defer wgPds.Done()
+					b.processPds(pdsUrl, repoChan)
+				}()
+				pdsInProcess = append(pdsInProcess, pdsUrl)
 			}
 
 			// Update cursor
@@ -145,6 +165,8 @@ func (b *Backfiller) Run() {
 
 		_ = response.Body.Close()
 	}
+
+	wgPds.Wait()
 
 	close(repoChan)
 	wgRepo.Wait()
