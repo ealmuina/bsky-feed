@@ -354,12 +354,6 @@ func (b *Backfiller) processPds(url string, repoChan chan *RepoMeta) {
 	ctx := context.Background()
 	cursorFinished := "done"
 
-	if err := b.pdsSyncSem.Acquire(ctx, 1); err != nil {
-		log.Printf("Failed to acquire semaphore: %v", err)
-		return
-	}
-	defer b.pdsSyncSem.Release(1)
-
 	if url == "https://bsky.social" {
 		// Skip all single-PDS
 		return
@@ -369,6 +363,13 @@ func (b *Backfiller) processPds(url string, repoChan chan *RepoMeta) {
 	if cursor == cursorFinished {
 		return
 	}
+	b.storageManager.UpdateCursor(url, cursor)
+
+	if err := b.pdsSyncSem.Acquire(ctx, 1); err != nil {
+		log.Printf("Failed to acquire semaphore: %v", err)
+		return
+	}
+	defer b.pdsSyncSem.Release(1)
 
 	xrpcClient := &xrpc.Client{
 		Host:   url,
