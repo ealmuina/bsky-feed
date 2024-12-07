@@ -18,6 +18,7 @@ import (
 	"github.com/ipfs/go-cid"
 	log "github.com/sirupsen/logrus"
 	"github.com/whyrusleeping/cbor-gen"
+	"golang.org/x/sync/semaphore"
 	"hash"
 	"hash/fnv"
 	"math"
@@ -39,6 +40,7 @@ type RepoMeta struct {
 }
 
 type Backfiller struct {
+	pdsSyncSem       *semaphore.Weighted
 	serviceName      string
 	numRepoWorkers   int
 	storageManager   *storage.Manager
@@ -48,6 +50,7 @@ type Backfiller struct {
 
 func NewBackfiller(serviceName string, storageManager *storage.Manager, numRepoWorkers int) *Backfiller {
 	return &Backfiller{
+		pdsSyncSem:       semaphore.NewWeighted(4),
 		serviceName:      serviceName,
 		numRepoWorkers:   numRepoWorkers,
 		storageManager:   storageManager,
@@ -350,6 +353,12 @@ func (b *Backfiller) processBskyError(did string, err error, callback func()) {
 func (b *Backfiller) processPds(url string, repoChan chan *RepoMeta) {
 	ctx := context.Background()
 	cursorFinished := "done"
+
+	if err := b.pdsSyncSem.Acquire(ctx, 1); err != nil {
+		log.Printf("Failed to acquire semaphore: %v", err)
+		return
+	}
+	defer b.pdsSyncSem.Release(1)
 
 	if url == "https://bsky.social" {
 		// Skip all single-PDS
