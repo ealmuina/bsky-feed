@@ -12,6 +12,7 @@ import (
 	"github.com/bluesky-social/indigo/atproto/syntax"
 	"github.com/bluesky-social/indigo/xrpc"
 	log "github.com/sirupsen/logrus"
+	"math"
 	"net/http"
 	"os"
 	"time"
@@ -135,13 +136,15 @@ func (u *StatisticsUpdater) updateUserStatistics(did string) {
 		return
 	}
 
+	refreshFrequency := math.Max(1, 30-(5*math.Log(float64(*profile.FollowersCount+1))))
 	u.storageManager.UpdateUser(
 		models.User{
-			Did:            did,
-			Handle:         profile.Handle,
-			FollowersCount: *profile.FollowersCount,
-			FollowsCount:   *profile.FollowsCount,
-			PostsCount:     *profile.PostsCount,
+			Did:              did,
+			Handle:           profile.Handle,
+			FollowersCount:   *profile.FollowersCount,
+			FollowsCount:     *profile.FollowsCount,
+			PostsCount:       *profile.PostsCount,
+			RefreshFrequency: int16(refreshFrequency),
 		},
 	)
 }

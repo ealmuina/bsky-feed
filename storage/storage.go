@@ -707,7 +707,11 @@ func (m *Manager) SetUserMetadata(did string, handle string, createdAt time.Time
 		ctx,
 		bson.D{{"did", did}},
 		bson.M{
-			"$set": bson.D{{"did", did}, {"handle", handle}, {"created_at", createdAt}},
+			"$set": bson.D{
+				{"did", did},
+				{"handle", handle},
+			},
+			"$min": bson.D{{"created_at", createdAt}},
 		},
 	)
 	if err != nil {
