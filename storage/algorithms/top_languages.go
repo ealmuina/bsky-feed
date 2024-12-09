@@ -16,7 +16,7 @@ func (a *TopLanguageAlgorithm) AcceptsPost(
 	authorStatistics cache.UserStatistics,
 ) (ok bool, reason map[string]string) {
 	ok = post.Language == a.languageCode &&
-		post.ReplyRootId == 0 &&
+		post.ReplyRootId == "" &&
 		authorStatistics.FollowersCount > a.minFollowers &&
 		authorStatistics.GetEngagementFactor() > a.minEngagement
 	reason = nil

@@ -27,7 +27,7 @@ func (a *KeywordsAlgorithm) keywordsWeight(text string) float64 {
 
 func (a *KeywordsAlgorithm) AcceptsPost(post models.Post, _ cache.UserStatistics) (ok bool, reason map[string]string) {
 	ok = post.Language == a.languageCode &&
-		post.ReplyRootId == 0 &&
+		post.ReplyRootId == "" &&
 		a.keywordsWeight(post.Text) > 1
 	reason = nil
 	return ok, reason

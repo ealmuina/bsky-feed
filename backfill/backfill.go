@@ -259,7 +259,7 @@ func (b *Backfiller) handlePostCreate(did string, uri string, post *appbsky.Feed
 	uriParts := strings.Split(uri, "/")
 	uriKey := uriParts[len(uriParts)-1]
 
-	var replyParentId, replyRootId int64
+	var replyParentId, replyRootId string
 	if post.Reply != nil {
 		if post.Reply.Parent != nil {
 			authorDid, uriKey, err := utils.SplitUri(post.Reply.Parent.Uri, "/app.bsky.feed.post/")

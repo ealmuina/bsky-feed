@@ -10,10 +10,11 @@ import (
 	"bsky/utils"
 	"context"
 	"fmt"
-	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/redis/go-redis/v9"
 	log "github.com/sirupsen/logrus"
+	"go.mongodb.org/mongo-driver/mongo"
+	"go.mongodb.org/mongo-driver/mongo/options"
 	"math"
 	"os"
 )
@@ -33,17 +34,8 @@ func main() {
 	log.SetLevel(log.WarnLevel)
 
 	ctx := context.Background()
-	connectionPool, err := pgxpool.New(
-		ctx,
-		fmt.Sprintf(
-			"user=%s password=%s dbname=%s sslmode=disable host=%s port=%s",
-			os.Getenv("DB_USERNAME"),
-			os.Getenv("DB_PASSWORD"),
-			"bsky_feeds",
-			os.Getenv("DB_HOST"),
-			os.Getenv("DB_PORT"),
-		),
-	)
+	mongoUri := os.Getenv("MONGODB_URI")
+	client, err := mongo.Connect(ctx, options.Client().ApplyURI(mongoUri))
 	if err != nil {
 		panic(err)
 	}
@@ -57,7 +49,7 @@ func main() {
 	})
 
 	storageManager := storage.NewManager(
-		connectionPool,
+		client.Database("bsky_feeds"),
 		redisClient,
 		os.Getenv("PERSIST_FOLLOWS") == "true",
 	)

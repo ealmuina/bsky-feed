@@ -10,5 +10,5 @@ type LanguageAlgorithm struct {
 }
 
 func (a *LanguageAlgorithm) AcceptsPost(post models.Post, _ cache.UserStatistics) (ok bool, reason map[string]string) {
-	return post.Language == a.languageCode && post.ReplyRootId == 0, nil
+	return post.Language == a.languageCode && post.ReplyRootId == "", nil
 }

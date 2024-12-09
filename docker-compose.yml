@@ -16,34 +16,22 @@ services:
         condition: service_started
 
   db:
-    image: postgres:17
-    environment:
-      - POSTGRES_USER=postgres
-      - POSTGRES_PASSWORD=postgres
+    image: mongo:latest
+    ports:
+      - "27017:27017"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    command: [ "--replSet", "rs0", "--bind_ip_all", "--port", "27017" ]
     healthcheck:
-      test: [ "CMD-SHELL", "pg_isready -d postgres -U postgres" ]
+      test: echo "try { rs.status() } catch (err) { rs.initiate({_id:'rs0',members:[{_id:0,host:'host.docker.internal:27017'}]}) }" | mongosh --port 27017 --quiet
       interval: 5s
-      timeout: 5s
-      retries: 5
-    ports:
-      - "5432:5432"
-    command: -c shared_buffers=3GB
+      timeout: 30s
+      start_period: 0s
+      start_interval: 1s
+      retries: 30
     volumes:
-      - postgres_data:/var/lib/postgresql/data
-      - ./storage/db/db_init:/docker-entrypoint-initdb.d
-    restart: unless-stopped
-
-  db-exporter:
-    image: prometheuscommunity/postgres-exporter
-    ports:
-      - "9187:9187"
-    environment:
-      DATA_SOURCE_NAME: "postgres://postgres:postgres@db/bsky_feeds?sslmode=disable"
-    depends_on:
-      prometheus:
-        condition: service_started
-      db:
-        condition: service_healthy
+      - mongo_data:/data/db
+      - mongo_config:/data/configdb
     restart: unless-stopped
 
   redis:
@@ -79,7 +67,8 @@ services:
     restart: unless-stopped
 
 volumes:
-  postgres_data:
+  mongo_data:
+  mongo_config:
   redis_data:
   prometheus_data:
   grafana_data:

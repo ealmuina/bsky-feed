@@ -142,7 +142,7 @@ func (s *Subscription) handleFeedPostCreate(evt *jsmodels.Event) error {
 		createdAt = now
 	}
 
-	var replyParentId, replyRootId int64
+	var replyParentId, replyRootId string
 	if post.Reply != nil {
 		if post.Reply.Parent != nil {
 			authorDid, uriKey, err := utils.SplitUri(post.Reply.Parent.Uri, "/app.bsky.feed.post/")

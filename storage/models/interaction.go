@@ -10,9 +10,9 @@ const (
 )
 
 type Interaction struct {
-	UriKey    string
-	Kind      InteractionType
-	AuthorId  int32
-	PostId    int64
-	CreatedAt time.Time
+	UriKey    string          `bson:"uri_key"`
+	Kind      InteractionType `bson:"kind"`
+	AuthorId  string          `bson:"author_id"`
+	PostId    string          `bson:"post_id"`
+	CreatedAt time.Time       `bson:"created_at"`
 }

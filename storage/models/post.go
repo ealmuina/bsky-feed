@@ -3,21 +3,22 @@ package models
 import (
 	"fmt"
 	appbsky "github.com/bluesky-social/indigo/api/bsky"
+	"go.mongodb.org/mongo-driver/bson/primitive"
 	"time"
 )
 
 type Post struct {
-	ID            int64
-	UriKey        string
-	Rank          float64
-	CreatedAt     time.Time
-	AuthorId      int32
-	AuthorDid     string
-	ReplyParentId int64
-	ReplyRootId   int64
-	Language      string
-	Text          string
-	Embed         *appbsky.FeedPost_Embed
+	Id            primitive.ObjectID      `bson:"_id"`
+	UriKey        string                  `bson:"uri_key"`
+	Rank          float64                 `bson:"-"`
+	CreatedAt     time.Time               `bson:"created_at"`
+	AuthorId      string                  `bson:"author_id"`
+	AuthorDid     string                  `bson:"-"`
+	ReplyParentId string                  `bson:"reply_parent_id"`
+	ReplyRootId   string                  `bson:"reply_root_id"`
+	Language      string                  `bson:"language"`
+	Text          string                  `bson:"-"`
+	Embed         *appbsky.FeedPost_Embed `bson:"-"`
 }
 
 func (p *Post) Uri() string {

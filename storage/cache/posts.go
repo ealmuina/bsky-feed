@@ -26,88 +26,63 @@ func NewPostsCache(redisConnection *redis.Client, expiration time.Duration) Post
 	}
 }
 
-func (c *PostsCache) AddInteraction(postId int64) {
+func (c *PostsCache) AddInteraction(postId string) {
 	ctx := context.Background()
-	idStr := strconv.FormatInt(postId, 10)
-	c.redisClient.HIncrBy(ctx, PostInteractionsCountRedisKey, idStr, 1)
-	c.redisClient.HExpire(ctx, PostInteractionsCountRedisKey, c.expiration, idStr)
+	c.redisClient.HIncrBy(ctx, PostInteractionsCountRedisKey, postId, 1)
+	c.redisClient.HExpire(ctx, PostInteractionsCountRedisKey, c.expiration, postId)
 }
 
 func (c *PostsCache) AddPost(post models.Post) {
-	idStr := strconv.FormatInt(post.ID, 10)
-	authorIdStr := strconv.Itoa(int(post.AuthorId))
-	uriStr := fmt.Sprintf("%d/%s", post.AuthorId, post.UriKey)
-
-	c.hSetWithExpiration(PostIdRedisKey, uriStr, idStr)
-	c.hSetWithExpiration(PostAuthorIdRedisKey, idStr, authorIdStr)
+	idStr := post.Id.Hex()
+	c.hSetWithExpiration(PostIdRedisKey, post.Uri(), idStr)
+	c.hSetWithExpiration(PostAuthorIdRedisKey, idStr, post.AuthorId)
 }
 
-func (c *PostsCache) DeleteInteraction(postId int64) bool {
+func (c *PostsCache) DeleteInteraction(postId string) bool {
 	ctx := context.Background()
-	idStr := strconv.FormatInt(postId, 10)
-	result, err := c.redisClient.HIncrBy(ctx, PostInteractionsCountRedisKey, idStr, -1).Result()
+	result, err := c.redisClient.HIncrBy(ctx, PostInteractionsCountRedisKey, postId, -1).Result()
 	if err != nil {
 		return false
 	}
 	return result > 0
 }
 
-func (c *PostsCache) DeletePost(id int64) {
+func (c *PostsCache) DeletePost(id string) {
 	ctx := context.Background()
-	idStr := strconv.FormatInt(id, 10)
-
-	c.redisClient.HDel(ctx, PostInteractionsCountRedisKey, idStr)
-	c.redisClient.HDel(ctx, PostAuthorIdRedisKey, idStr)
+	c.redisClient.HDel(ctx, PostInteractionsCountRedisKey, id)
+	c.redisClient.HDel(ctx, PostAuthorIdRedisKey, id)
 }
 
-func (c *PostsCache) DeletePosts(id []int64) {
+func (c *PostsCache) DeletePosts(id []string) {
 	ctx := context.Background()
-
-	idStr := make([]string, len(id))
-	for i, v := range id {
-		idStr[i] = fmt.Sprintf("%d", v)
-	}
-
-	c.redisClient.HDel(ctx, PostInteractionsCountRedisKey, idStr...)
-	c.redisClient.HDel(ctx, PostAuthorIdRedisKey, idStr...)
+	c.redisClient.HDel(ctx, PostInteractionsCountRedisKey, id...)
+	c.redisClient.HDel(ctx, PostAuthorIdRedisKey, id...)
 }
 
-func (c *PostsCache) GetPostAuthorId(id int64) (int32, bool) {
+func (c *PostsCache) GetPostAuthorId(id string) (string, bool) {
 	ctx := context.Background()
-	idStr := strconv.FormatInt(id, 10)
-
-	authorIdStr, err := c.redisClient.HGet(ctx, PostAuthorIdRedisKey, idStr).Result()
+	authorId, err := c.redisClient.HGet(ctx, PostAuthorIdRedisKey, id).Result()
 	if err != nil {
-		return 0, false
+		return "", false
 	}
-	authorId, err := strconv.Atoi(authorIdStr)
-	if err != nil {
-		return 0, false
-	}
-	return int32(authorId), true
+	return authorId, true
 }
 
-func (c *PostsCache) GetPostId(authorId int32, uriKey string) (int64, bool) {
+func (c *PostsCache) GetPostId(authorId string, uriKey string) (string, bool) {
 	ctx := context.Background()
 	uriStr := fmt.Sprintf("%d/%s", authorId, uriKey)
-
-	idStr, err := c.redisClient.HGet(ctx, PostIdRedisKey, uriStr).Result()
+	id, err := c.redisClient.HGet(ctx, PostIdRedisKey, uriStr).Result()
 	if err != nil {
-		return 0, false
-	}
-	id, err := strconv.ParseInt(idStr, 10, 64)
-	if err != nil {
-		return 0, false
+		return "", false
 	}
 	return id, true
 }
 
-func (c *PostsCache) GetPostInteractions(id int64) int64 {
-	idStr := strconv.FormatInt(id, 10)
+func (c *PostsCache) GetPostInteractions(id string) int64 {
 	interactionsCountStr, err := c.redisClient.HGet(
 		context.Background(),
 		PostInteractionsCountRedisKey,
-		idStr,
+		id,
 	).Result()
 	if err != nil {
 		return 0
