@@ -8,7 +8,7 @@ import (
 )
 
 type Post struct {
-	Id            primitive.ObjectID      `bson:"_id"`
+	Id            primitive.ObjectID      `bson:"-"`
 	UriKey        string                  `bson:"uri_key"`
 	Rank          float64                 `bson:"-"`
 	CreatedAt     time.Time               `bson:"created_at"`

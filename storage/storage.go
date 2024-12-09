@@ -6,6 +6,7 @@ import (
 	"bsky/storage/models"
 	"bsky/utils"
 	"context"
+	"errors"
 	"fmt"
 	"github.com/redis/go-redis/v9"
 	log "github.com/sirupsen/logrus"
@@ -15,6 +16,7 @@ import (
 	"go.mongodb.org/mongo-driver/mongo/options"
 	"go.mongodb.org/mongo-driver/mongo/writeconcern"
 	"os"
+	"strings"
 	"time"
 )
 
@@ -109,7 +111,9 @@ func (m *Manager) CreateFollow(follow models.Follow) {
 				// Insert follow
 				result, err := followsColl.InsertOne(ctx, follow)
 				if err != nil {
-					log.Errorf("Error creating follow: %v", err)
+					if !strings.Contains(err.Error(), "E11000 duplicate key error collection") {
+						log.Errorf("Error creating follow '%s/%s': %v", follow.AuthorID, follow.UriKey, err)
+					}
 					return nil, err
 				}
 
@@ -151,7 +155,14 @@ func (m *Manager) CreateInteraction(interaction models.Interaction) {
 			// Insert interactions
 			result, err := interactionsColl.InsertOne(ctx, interaction)
 			if err != nil {
-				log.Errorf("Error creating interaction: %v", err)
+				if !strings.Contains(err.Error(), "E11000 duplicate key error collection") {
+					log.Errorf(
+						"Error creating interaction '%s/%s': %v",
+						interaction.AuthorId,
+						interaction.UriKey,
+						err,
+					)
+				}
 				return nil, err
 			}
 
@@ -210,19 +221,17 @@ func (m *Manager) CreatePost(post models.Post) {
 		result, err = postsColl.ReplaceOne(
 			ctx,
 			bson.D{{"uri_key", post.UriKey}, {"author_id", post.AuthorId}},
-			bson.M{
-				"$set": post,
-			},
+			post,
 			options.Replace().SetUpsert(true),
 		)
 		if err != nil {
-			log.Errorf("Error upserting post: %v", err)
+			log.Errorf("Error upserting post '%s/%s': %v", post.AuthorId, post.UriKey, err)
 			return nil, err
 		}
-		post.Id = result.UpsertedID.(primitive.ObjectID)
 
 		// Increase author's post count if created
 		if result.ModifiedCount == 0 {
+			post.Id = result.UpsertedID.(primitive.ObjectID)
 			authorId, _ := primitive.ObjectIDFromHex(post.AuthorId)
 			result, err = usersColl.UpdateOne(
 				ctx,
@@ -266,6 +275,10 @@ func (m *Manager) DeleteFollow(identifier models.Identifier) {
 				&follow,
 			)
 			if err != nil {
+				// ErrNoDocuments means that the filter did not match any documents in  the collection.
+				if errors.Is(err, mongo.ErrNoDocuments) {
+					return nil, nil
+				}
 				log.Errorf("Error deleting follow: %v", err)
 				return nil, err
 			}
@@ -664,7 +677,7 @@ func (m *Manager) GetPostId(authorId string, uriKey string) (string, error) {
 			SetProjection(bson.D{{"_id", 1}}),
 	).Decode(&result)
 	if err != nil {
-		log.Infof("Error upserting post: %v", err)
+		log.Errorf("Error upserting post '%s/%s': %v", authorId, uriKey, err)
 		return "", err
 	}
 
@@ -755,7 +768,9 @@ func (m *Manager) executeTransaction(operation func(ctx mongo.SessionContext) (i
 
 	_, err = session.WithTransaction(ctx, operation, txnOptions)
 	if err != nil {
-		log.Warningf("Error committing transaction: %v", err)
+		if !strings.Contains(err.Error(), "E11000 duplicate key error collection") {
+			log.Warningf("Error committing transaction: %v", err)
+		}
 	}
 	return err
 }
