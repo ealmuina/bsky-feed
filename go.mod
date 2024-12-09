@@ -10,7 +10,6 @@ require (
 	github.com/bluesky-social/jetstream v0.0.0-20241031234625-0ab10bd041fe
 	github.com/bountylabs/go-fasttext v0.0.0-20200219204537-fd0526b7cfcc
 	github.com/ipfs/go-cid v0.4.1
-	github.com/jackc/pgx/v5 v5.7.1
 	github.com/prometheus/client_golang v1.20.5
 	github.com/redis/go-redis/v9 v9.7.0
 	github.com/sirupsen/logrus v1.9.3
@@ -49,9 +48,6 @@ require (
 	github.com/ipfs/go-metrics-interface v0.0.1 // indirect
 	github.com/ipld/go-car/v2 v2.14.2 // indirect
 	github.com/ipld/go-ipld-prime v0.21.0 // indirect
-	github.com/jackc/pgpassfile v1.0.0 // indirect
-	github.com/jackc/pgservicefile v0.0.0-20240606120523-5a60cdf6a761 // indirect
-	github.com/jackc/puddle/v2 v2.2.2 // indirect
 	github.com/jbenet/goprocess v0.1.4 // indirect
 	github.com/klauspost/compress v1.17.11 // indirect
 	github.com/klauspost/cpuid/v2 v2.2.9 // indirect
