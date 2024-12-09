@@ -265,7 +265,9 @@ func (m *Manager) CreatePost(post models.Post) {
 			options.Replace().SetUpsert(true),
 		)
 		if err != nil {
-			log.Errorf("Error upserting post '%s/%s': %v", post.AuthorId, post.UriKey, err)
+			if !strings.Contains(err.Error(), "Please retry your operation or multi-document transaction") {
+				log.Errorf("Error upserting post '%s/%s': %v", post.AuthorId, post.UriKey, err)
+			}
 			return nil, err
 		}
 
