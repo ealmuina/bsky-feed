@@ -109,29 +109,44 @@ func (m *Manager) CreateFollow(follow models.Follow) {
 		err := m.executeTransaction(
 			func(ctx mongo.SessionContext) (interface{}, error) {
 				// Insert follow
-				result, err := followsColl.InsertOne(ctx, follow)
+				filter := bson.M{"author_id": follow.AuthorID, "subject_id": follow.SubjectID}
+				update := bson.M{
+					"$set": bson.M{
+						"uri_key": bson.M{
+							"$cond": bson.M{
+								"if":   bson.M{"$gt": bson.A{"$created_at", follow.CreatedAt}},
+								"then": "$uri_key",
+								"else": follow.UriKey,
+							},
+						},
+						"created_at": bson.M{
+							"$max": bson.A{"$created_at", follow.CreatedAt},
+						},
+					},
+				}
+				opts := options.Update().SetUpsert(true)
+				result, err := followsColl.UpdateOne(ctx, filter, update, opts)
 				if err != nil {
-					if !strings.Contains(err.Error(), "E11000 duplicate key error collection") {
-						log.Errorf("Error creating follow '%s/%s': %v", follow.AuthorID, follow.UriKey, err)
-					}
+					log.Errorf("Error creating follow '%s/%s': %v", follow.AuthorID, follow.UriKey, err)
 					return nil, err
 				}
 
-				// Increase follows count
-				authorId, _ := primitive.ObjectIDFromHex(follow.AuthorID)
-				_, err = usersColl.UpdateOne(
-					ctx,
-					bson.D{{"_id", authorId}},
-					bson.D{{"$inc", bson.D{{"follows_count", 1}}}},
-				)
-				// Increase followers count
-				subjectId, _ := primitive.ObjectIDFromHex(follow.SubjectID)
-				_, err = usersColl.UpdateOne(
-					ctx,
-					bson.D{{"_id", subjectId}},
-					bson.D{{"$inc", bson.D{{"followers_count", 1}}}},
-				)
-
+				if result.UpsertedCount > 0 { // created
+					// Increase follows count
+					authorId, _ := primitive.ObjectIDFromHex(follow.AuthorID)
+					_, err = usersColl.UpdateOne(
+						ctx,
+						bson.D{{"_id", authorId}},
+						bson.D{{"$inc", bson.D{{"follows_count", 1}}}},
+					)
+					// Increase followers count
+					subjectId, _ := primitive.ObjectIDFromHex(follow.SubjectID)
+					_, err = usersColl.UpdateOne(
+						ctx,
+						bson.D{{"_id", subjectId}},
+						bson.D{{"$inc", bson.D{{"followers_count", 1}}}},
+					)
+				}
 				return result, err
 			},
 		)
@@ -153,31 +168,56 @@ func (m *Manager) CreateInteraction(interaction models.Interaction) {
 	err := m.executeTransaction(
 		func(ctx mongo.SessionContext) (interface{}, error) {
 			// Insert interactions
-			result, err := interactionsColl.InsertOne(ctx, interaction)
+			filter := bson.M{
+				"author_id": interaction.AuthorId,
+				"post_id":   interaction.PostId,
+				"kind":      interaction.Kind,
+			}
+			update := bson.M{
+				"$setOnInsert": bson.M{
+					"author_id": interaction.AuthorId,
+					"kind":      interaction.Kind,
+					"post_id":   interaction.PostId,
+				}, // Insert these values if no matching document exists
+				"$set": bson.M{
+					"uri_key": bson.M{
+						"$cond": bson.M{
+							"if":   bson.M{"$gt": bson.A{"$created_at", interaction.CreatedAt}},
+							"then": "$uri_key",         // Keep existing uri_key
+							"else": interaction.UriKey, // Update to new uri_key
+						},
+					},
+					"created_at": bson.M{
+						"$max": bson.A{"$created_at", interaction.CreatedAt}, // Update created_at to GREATEST(existing, new)
+					},
+				},
+			}
+			opts := options.Update().SetUpsert(true)
+
+			result, err := interactionsColl.UpdateOne(ctx, filter, update, opts)
 			if err != nil {
-				if !strings.Contains(err.Error(), "E11000 duplicate key error collection") {
-					log.Errorf(
-						"Error creating interaction '%s/%s': %v",
-						interaction.AuthorId,
-						interaction.UriKey,
-						err,
-					)
-				}
+				log.Errorf(
+					"Error creating interaction '%s/%s': %v",
+					interaction.AuthorId,
+					interaction.UriKey,
+					err,
+				)
 				return nil, err
 			}
 
-			// Increase counter
-			postId, _ := primitive.ObjectIDFromHex(interaction.PostId)
-			counterField := "likes_count"
-			if interaction.Kind != models.Like {
-				counterField = "follows_count"
+			if result.UpsertedCount > 0 { // created
+				// Increase counter
+				postId, _ := primitive.ObjectIDFromHex(interaction.PostId)
+				counterField := "likes_count"
+				if interaction.Kind != models.Like {
+					counterField = "follows_count"
+				}
+				_, err = postsColl.UpdateOne(
+					ctx,
+					bson.D{{"_id", postId}},
+					bson.D{{"$inc", bson.D{{counterField, 1}}}},
+				)
 			}
-			_, err = postsColl.UpdateOne(
-				ctx,
-				bson.D{{"_id", postId}},
-				bson.D{{"$inc", bson.D{{counterField, 1}}}},
-			)
-
 			return result, err
 		},
 	)
