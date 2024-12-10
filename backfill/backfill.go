@@ -48,9 +48,14 @@ type Backfiller struct {
 	hasher           hash.Hash32
 }
 
-func NewBackfiller(serviceName string, storageManager *storage.Manager, numRepoWorkers int) *Backfiller {
+func NewBackfiller(
+	serviceName string,
+	storageManager *storage.Manager,
+	numRepoWorkers int,
+	pdsConcurrency int,
+) *Backfiller {
 	return &Backfiller{
-		pdsSyncSem:       semaphore.NewWeighted(4),
+		pdsSyncSem:       semaphore.NewWeighted(int64(pdsConcurrency)),
 		serviceName:      serviceName,
 		numRepoWorkers:   numRepoWorkers,
 		storageManager:   storageManager,

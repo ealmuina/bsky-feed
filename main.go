@@ -96,11 +96,13 @@ func runBackgroundTasks(storageManager *storage.Manager) {
 	if runBackfill {
 		// Backfill
 		numRepoWorkersStr := os.Getenv("BACKFILL_REPO_WORKERS")
+		pdsConcurrency := os.Getenv("BACKFILL_PDS_CONCURRENCY")
 
 		backfiller := backfill.NewBackfiller(
 			"backfill",
 			storageManager,
 			utils.IntFromString(numRepoWorkersStr, 8),
+			utils.IntFromString(pdsConcurrency, 4),
 		)
 		go backfiller.Run()
 	} else {
