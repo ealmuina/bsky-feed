@@ -27,7 +27,9 @@ services:
       retries: 5
     ports:
       - "5432:5432"
-    command: -c shared_buffers=3GB
+    command: >
+      -c shared_buffers=4GB
+      -c max_wal_size=8GB
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./storage/db/db_init:/docker-entrypoint-initdb.d
@@ -39,6 +41,7 @@ services:
       - "9187:9187"
     environment:
       DATA_SOURCE_NAME: "postgres://postgres:postgres@db/bsky_feeds?sslmode=disable"
+    command: '--no-collector.stat_bgwriter'
     depends_on:
       prometheus:
         condition: service_started
