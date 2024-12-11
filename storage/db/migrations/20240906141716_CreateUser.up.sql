@@ -13,6 +13,5 @@ CREATE TABLE users
     refresh_frequency INT
 );
 
-CREATE INDEX IF NOT EXISTS idx_users_did ON users (did);
 CREATE INDEX IF NOT EXISTS idx_users_created_at ON users (created_at);
 CREATE INDEX IF NOT EXISTS idx_users_last_update ON users (last_update);
