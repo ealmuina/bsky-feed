@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/araddon/dateparse"
 	comatproto "github.com/bluesky-social/indigo/api/atproto"
 	appbsky "github.com/bluesky-social/indigo/api/bsky"
 	"github.com/bluesky-social/indigo/atproto/identity"
@@ -135,10 +136,28 @@ func (u *StatisticsUpdater) updateUserStatistics(did string) {
 		return
 	}
 
+	createdAtStr := ""
+	if profile.CreatedAt != nil {
+		createdAtStr = *profile.CreatedAt
+	}
+	createdAt, err := dateparse.ParseAny(createdAtStr)
+	if err != nil {
+		log.Errorf("Error parsing created at: %s", err)
+		return
+	}
+
+	userId, err := u.storageManager.GetOrCreateUser(did)
+	if err != nil {
+		log.Errorf("Error creating user: %v", err)
+		return
+	}
+
 	u.storageManager.UpdateUser(
 		models.User{
+			ID:             userId,
 			Did:            did,
 			Handle:         profile.Handle,
+			CreatedAt:      createdAt,
 			FollowersCount: *profile.FollowersCount,
 			FollowsCount:   *profile.FollowsCount,
 			PostsCount:     *profile.PostsCount,

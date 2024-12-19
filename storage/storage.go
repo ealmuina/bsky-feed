@@ -418,6 +418,7 @@ func (m *Manager) UpdateUser(updatedUser models.User) {
 		db.UpdateUserParams{
 			Did:            updatedUser.Did,
 			Handle:         pgtype.Text{String: updatedUser.Handle, Valid: true},
+			CreatedAt:      pgtype.Timestamp{Time: updatedUser.CreatedAt, Valid: true},
 			FollowersCount: pgtype.Int4{Int32: int32(updatedUser.FollowersCount), Valid: true},
 			FollowsCount:   pgtype.Int4{Int32: int32(updatedUser.FollowsCount), Valid: true},
 			PostsCount:     pgtype.Int4{Int32: int32(updatedUser.PostsCount), Valid: true},
