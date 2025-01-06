@@ -96,8 +96,10 @@ func (m *Manager) CleanOldData(persistentDb bool) {
 		postIds = append(postIds, post.ID)
 
 		// Discount from user statistics
-		postInteractions := m.postsCache.GetPostInteractions(post.ID)
-		m.usersCache.UpdateUserStatistics(post.AuthorID, 0, 0, -1, -postInteractions)
+		if !post.ReplyRootID.Valid { // replies are not counted
+			postInteractions := m.postsCache.GetPostInteractions(post.ID)
+			m.usersCache.UpdateUserStatistics(post.AuthorID, 0, 0, -1, -postInteractions)
+		}
 	}
 	// Delete from posts cache
 	m.postsCache.DeletePosts(postIds)
@@ -271,10 +273,11 @@ func (m *Manager) DeletePost(identifier models.Identifier) {
 
 	// Update caches
 	m.postsCache.DeletePost(post.ID)
-	postInteractionsCount := m.postsCache.GetPostInteractions(post.ID)
-	if postInteractionsCount > 0 {
+
+	if !post.ReplyRootID.Valid { // replies are not counted
+		postInteractionsCount := m.postsCache.GetPostInteractions(post.ID)
 		m.usersCache.UpdateUserStatistics(
-			post.AuthorID, 0, 0, -1, postInteractionsCount,
+			post.AuthorID, 0, 0, -1, -postInteractionsCount,
 		)
 	}
 }

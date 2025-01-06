@@ -39,10 +39,10 @@ DELETE
 FROM posts
 WHERE author_id = $1
   AND uri_key = $2
-RETURNING id, author_id, uri_key;
+RETURNING id, author_id, uri_key, reply_root_id;
 
 -- name: GetOldPosts :many
-SELECT id, author_id
+SELECT id, author_id, reply_root_id
 FROM posts
 WHERE posts.created_at < current_timestamp - interval '7 days';
 

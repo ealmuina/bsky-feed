@@ -78,7 +78,7 @@ DELETE
 FROM posts
 WHERE author_id = $1
   AND uri_key = $2
-RETURNING id, author_id, uri_key
+RETURNING id, author_id, uri_key, reply_root_id
 `
 
 type DeletePostParams struct {
@@ -87,27 +87,34 @@ type DeletePostParams struct {
 }
 
 type DeletePostRow struct {
-	ID       int64
-	AuthorID int32
-	UriKey   string
+	ID          int64
+	AuthorID    int32
+	UriKey      string
+	ReplyRootID pgtype.Int8
 }
 
 func (q *Queries) DeletePost(ctx context.Context, arg DeletePostParams) (DeletePostRow, error) {
 	row := q.db.QueryRow(ctx, deletePost, arg.AuthorID, arg.UriKey)
 	var i DeletePostRow
-	err := row.Scan(&i.ID, &i.AuthorID, &i.UriKey)
+	err := row.Scan(
+		&i.ID,
+		&i.AuthorID,
+		&i.UriKey,
+		&i.ReplyRootID,
+	)
 	return i, err
 }
 
 const getOldPosts = `-- name: GetOldPosts :many
-SELECT id, author_id
+SELECT id, author_id, reply_root_id
 FROM posts
 WHERE posts.created_at < current_timestamp - interval '7 days'
 `
 
 type GetOldPostsRow struct {
-	ID       int64
-	AuthorID int32
+	ID          int64
+	AuthorID    int32
+	ReplyRootID pgtype.Int8
 }
 
 func (q *Queries) GetOldPosts(ctx context.Context) ([]GetOldPostsRow, error) {
@@ -119,7 +126,7 @@ func (q *Queries) GetOldPosts(ctx context.Context) ([]GetOldPostsRow, error) {
 	var items []GetOldPostsRow
 	for rows.Next() {
 		var i GetOldPostsRow
-		if err := rows.Scan(&i.ID, &i.AuthorID); err != nil {
+		if err := rows.Scan(&i.ID, &i.AuthorID, &i.ReplyRootID); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
