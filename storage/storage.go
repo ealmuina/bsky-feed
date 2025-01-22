@@ -12,7 +12,9 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
 	log "github.com/sirupsen/logrus"
+	"gopkg.in/yaml.v3"
 	"os"
+	"slices"
 	"strings"
 	"time"
 )
@@ -25,6 +27,7 @@ type Manager struct {
 
 	usersCache cache.UsersCache
 	postsCache cache.PostsCache
+	blacklist  Blacklist
 	timelines  map[string]cache.Timeline
 	algorithms map[string]algorithms.Algorithm
 }
@@ -56,6 +59,7 @@ func NewManager(dbConnection *pgxpool.Pool, redisConnection *redis.Client, persi
 	}
 	storageManager.initializeTimelines()
 	storageManager.initializeAlgorithms()
+	storageManager.initializeBlacklist()
 
 	return &storageManager
 }
@@ -162,6 +166,11 @@ func (m *Manager) CreatePost(post models.Post) {
 	// Add post to corresponding timelines
 	authorStatistics := m.usersCache.GetUserStatistics(post.AuthorId)
 	go func() {
+		if slices.Contains(m.blacklist.Global, post.AuthorDid) {
+			// Skip banned accounts
+			return
+		}
+
 		for timelineName, algorithm := range m.algorithms {
 			if ok, reason := algorithm.AcceptsPost(post, authorStatistics); ok {
 				m.AddPostToTimeline(
@@ -459,6 +468,23 @@ func (m *Manager) executeTransaction(
 func (m *Manager) initializeAlgorithms() {
 	for feedName, algorithm := range algorithms.ImplementedAlgorithms {
 		m.algorithms[feedName] = algorithm
+	}
+}
+
+func (m *Manager) initializeBlacklist() {
+	// Open the YAML file
+	file, err := os.Open("blacklist.yml")
+	if err != nil {
+		fmt.Printf("Error opening file: %v\n", err)
+		return
+	}
+	defer file.Close()
+
+	// Decode the YAML file
+	decoder := yaml.NewDecoder(file)
+	if err := decoder.Decode(&m.blacklist); err != nil {
+		fmt.Printf("Error decoding YAML: %v\n", err)
+		return
 	}
 }
 
