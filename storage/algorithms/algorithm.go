@@ -15,6 +15,7 @@ var ImplementedAlgorithms = map[string]Algorithm{
 	"galician":   &LanguageAlgorithm{"gl"},
 	"portuguese": &LanguageAlgorithm{"pt"},
 	"spanish":    &LanguageAlgorithm{"es"},
+	"chinese":    &LanguageAlgorithm{"zh"},
 	"top_spanish": &TopLanguageAlgorithm{
 		languageCode:  "es",
 		minFollowers:  1000,
