@@ -58,6 +58,3 @@ WHERE post_id = $1;
 DELETE
 FROM interactions
 WHERE created_at < current_timestamp - interval '7 days';
-
--- name: VacuumInteractions :exec
-VACUUM ANALYSE interactions;

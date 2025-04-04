@@ -80,9 +80,6 @@ func (m *Manager) CleanOldData(persistentDb bool) {
 		if err := m.queries.DeleteOldInteractions(ctx); err != nil {
 			log.Errorf("Error cleaning old interactions: %v", err)
 		}
-		if err := m.queries.VacuumInteractions(ctx); err != nil {
-			log.Errorf("Error vacuuming interactions: %v", err)
-		}
 	}
 
 	// Clean timelines
