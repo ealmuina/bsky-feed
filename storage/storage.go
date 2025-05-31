@@ -16,6 +16,7 @@ import (
 	"os"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -30,6 +31,10 @@ type Manager struct {
 	blacklist  Blacklist
 	timelines  map[string]cache.Timeline
 	algorithms map[string]algorithms.Algorithm
+
+	// Worker pool for limiting concurrent goroutines
+	workerPool chan struct{}
+	wg         sync.WaitGroup
 }
 
 func NewManager(dbConnection *pgxpool.Pool, redisConnection *redis.Client, persistFollows bool) *Manager {
@@ -39,6 +44,8 @@ func NewManager(dbConnection *pgxpool.Pool, redisConnection *redis.Client, persi
 	postsCacheExpiration := utils.IntFromString(
 		os.Getenv("POSTS_CACHE_EXPIRATION_MINUTES"), 1080,
 	)
+	// Get worker pool size from environment or use default
+	workerPoolSize := utils.IntFromString(os.Getenv("STORAGE_WORKER_POOL_SIZE"), 100)
 
 	storageManager := Manager{
 		redisConnection: redisConnection,
@@ -56,6 +63,7 @@ func NewManager(dbConnection *pgxpool.Pool, redisConnection *redis.Client, persi
 		),
 		timelines:  make(map[string]cache.Timeline),
 		algorithms: make(map[string]algorithms.Algorithm),
+		workerPool: make(chan struct{}, workerPoolSize),
 	}
 	storageManager.initializeTimelines()
 	storageManager.initializeAlgorithms()
@@ -162,25 +170,53 @@ func (m *Manager) CreatePost(post models.Post) {
 
 	// Add post to corresponding timelines
 	authorStatistics := m.usersCache.GetUserStatistics(post.AuthorId)
-	go func() {
-		if slices.Contains(m.blacklist.Global, post.AuthorDid) {
-			// Skip banned accounts
-			return
-		}
 
-		for timelineName, algorithm := range m.algorithms {
-			if ok, reason := algorithm.AcceptsPost(post, authorStatistics); ok {
-				m.AddPostToTimeline(
-					timelineName,
-					models.TimelineEntry{
-						Uri:    post.Uri(),
-						Reason: reason,
-						Rank:   post.Rank,
-					},
-				)
+	// Acquire a worker from the pool
+	select {
+	case m.workerPool <- struct{}{}:
+		m.wg.Add(1)
+		go func() {
+			defer func() {
+				// Release the worker back to the pool
+				<-m.workerPool
+				m.wg.Done()
+			}()
+
+			if slices.Contains(m.blacklist.Global, post.AuthorDid) {
+				// Skip banned accounts
+				return
+			}
+
+			for timelineName, algorithm := range m.algorithms {
+				if ok, reason := algorithm.AcceptsPost(post, authorStatistics); ok {
+					m.AddPostToTimeline(
+						timelineName,
+						models.TimelineEntry{
+							Uri:    post.Uri(),
+							Reason: reason,
+							Rank:   post.Rank,
+						},
+					)
+				}
+			}
+		}()
+	default:
+		// If the worker pool is full, process synchronously
+		if !slices.Contains(m.blacklist.Global, post.AuthorDid) {
+			for timelineName, algorithm := range m.algorithms {
+				if ok, reason := algorithm.AcceptsPost(post, authorStatistics); ok {
+					m.AddPostToTimeline(
+						timelineName,
+						models.TimelineEntry{
+							Uri:    post.Uri(),
+							Reason: reason,
+							Rank:   post.Rank,
+						},
+					)
+				}
 			}
 		}
-	}()
+	}
 
 	upsertResult, err := m.queries.UpsertPost(ctx, db.UpsertPostParams{
 		UriKey:        post.UriKey,

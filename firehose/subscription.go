@@ -20,8 +20,10 @@ import (
 	"math"
 	"math/rand"
 	"net/url"
+	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -32,6 +34,8 @@ type Subscription struct {
 	hasher            hash.Hash32
 	storageManager    *storage.Manager
 	metricsMiddleware *middleware.FirehoseMiddleware
+	workerPool        chan struct{}
+	wg                sync.WaitGroup
 }
 
 func NewSubscription(
@@ -39,18 +43,31 @@ func NewSubscription(
 	hosts []string,
 	storageManager *storage.Manager,
 ) *Subscription {
+	// Get worker pool size from environment or use default
+	workerPoolSize := utils.IntFromString(os.Getenv("FIREHOSE_WORKER_POOL_SIZE"), 100)
+
 	s := &Subscription{
 		serviceName:      serviceName,
 		hosts:            hosts,
 		languageDetector: utils.NewLanguageDetector(),
 		hasher:           fnv.New32a(),
 		storageManager:   storageManager,
+		workerPool:       make(chan struct{}, workerPoolSize),
 	}
 	s.metricsMiddleware = middleware.NewFirehoseMiddleware(s.processOperation)
 	return s
 }
 
 func (s *Subscription) Run() {
+	// Create a context that can be canceled
+	ctx, cancel := context.WithCancel(context.Background())
+	defer func() {
+		// Cancel the context and wait for all workers to finish
+		cancel()
+		s.wg.Wait()
+		log.Info("All workers have completed, subscription shut down cleanly")
+	}()
+
 	for {
 		client := s.createClient()
 
@@ -66,8 +83,13 @@ func (s *Subscription) Run() {
 			cursorPointer = nil
 		}
 
-		err := client.ConnectAndRead(context.Background(), cursorPointer)
+		err := client.ConnectAndRead(ctx, cursorPointer)
 		if err != nil {
+			if ctx.Err() != nil {
+				// Context was canceled, exit the loop
+				log.Info("Subscription context canceled, shutting down")
+				return
+			}
 			log.Errorf("Error connecting to Jetstream client: %v", err)
 		} else {
 			break
@@ -115,7 +137,22 @@ func (s *Subscription) getHandle() func(context.Context, *jsmodels.Event) error 
 		cursor = int(math.Max(float64(evt.TimeUS), float64(cursor)))
 		seq++
 		if seq%100 == 0 {
-			go s.storageManager.UpdateCursor(s.serviceName, strconv.Itoa(cursor))
+			// Acquire a worker from the pool
+			select {
+			case s.workerPool <- struct{}{}:
+				s.wg.Add(1)
+				go func(currentCursor int) {
+					defer func() {
+						// Release the worker back to the pool
+						<-s.workerPool
+						s.wg.Done()
+					}()
+					s.storageManager.UpdateCursor(s.serviceName, strconv.Itoa(currentCursor))
+				}(cursor)
+			default:
+				// If the worker pool is full, update the cursor synchronously
+				s.storageManager.UpdateCursor(s.serviceName, strconv.Itoa(cursor))
+			}
 		}
 		if err := s.metricsMiddleware.HandleOperation(evt); err != nil {
 			log.Errorf("Error handling operation: %v", err)
@@ -174,7 +211,17 @@ func (s *Subscription) handleFeedPostCreate(evt *jsmodels.Event) error {
 		}
 	}
 
+	// Acquire a worker from the pool
+	s.workerPool <- struct{}{}
+	s.wg.Add(1)
+
 	go func() {
+		defer func() {
+			// Release the worker back to the pool
+			<-s.workerPool
+			s.wg.Done()
+		}()
+
 		language := s.languageDetector.DetectLanguage(post.Text, post.Langs)
 
 		// Calculate rank
@@ -203,7 +250,6 @@ func (s *Subscription) handleFeedPostCreate(evt *jsmodels.Event) error {
 				Text:          post.Text,
 				Embed:         post.Embed,
 			})
-
 	}()
 
 	return nil
@@ -221,7 +267,17 @@ func (s *Subscription) handleGraphFollowCreate(evt *jsmodels.Event) error {
 		return err
 	}
 
+	// Acquire a worker from the pool
+	s.workerPool <- struct{}{}
+	s.wg.Add(1)
+
 	go func() {
+		defer func() {
+			// Release the worker back to the pool
+			<-s.workerPool
+			s.wg.Done()
+		}()
+
 		authorId, err := s.storageManager.GetOrCreateUser(evt.Did)
 		if err != nil {
 			log.Errorf("Error creating user: %v", err)
@@ -281,7 +337,17 @@ func (s *Subscription) handleInteractionCreate(evt *jsmodels.Event) error {
 		return err
 	}
 
+	// Acquire a worker from the pool
+	s.workerPool <- struct{}{}
+	s.wg.Add(1)
+
 	go func() {
+		defer func() {
+			// Release the worker back to the pool
+			<-s.workerPool
+			s.wg.Done()
+		}()
+
 		authorId, err := s.storageManager.GetOrCreateUser(evt.Did)
 		if err != nil {
 			log.Errorf("Error creating user: %v", err)
