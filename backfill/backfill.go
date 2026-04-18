@@ -10,6 +10,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"hash/fnv"
+	"math"
+	"net/http"
+	"slices"
+	"strings"
+	"sync"
+	"time"
+
 	"github.com/araddon/dateparse"
 	comatproto "github.com/bluesky-social/indigo/api/atproto"
 	appbsky "github.com/bluesky-social/indigo/api/bsky"
@@ -19,14 +27,6 @@ import (
 	log "github.com/sirupsen/logrus"
 	"github.com/whyrusleeping/cbor-gen"
 	"golang.org/x/sync/semaphore"
-	"hash"
-	"hash/fnv"
-	"math"
-	"net/http"
-	"slices"
-	"strings"
-	"sync"
-	"time"
 )
 
 const (
@@ -45,7 +45,6 @@ type Backfiller struct {
 	numRepoWorkers   int
 	storageManager   *storage.Manager
 	languageDetector *utils.LanguageDetector
-	hasher           hash.Hash32
 }
 
 func NewBackfiller(
@@ -60,7 +59,6 @@ func NewBackfiller(
 		numRepoWorkers:   numRepoWorkers,
 		storageManager:   storageManager,
 		languageDetector: utils.NewLanguageDetector(),
-		hasher:           fnv.New32a(),
 	}
 }
 
@@ -299,9 +297,9 @@ func (b *Backfiller) handlePostCreate(did string, uri string, post *appbsky.Feed
 	language := b.languageDetector.DetectLanguage(post.Text, post.Langs)
 
 	// Calculate rank
-	b.hasher.Write([]byte(uri))
-	hash := b.hasher.Sum32()
-	b.hasher.Reset()
+	hasher := fnv.New32a()
+	hasher.Write([]byte(uri))
+	hash := hasher.Sum32()
 	decimalPlaces := int(math.Log10(float64(hash))) + 1
 	divisor := math.Pow10(decimalPlaces)
 	rank := float64(createdAt.Unix()) + float64(hash)/divisor

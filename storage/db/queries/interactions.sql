@@ -54,7 +54,10 @@ SELECT id, uri_key, author_id
 FROM interactions
 WHERE post_id = $1;
 
--- name: DeleteOldInteractions :exec
+-- name: DeleteOldInteractionsBatch :execrows
 DELETE
 FROM interactions
-WHERE created_at < current_timestamp - interval '7 days';
+WHERE id IN (SELECT id
+             FROM interactions
+             WHERE created_at < current_timestamp - interval '7 days'
+             LIMIT 10000);

@@ -5,10 +5,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"time"
+
 	"github.com/redis/go-redis/v9"
 	log "github.com/sirupsen/logrus"
-	"time"
 )
+
+const redisTimeout = 2 * time.Second
 
 type Timeline struct {
 	name        string
@@ -46,8 +49,10 @@ func (t *Timeline) DeleteExpiredPosts(expiration time.Time) {
 }
 
 func (t *Timeline) GetPosts(maxScore float64, limit int64) []models.TimelineEntry {
+	ctx, cancel := context.WithTimeout(context.Background(), redisTimeout)
+	defer cancel()
 	members := t.redisClient.ZRevRangeByScore( // Retrieve in DESC order
-		context.Background(),
+		ctx,
 		t.getRedisKey(),
 		&redis.ZRangeBy{
 			Max:   fmt.Sprintf("%f", maxScore),

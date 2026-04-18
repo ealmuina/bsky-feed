@@ -6,18 +6,22 @@ import (
 	"bsky/storage"
 	"bsky/storage/algorithms"
 	"bsky/utils"
+	"context"
 	"errors"
 	"fmt"
-	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"net/http"
 	_ "net/http/pprof"
 	"os"
 	"strconv"
 	"strings"
+	"time"
+
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 type Server struct {
-	feeds map[string]feeds.Feed
+	feeds          map[string]feeds.Feed
+	storageManager *storage.Manager
 }
 
 func NewServer(storageManager *storage.Manager) Server {
@@ -27,7 +31,8 @@ func NewServer(storageManager *storage.Manager) Server {
 	}
 
 	return Server{
-		feeds: serverFeeds,
+		feeds:          serverFeeds,
+		storageManager: storageManager,
 	}
 }
 
@@ -37,13 +42,21 @@ func (s *Server) Run() {
 	mux.HandleFunc("/.well-known/did.json", s.getDidJson)
 	mux.HandleFunc("/xrpc/app.bsky.feed.describeFeedGenerator", s.getDescribeFeedGenerator)
 	mux.HandleFunc("/xrpc/app.bsky.feed.getFeedSkeleton", s.getFeedSkeleton)
+	mux.HandleFunc("/healthz", s.getHealthz)
 
 	mux.Handle("/metrics", promhttp.Handler())
 	mux.Handle("/debug/", http.DefaultServeMux)
 
 	wrappedMux := middleware.NewServerMiddleware(mux)
 
-	err := http.ListenAndServe(":3333", wrappedMux)
+	srv := &http.Server{
+		Addr:         ":3333",
+		Handler:      wrappedMux,
+		ReadTimeout:  5 * time.Second,
+		WriteTimeout: 10 * time.Second,
+		IdleTimeout:  60 * time.Second,
+	}
+	err := srv.ListenAndServe()
 	if errors.Is(err, http.ErrServerClosed) {
 		fmt.Printf("server closed\n")
 	} else if err != nil {
@@ -128,6 +141,18 @@ func (s *Server) getFeedSkeleton(w http.ResponseWriter, r *http.Request) {
 
 	jsonResp := utils.ToJson(result)
 	w.Write(jsonResp)
+}
+
+func (s *Server) getHealthz(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), 1*time.Second)
+	defer cancel()
+
+	if err := s.storageManager.HealthCheck(ctx); err != nil {
+		http.Error(w, err.Error(), http.StatusServiceUnavailable)
+		return
+	}
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte("ok"))
 }
 
 func (s *Server) parseUri(uri string) (string, error) {

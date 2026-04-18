@@ -55,6 +55,7 @@ services:
       - "6379:6379"
     volumes:
       - redis_data:/data
+    command: redis-server --maxmemory 4gb --maxmemory-policy allkeys-lru
     restart: unless-stopped
 
   prometheus:

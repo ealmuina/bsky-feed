@@ -6,6 +6,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
+	"os"
+	"time"
+
 	"github.com/araddon/dateparse"
 	comatproto "github.com/bluesky-social/indigo/api/atproto"
 	appbsky "github.com/bluesky-social/indigo/api/bsky"
@@ -13,9 +17,6 @@ import (
 	"github.com/bluesky-social/indigo/atproto/syntax"
 	"github.com/bluesky-social/indigo/xrpc"
 	log "github.com/sirupsen/logrus"
-	"net/http"
-	"os"
-	"time"
 )
 
 const AccountDeactivatedError = "AccountDeactivated"
@@ -52,7 +53,7 @@ func getXRPCClient(username *syntax.AtIdentifier, password string) (*xrpc.Client
 	}
 
 	return &xrpc.Client{
-		Client: http.DefaultClient,
+		Client: &http.Client{Timeout: 30 * time.Second},
 		Auth: &xrpc.AuthInfo{
 			AccessJwt:  sess.AccessJwt,
 			RefreshJwt: sess.RefreshJwt,
@@ -80,6 +81,7 @@ func (u *StatisticsUpdater) Run() {
 		for _, did := range dids {
 			u.updateUserStatistics(did)
 		}
+		time.Sleep(1 * time.Minute)
 	}
 }
 
@@ -130,7 +132,9 @@ func (u *StatisticsUpdater) updateUserStatistics(did string) {
 
 			// Sleep if API rate limit has been exceeded
 			if bskyErr.Ratelimit != nil && bskyErr.Ratelimit.Remaining == 0 {
-				time.Sleep(bskyErr.Ratelimit.Reset.Sub(time.Now()))
+				if d := bskyErr.Ratelimit.Reset.Sub(time.Now()); d > 0 {
+					time.Sleep(d)
+				}
 			}
 		}
 		return

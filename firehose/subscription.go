@@ -8,13 +8,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/araddon/dateparse"
-	appbsky "github.com/bluesky-social/indigo/api/bsky"
-	jsclient "github.com/bluesky-social/jetstream/pkg/client"
-	jsscheduler "github.com/bluesky-social/jetstream/pkg/client/schedulers/sequential"
-	jsmodels "github.com/bluesky-social/jetstream/pkg/models"
-	log "github.com/sirupsen/logrus"
-	"hash"
 	"hash/fnv"
 	"log/slog"
 	"math"
@@ -25,13 +18,19 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/araddon/dateparse"
+	appbsky "github.com/bluesky-social/indigo/api/bsky"
+	jsclient "github.com/bluesky-social/jetstream/pkg/client"
+	jsscheduler "github.com/bluesky-social/jetstream/pkg/client/schedulers/sequential"
+	jsmodels "github.com/bluesky-social/jetstream/pkg/models"
+	log "github.com/sirupsen/logrus"
 )
 
 type Subscription struct {
 	serviceName       string
 	hosts             []string
 	languageDetector  *utils.LanguageDetector
-	hasher            hash.Hash32
 	storageManager    *storage.Manager
 	metricsMiddleware *middleware.FirehoseMiddleware
 	workerPool        chan struct{}
@@ -50,7 +49,6 @@ func NewSubscription(
 		serviceName:      serviceName,
 		hosts:            hosts,
 		languageDetector: utils.NewLanguageDetector(),
-		hasher:           fnv.New32a(),
 		storageManager:   storageManager,
 		workerPool:       make(chan struct{}, workerPoolSize),
 	}
@@ -225,9 +223,9 @@ func (s *Subscription) handleFeedPostCreate(evt *jsmodels.Event) error {
 		language := s.languageDetector.DetectLanguage(post.Text, post.Langs)
 
 		// Calculate rank
-		s.hasher.Write([]byte(uri))
-		hash := s.hasher.Sum32()
-		s.hasher.Reset()
+		hasher := fnv.New32a()
+		hasher.Write([]byte(uri))
+		hash := hasher.Sum32()
 		decimalPlaces := int(math.Log10(float64(hash))) + 1
 		divisor := math.Pow10(decimalPlaces)
 		rank := float64(createdAt.Unix()) + float64(hash)/divisor
@@ -412,9 +410,9 @@ func (s *Subscription) handleRecordDelete(evt *jsmodels.Event) error {
 	}
 
 	switch evt.Commit.Collection {
-	case "app.bsky.feeds.post":
+	case "app.bsky.feed.post":
 		s.storageManager.DeletePost(identifier)
-	case "app.bsky.feeds.like", "app.bsky.feeds.repost":
+	case "app.bsky.feed.like", "app.bsky.feed.repost":
 		s.storageManager.DeleteInteraction(identifier)
 	case "app.bsky.graph.follow":
 		s.storageManager.DeleteFollow(identifier)

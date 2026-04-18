@@ -10,12 +10,13 @@ import (
 	"bsky/utils"
 	"context"
 	"fmt"
+	"math"
+	"os"
+
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/redis/go-redis/v9"
 	log "github.com/sirupsen/logrus"
-	"math"
-	"os"
 )
 
 func init() {
@@ -33,17 +34,19 @@ func main() {
 	log.SetLevel(log.WarnLevel)
 
 	ctx := context.Background()
-	connectionPool, err := pgxpool.New(
-		ctx,
-		fmt.Sprintf(
-			"user=%s password=%s dbname=%s sslmode=disable host=%s port=%s",
-			os.Getenv("DB_USERNAME"),
-			os.Getenv("DB_PASSWORD"),
-			"bsky_feeds",
-			os.Getenv("DB_HOST"),
-			os.Getenv("DB_PORT"),
-		),
-	)
+	poolConfig, err := pgxpool.ParseConfig(fmt.Sprintf(
+		"user=%s password=%s dbname=%s sslmode=disable host=%s port=%s",
+		os.Getenv("DB_USERNAME"),
+		os.Getenv("DB_PASSWORD"),
+		"bsky_feeds",
+		os.Getenv("DB_HOST"),
+		os.Getenv("DB_PORT"),
+	))
+	if err != nil {
+		panic(err)
+	}
+	poolConfig.MaxConns = 40
+	connectionPool, err := pgxpool.NewWithConfig(ctx, poolConfig)
 	if err != nil {
 		panic(err)
 	}

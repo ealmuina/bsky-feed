@@ -8,16 +8,17 @@ import (
 	"bsky/utils"
 	"context"
 	"fmt"
-	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/redis/go-redis/v9"
-	log "github.com/sirupsen/logrus"
-	"gopkg.in/yaml.v3"
 	"os"
 	"slices"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/redis/go-redis/v9"
+	log "github.com/sirupsen/logrus"
+	"gopkg.in/yaml.v3"
 )
 
 type Manager struct {
@@ -85,8 +86,16 @@ func (m *Manager) CleanOldData(persistentDb bool) {
 	// Clean DB
 	ctx := context.Background()
 	if !persistentDb {
-		if err := m.queries.DeleteOldInteractions(ctx); err != nil {
-			log.Errorf("Error cleaning old interactions: %v", err)
+		const batchSize = 10000
+		for {
+			n, err := m.queries.DeleteOldInteractionsBatch(ctx)
+			if err != nil {
+				log.Errorf("Error cleaning old interactions: %v", err)
+				break
+			}
+			if n < batchSize {
+				break
+			}
 		}
 	}
 
@@ -337,6 +346,16 @@ func (m *Manager) DeleteUser(did string) {
 	if ok {
 		m.usersCache.DeleteUser(id)
 	}
+}
+
+func (m *Manager) HealthCheck(ctx context.Context) error {
+	if err := m.redisConnection.Ping(ctx).Err(); err != nil {
+		return fmt.Errorf("redis: %w", err)
+	}
+	if err := m.dbConnection.Ping(ctx); err != nil {
+		return fmt.Errorf("postgres: %w", err)
+	}
+	return nil
 }
 
 func (m *Manager) GetCursor(service string) string {
