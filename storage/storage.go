@@ -318,7 +318,9 @@ func (m *Manager) DeletePost(identifier models.Identifier) {
 		AuthorID: identifier.AuthorId,
 	})
 	if err != nil {
-		log.Errorf("Error deleting post: %v", err)
+		if !strings.Contains(err.Error(), "no rows in result set") {
+			log.Errorf("Error deleting post: %v", err)
+		}
 		return
 	}
 
