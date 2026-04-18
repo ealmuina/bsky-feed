@@ -457,6 +457,9 @@ func (m *Manager) SetUserMetadata(did string, handle string, createdAt time.Time
 	if err != nil {
 		log.Errorf("Error setting user metadata: %v", err)
 	}
+	if id, ok := m.usersCache.UserDidToId(did); ok {
+		m.usersCache.SetUserCreatedAt(id, createdAt)
+	}
 }
 
 func (m *Manager) UpdateCursor(service string, cursor string) {
@@ -475,6 +478,7 @@ func (m *Manager) UpdateCursor(service string, cursor string) {
 func (m *Manager) UpdateUser(updatedUser models.User) {
 	// Update on cache
 	m.usersCache.SetUserFollows(updatedUser.ID, updatedUser.FollowersCount, updatedUser.FollowsCount)
+	m.usersCache.SetUserCreatedAt(updatedUser.ID, updatedUser.CreatedAt)
 
 	// Update on DB
 	err := m.queries.UpdateUser(

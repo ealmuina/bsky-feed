@@ -3,16 +3,18 @@ package cache
 import (
 	"context"
 	"fmt"
-	"github.com/redis/go-redis/v9"
 	"math"
 	"strconv"
 	"time"
+
+	"github.com/redis/go-redis/v9"
 )
 
 const UsersFollowersCountRedisKey = "users_followers_count"
 const UsersFollowsCountRedisKey = "users_follows_count"
 const UsersPostsCountRedisKey = "users_posts_count"
 const UsersInteractionsCountRedisKey = "users_interactions_count"
+const UsersCreatedAtRedisKey = "users_created_at"
 const UserIdToDidRedisKey = "users_id_to_did"
 const UserDidToIdRedisKey = "users_did_to_id"
 
@@ -22,6 +24,7 @@ type UserStatistics struct {
 	FollowsCount      int64
 	PostsCount        int64
 	InteractionsCount int64
+	CreatedAt         time.Time // zero value means unknown
 }
 
 func (s *UserStatistics) GetEngagementFactor() float64 {
@@ -60,6 +63,7 @@ func (c *UsersCache) DeleteUser(id int32) {
 	c.redisClient.HDel(ctx, UsersFollowsCountRedisKey, idStr)
 	c.redisClient.HDel(ctx, UsersPostsCountRedisKey, idStr)
 	c.redisClient.HDel(ctx, UsersInteractionsCountRedisKey, idStr)
+	c.redisClient.HDel(ctx, UsersCreatedAtRedisKey, idStr)
 }
 
 func (c *UsersCache) DeleteUsers(dids []string) {
@@ -79,13 +83,27 @@ func (c *UsersCache) GetUserStatistics(id int32) UserStatistics {
 	postsCount, _ := c.redisClient.HGet(ctx, UsersPostsCountRedisKey, idStr).Int64()
 	interactionsCount, _ := c.redisClient.HGet(ctx, UsersInteractionsCountRedisKey, idStr).Int64()
 
+	var createdAt time.Time
+	if ts, err := c.redisClient.HGet(ctx, UsersCreatedAtRedisKey, idStr).Int64(); err == nil && ts > 0 {
+		createdAt = time.Unix(ts, 0)
+	}
+
 	return UserStatistics{
 		ID:                id,
 		FollowersCount:    followersCount,
 		FollowsCount:      followsCount,
 		PostsCount:        postsCount,
 		InteractionsCount: interactionsCount,
+		CreatedAt:         createdAt,
 	}
+}
+
+func (c *UsersCache) SetUserCreatedAt(id int32, createdAt time.Time) {
+	if createdAt.IsZero() {
+		return
+	}
+	idStr := fmt.Sprintf("%d", id)
+	c.hSetWithExpiration(UsersCreatedAtRedisKey, idStr, strconv.FormatInt(createdAt.Unix(), 10))
 }
 
 func (c *UsersCache) RequiresReload() bool {
