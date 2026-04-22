@@ -12,6 +12,7 @@ func defaultAlgorithm() *TopLanguageAlgorithm {
 		languageCode:      "es",
 		minFollowers:      1000,
 		minEngagement:     1.0,
+		engagementDivisor: 1.0,
 		maxFollowsRatio:   5.0,
 		minAccountAgeDays: 7,
 		minTextLength:     20,

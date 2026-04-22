@@ -12,6 +12,7 @@ type TopLanguageAlgorithm struct {
 	languageCode      string
 	minFollowers      int64
 	minEngagement     float64
+	engagementDivisor float64
 	maxFollowsRatio   float64
 	minAccountAgeDays int64
 	minTextLength     int
@@ -31,7 +32,7 @@ func (a *TopLanguageAlgorithm) AcceptsPost(
 	if authorStatistics.FollowersCount <= a.minFollowers {
 		return
 	}
-	if authorStatistics.GetEngagementFactor() <= a.minEngagement {
+	if authorStatistics.GetEngagementFactor(a.engagementDivisor) <= a.minEngagement {
 		return
 	}
 

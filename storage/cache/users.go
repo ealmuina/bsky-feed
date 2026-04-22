@@ -3,6 +3,7 @@ package cache
 import (
 	"context"
 	"fmt"
+	"math"
 	"strconv"
 	"time"
 
@@ -26,15 +27,15 @@ type UserStatistics struct {
 	CreatedAt         time.Time // zero value means unknown
 }
 
-func (s *UserStatistics) GetEngagementFactor() float64 {
+func (s *UserStatistics) GetEngagementFactor(divisor float64) float64 {
 	interactionsCount := float64(s.InteractionsCount)
 	postsCount := float64(s.PostsCount)
 	followersCount := float64(s.FollowersCount)
 
-	if postsCount == 0 || followersCount < 10 {
+	if postsCount == 0 || followersCount < 10 || divisor <= 0 {
 		return -1
 	}
-	return (interactionsCount / postsCount) * 100.0 / followersCount
+	return ((interactionsCount / postsCount) * 100.0 / followersCount) / (divisor / math.Log(followersCount))
 }
 
 type UsersCache struct {
