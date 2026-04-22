@@ -3,7 +3,6 @@ package cache
 import (
 	"context"
 	"fmt"
-	"math"
 	"strconv"
 	"time"
 
@@ -35,7 +34,7 @@ func (s *UserStatistics) GetEngagementFactor() float64 {
 	if postsCount == 0 || followersCount < 10 {
 		return -1
 	}
-	return ((interactionsCount / postsCount) * 100.0 / followersCount) / (5 / math.Log(followersCount))
+	return (interactionsCount / postsCount) * 100.0 / followersCount
 }
 
 type UsersCache struct {
