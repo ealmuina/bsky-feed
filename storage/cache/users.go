@@ -32,7 +32,7 @@ func (s *UserStatistics) GetEngagementFactor(divisor float64) float64 {
 	postsCount := float64(s.PostsCount)
 	followersCount := float64(s.FollowersCount)
 
-	if postsCount == 0 || followersCount < 10 || divisor <= 0 {
+	if postsCount <= 0 || followersCount < 10 || divisor <= 0 {
 		return -1
 	}
 	return ((interactionsCount / postsCount) * 100.0 / followersCount) / (divisor / math.Log(followersCount))

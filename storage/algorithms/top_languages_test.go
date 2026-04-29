@@ -82,6 +82,15 @@ func TestTopLanguage_LowEngagement(t *testing.T) {
 	}
 }
 
+func TestTopLanguage_NegativePostsCount(t *testing.T) {
+	author := validAuthor()
+	author.PostsCount = -50 // corrupt counter from hourly cleanup bug
+	ok, _ := defaultAlgorithm().AcceptsPost(validPost(), author)
+	if ok {
+		t.Fatal("expected negative posts count to be rejected (same as zero posts)")
+	}
+}
+
 func TestTopLanguage_BotFollowsRatio(t *testing.T) {
 	author := validAuthor()
 	author.FollowsCount = 12000 // > 5 * 2000 followers

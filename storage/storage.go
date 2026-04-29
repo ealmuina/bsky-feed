@@ -112,12 +112,6 @@ func (m *Manager) CleanOldData(persistentDb bool) {
 	postIds := make([]int64, 0, len(oldPosts))
 	for _, post := range oldPosts {
 		postIds = append(postIds, post.ID)
-
-		// Discount from user statistics
-		if !post.ReplyRootID.Valid { // replies are not counted
-			postInteractions := m.postsCache.GetPostInteractions(post.ID)
-			m.usersCache.UpdateUserStatistics(post.AuthorID, 0, 0, -1, -postInteractions)
-		}
 	}
 	// Delete from posts cache
 	m.postsCache.DeletePosts(postIds)
@@ -158,19 +152,19 @@ func (m *Manager) CreateInteraction(interaction models.Interaction) {
 		PostID:    interaction.PostId,
 		CreatedAt: pgtype.Timestamp{Time: interaction.CreatedAt, Valid: true},
 	})
+
+	dbOk := err == nil && result.IsCreated
 	if err != nil {
 		log.Errorf("Error creating interaction: %v", err)
-		return
 	}
 
-	// Update caches
-	if result.IsCreated {
+	// Update caches. On FK failure the post isn't in our DB but we still want
+	// to credit the engagement so the author's engagement factor is accurate.
+	if dbOk {
 		m.postsCache.AddInteraction(interaction.PostId)
-		if postAuthorId, err := m.GetPostAuthorId(interaction.PostId); err == nil { // post author found
-			m.usersCache.UpdateUserStatistics(
-				postAuthorId, 0, 0, 0, 1,
-			)
-		}
+	}
+	if postAuthorId, err := m.GetPostAuthorId(interaction.PostId); err == nil {
+		m.usersCache.UpdateUserStatistics(postAuthorId, 0, 0, 0, 1)
 	}
 }
 

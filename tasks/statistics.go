@@ -140,14 +140,13 @@ func (u *StatisticsUpdater) updateUserStatistics(did string) {
 		return
 	}
 
-	createdAtStr := ""
-	if profile.CreatedAt != nil {
-		createdAtStr = *profile.CreatedAt
-	}
-	createdAt, err := dateparse.ParseAny(createdAtStr)
-	if err != nil {
-		log.Errorf("Error parsing created at: %s", err)
-		return
+	var createdAt time.Time
+	if profile.CreatedAt != nil && *profile.CreatedAt != "" {
+		if t, parseErr := dateparse.ParseAny(*profile.CreatedAt); parseErr != nil {
+			log.Warnf("Error parsing created at for %s: %s", did, parseErr)
+		} else {
+			createdAt = t
+		}
 	}
 
 	userId, err := u.storageManager.GetOrCreateUser(did)
