@@ -91,6 +91,26 @@ func TestTopLanguage_NegativePostsCount(t *testing.T) {
 	}
 }
 
+func TestTopLanguage_ZeroPostsCount_Rejected(t *testing.T) {
+	author := validAuthor()
+	author.PostsCount = 0 // cache-miss state: GetEngagementFactor returns -1
+	ok, _ := defaultAlgorithm().AcceptsPost(validPost(), author)
+	if ok {
+		t.Fatal("expected zero posts count (cache miss) to be rejected")
+	}
+}
+
+func TestTopLanguage_EngagementFactorMinusOne_RejectsEvenAtZeroThreshold(t *testing.T) {
+	author := validAuthor()
+	author.PostsCount = 0 // forces GetEngagementFactor to return -1
+	alg := defaultAlgorithm()
+	alg.minEngagement = 0 // softening the threshold must not help when EF == -1
+	ok, _ := alg.AcceptsPost(validPost(), author)
+	if ok {
+		t.Fatal("expected EF=-1 to reject even when minEngagement=0")
+	}
+}
+
 func TestTopLanguage_BotFollowsRatio(t *testing.T) {
 	author := validAuthor()
 	author.FollowsCount = 12000 // > 5 * 2000 followers

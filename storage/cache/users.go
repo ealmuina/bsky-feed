@@ -116,6 +116,11 @@ func (c *UsersCache) SetUserFollows(id int32, followersCount int64, followsCount
 	c.hSetWithExpiration(UsersFollowsCountRedisKey, idStr, strconv.Itoa(int(followsCount)))
 }
 
+func (c *UsersCache) SetUserPostsCount(id int32, postsCount int64) {
+	idStr := fmt.Sprintf("%d", id)
+	c.hSetWithExpiration(UsersPostsCountRedisKey, idStr, strconv.Itoa(int(postsCount)))
+}
+
 func (c *UsersCache) UpdateUserStatistics(
 	id int32,
 	followsDelta int64,
@@ -126,16 +131,23 @@ func (c *UsersCache) UpdateUserStatistics(
 	ctx := context.Background()
 	idStr := fmt.Sprintf("%d", id)
 
-	for redisKey, delta := range map[string]int64{
-		UsersFollowersCountRedisKey:    followersDelta,
-		UsersFollowsCountRedisKey:      followsDelta,
-		UsersPostsCountRedisKey:        postsDelta,
-		UsersInteractionsCountRedisKey: interactionsDelta,
-	} {
-		if delta != 0 {
-			c.redisClient.HIncrBy(ctx, redisKey, idStr, delta)
-			c.redisClient.HExpire(ctx, redisKey, c.expiration, idStr)
-		}
+	// followers/follows are periodically refreshed by StatisticsUpdater, so TTL is safe.
+	if followersDelta != 0 {
+		c.redisClient.HIncrBy(ctx, UsersFollowersCountRedisKey, idStr, followersDelta)
+		c.redisClient.HExpire(ctx, UsersFollowersCountRedisKey, c.expiration, idStr)
+	}
+	if followsDelta != 0 {
+		c.redisClient.HIncrBy(ctx, UsersFollowsCountRedisKey, idStr, followsDelta)
+		c.redisClient.HExpire(ctx, UsersFollowsCountRedisKey, c.expiration, idStr)
+	}
+	// posts/interactions are delta-only counters with no periodic refresh source;
+	// SetUserPostsCount (called from Manager.UpdateUser) is the only re-prime path.
+	// Let LRU handle eviction rather than actively expiring them.
+	if postsDelta != 0 {
+		c.redisClient.HIncrBy(ctx, UsersPostsCountRedisKey, idStr, postsDelta)
+	}
+	if interactionsDelta != 0 {
+		c.redisClient.HIncrBy(ctx, UsersInteractionsCountRedisKey, idStr, interactionsDelta)
 	}
 }
 

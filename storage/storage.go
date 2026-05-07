@@ -474,6 +474,7 @@ func (m *Manager) UpdateCursor(service string, cursor string) {
 func (m *Manager) UpdateUser(updatedUser models.User) {
 	// Update on cache
 	m.usersCache.SetUserFollows(updatedUser.ID, updatedUser.FollowersCount, updatedUser.FollowsCount)
+	m.usersCache.SetUserPostsCount(updatedUser.ID, updatedUser.PostsCount)
 	m.usersCache.SetUserCreatedAt(updatedUser.ID, updatedUser.CreatedAt)
 
 	// Update on DB
