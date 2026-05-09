@@ -116,11 +116,6 @@ func (c *UsersCache) SetUserFollows(id int32, followersCount int64, followsCount
 	c.hSetWithExpiration(UsersFollowsCountRedisKey, idStr, strconv.Itoa(int(followsCount)))
 }
 
-func (c *UsersCache) SetUserPostsCount(id int32, postsCount int64) {
-	idStr := fmt.Sprintf("%d", id)
-	c.hSetWithExpiration(UsersPostsCountRedisKey, idStr, strconv.Itoa(int(postsCount)))
-}
-
 func (c *UsersCache) UpdateUserStatistics(
 	id int32,
 	followsDelta int64,
