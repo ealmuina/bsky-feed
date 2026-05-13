@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"math"
 	"os"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/prometheus/client_golang/prometheus"
@@ -111,11 +112,15 @@ func runBackgroundTasks(storageManager *storage.Manager) {
 	} else {
 		// Statistics updater
 		go utils.Recoverer(math.MaxInt, 1, func() {
-			statisticsUpdater, err := tasks.NewStatisticsUpdater(storageManager)
-			if err != nil {
-				panic(err)
+			for {
+				statisticsUpdater, err := tasks.NewStatisticsUpdater(storageManager)
+				if err != nil {
+					log.Errorf("Error creating statistics updater: %v", err)
+					time.Sleep(5 * time.Minute)
+					continue
+				}
+				statisticsUpdater.Run()
 			}
-			statisticsUpdater.Run()
 		})
 	}
 }

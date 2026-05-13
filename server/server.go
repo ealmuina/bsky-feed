@@ -95,11 +95,15 @@ func (s *Server) getDescribeFeedGenerator(w http.ResponseWriter, r *http.Request
 			"body": map[string]any{
 				"did": "did:web:" + os.Getenv("BSKY_HOSTNAME"),
 				"feeds": []map[string]string{
-					{"uri": "at://did:plc:qinqxdwwxgme6r4lgmkry5qu/app.bsky.feeds.generator/basque"},
-					{"uri": "at://did:plc:qinqxdwwxgme6r4lgmkry5qu/app.bsky.feeds.generator/catalan"},
-					{"uri": "at://did:plc:qinqxdwwxgme6r4lgmkry5qu/app.bsky.feeds.generator/galician"},
-					{"uri": "at://did:plc:qinqxdwwxgme6r4lgmkry5qu/app.bsky.feeds.generator/portuguese"},
-					{"uri": "at://did:plc:qinqxdwwxgme6r4lgmkry5qu/app.bsky.feeds.generator/spanish"},
+					{"uri": "at://did:plc:qinqxdwwxgme6r4lgmkry5qu/app.bsky.feed.generator/basque"},
+					{"uri": "at://did:plc:qinqxdwwxgme6r4lgmkry5qu/app.bsky.feed.generator/catalan"},
+					{"uri": "at://did:plc:qinqxdwwxgme6r4lgmkry5qu/app.bsky.feed.generator/chinese"},
+					{"uri": "at://did:plc:qinqxdwwxgme6r4lgmkry5qu/app.bsky.feed.generator/galician"},
+					{"uri": "at://did:plc:qinqxdwwxgme6r4lgmkry5qu/app.bsky.feed.generator/light_spanish"},
+					{"uri": "at://did:plc:qinqxdwwxgme6r4lgmkry5qu/app.bsky.feed.generator/portuguese"},
+					{"uri": "at://did:plc:qinqxdwwxgme6r4lgmkry5qu/app.bsky.feed.generator/spanish"},
+					{"uri": "at://did:plc:qinqxdwwxgme6r4lgmkry5qu/app.bsky.feed.generator/top_portuguese"},
+					{"uri": "at://did:plc:qinqxdwwxgme6r4lgmkry5qu/app.bsky.feed.generator/top_spanish"},
 				},
 			},
 		},
@@ -113,6 +117,11 @@ func (s *Server) getFeedSkeleton(w http.ResponseWriter, r *http.Request) {
 	queryParams := r.URL.Query()
 	feedUri := getQueryItem(queryParams, "feed")
 	cursor := getQueryItem(queryParams, "cursor")
+
+	if feedUri == nil {
+		sendError(w, http.StatusBadRequest, "missing feed param")
+		return
+	}
 
 	limitStr := getQueryItem(queryParams, "limit")
 	limit := 100
@@ -132,10 +141,15 @@ func (s *Server) getFeedSkeleton(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	cursorValue := ""
+	if cursor != nil {
+		cursorValue = *cursor
+	}
+
 	result := requestedFeed.GetTimeline(
 		feeds.QueryParams{
 			Limit:  int64(limit),
-			Cursor: *cursor,
+			Cursor: cursorValue,
 		},
 	)
 
@@ -156,7 +170,13 @@ func (s *Server) getHealthz(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) parseUri(uri string) (string, error) {
+	if uri == "" {
+		return "", errors.New("empty uri")
+	}
 	components := strings.Split(uri, "/")
+	if len(components) < 3 {
+		return "", errors.New("invalid uri")
+	}
 	repo := strings.Join(components[:len(components)-2], "/")
 	entityType := components[len(components)-2]
 

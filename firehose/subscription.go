@@ -310,6 +310,9 @@ func (s *Subscription) handleInteractionCreate(evt *jsmodels.Event) error {
 		if err := json.Unmarshal(evt.Commit.Record, &like); err != nil {
 			return fmt.Errorf("failed to unmarshal like: %w", err)
 		}
+		if like.Subject == nil {
+			return nil
+		}
 		createdAtStr = like.CreatedAt
 		postUri = like.Subject.Uri
 		kind = models.Like
@@ -318,6 +321,9 @@ func (s *Subscription) handleInteractionCreate(evt *jsmodels.Event) error {
 		var repost appbsky.FeedRepost
 		if err := json.Unmarshal(evt.Commit.Record, &repost); err != nil {
 			return fmt.Errorf("failed to unmarshal repost: %w", err)
+		}
+		if repost.Subject == nil {
+			return nil
 		}
 		createdAtStr = repost.CreatedAt
 		postUri = repost.Subject.Uri

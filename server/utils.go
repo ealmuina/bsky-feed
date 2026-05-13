@@ -18,10 +18,9 @@ func sendError(w http.ResponseWriter, errorCode int, message string) {
 }
 
 func getQueryItem(values url.Values, key string) *string {
-	value := values[key]
-	result := ""
-	if len(value) == 1 {
-		result = value[0]
+	value := values.Get(key)
+	if value == "" {
+		return nil
 	}
-	return &result
+	return &value
 }

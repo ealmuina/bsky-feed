@@ -69,7 +69,9 @@ func NewStatisticsUpdater(storageManager *storage.Manager) (*StatisticsUpdater, 
 		storageManager:  storageManager,
 		userLastUpdated: make(map[string]time.Time),
 	}
-	updater.connectXRPCClient()
+	if err := updater.connectXRPCClient(); err != nil {
+		return nil, err
+	}
 
 	return &updater, nil
 }
@@ -85,11 +87,11 @@ func (u *StatisticsUpdater) Run() {
 	}
 }
 
-func (u *StatisticsUpdater) connectXRPCClient() {
+func (u *StatisticsUpdater) connectXRPCClient() error {
 	usernameString := os.Getenv("STATISTICS_USER")
 	username, err := syntax.ParseAtIdentifier(usernameString)
 	if err != nil {
-		panic(err)
+		return err
 	}
 
 	client, err := getXRPCClient(
@@ -97,10 +99,11 @@ func (u *StatisticsUpdater) connectXRPCClient() {
 		os.Getenv("STATISTICS_PASSWORD"),
 	)
 	if err != nil {
-		panic(err)
+		return err
 	}
 
 	u.client = client
+	return nil
 }
 
 func (u *StatisticsUpdater) deleteUser(did string) {
@@ -123,7 +126,9 @@ func (u *StatisticsUpdater) updateUserStatistics(did string) {
 						// Delete user if profile does not exist anymore
 						u.deleteUser(did)
 					case ExpiredToken:
-						u.connectXRPCClient()
+						if err := u.connectXRPCClient(); err != nil {
+							log.Errorf("Error reconnecting XRPC client: %v", err)
+						}
 					}
 				}
 			} else {
