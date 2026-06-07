@@ -91,20 +91,17 @@ func (s *Server) getDescribeFeedGenerator(w http.ResponseWriter, r *http.Request
 	w.Header().Set("Content-Type", "application/json")
 	jsonResp := utils.ToJson(
 		map[string]any{
-			"encoding": "application/json",
-			"body": map[string]any{
-				"did": "did:web:" + os.Getenv("BSKY_HOSTNAME"),
-				"feeds": []map[string]string{
-					{"uri": "at://did:plc:qinqxdwwxgme6r4lgmkry5qu/app.bsky.feed.generator/basque"},
-					{"uri": "at://did:plc:qinqxdwwxgme6r4lgmkry5qu/app.bsky.feed.generator/catalan"},
-					{"uri": "at://did:plc:qinqxdwwxgme6r4lgmkry5qu/app.bsky.feed.generator/chinese"},
-					{"uri": "at://did:plc:qinqxdwwxgme6r4lgmkry5qu/app.bsky.feed.generator/galician"},
-					{"uri": "at://did:plc:qinqxdwwxgme6r4lgmkry5qu/app.bsky.feed.generator/light_spanish"},
-					{"uri": "at://did:plc:qinqxdwwxgme6r4lgmkry5qu/app.bsky.feed.generator/portuguese"},
-					{"uri": "at://did:plc:qinqxdwwxgme6r4lgmkry5qu/app.bsky.feed.generator/spanish"},
-					{"uri": "at://did:plc:qinqxdwwxgme6r4lgmkry5qu/app.bsky.feed.generator/top_portuguese"},
-					{"uri": "at://did:plc:qinqxdwwxgme6r4lgmkry5qu/app.bsky.feed.generator/top_spanish"},
-				},
+			"did": "did:web:" + os.Getenv("BSKY_HOSTNAME"),
+			"feeds": []map[string]string{
+				{"uri": "at://did:plc:qinqxdwwxgme6r4lgmkry5qu/app.bsky.feed.generator/basque"},
+				{"uri": "at://did:plc:qinqxdwwxgme6r4lgmkry5qu/app.bsky.feed.generator/catalan"},
+				{"uri": "at://did:plc:qinqxdwwxgme6r4lgmkry5qu/app.bsky.feed.generator/chinese"},
+				{"uri": "at://did:plc:qinqxdwwxgme6r4lgmkry5qu/app.bsky.feed.generator/galician"},
+				{"uri": "at://did:plc:qinqxdwwxgme6r4lgmkry5qu/app.bsky.feed.generator/light_spanish"},
+				{"uri": "at://did:plc:qinqxdwwxgme6r4lgmkry5qu/app.bsky.feed.generator/portuguese"},
+				{"uri": "at://did:plc:qinqxdwwxgme6r4lgmkry5qu/app.bsky.feed.generator/spanish"},
+				{"uri": "at://did:plc:qinqxdwwxgme6r4lgmkry5qu/app.bsky.feed.generator/top_portuguese"},
+				{"uri": "at://did:plc:qinqxdwwxgme6r4lgmkry5qu/app.bsky.feed.generator/top_spanish"},
 			},
 		},
 	)

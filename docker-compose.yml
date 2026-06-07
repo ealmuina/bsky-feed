@@ -9,6 +9,11 @@ services:
     command: sh ./run.sh
     env_file:
       - .env
+    deploy:
+      resources:
+        limits:
+          memory: 6G
+    restart: unless-stopped
     depends_on:
       db:
         condition: service_healthy
