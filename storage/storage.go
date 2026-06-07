@@ -104,17 +104,27 @@ func (m *Manager) CleanOldData(persistentDb bool) {
 		timeline.DeleteExpiredPosts(time.Now().Add(-3 * 24 * time.Hour)) // Timelines lifespan of 3 days
 	}
 
-	// Clean caches
-	oldPosts, err := m.queries.GetOldPosts(ctx)
-	if err != nil {
-		log.Errorf("Error retrieving old posts: %v", err)
+	// Clean caches (process in batches so memory stays bounded)
+	const oldPostsBatchSize = 10000
+	for {
+		oldPosts, err := m.queries.GetOldPosts(ctx, oldPostsBatchSize)
+		if err != nil {
+			log.Errorf("Error retrieving old posts: %v", err)
+			break
+		}
+		if len(oldPosts) == 0 {
+			break
+		}
+		postIds := make([]int64, 0, len(oldPosts))
+		for _, post := range oldPosts {
+			postIds = append(postIds, post.ID)
+		}
+		// Delete from posts cache
+		m.postsCache.DeletePosts(postIds)
+		if len(oldPosts) < oldPostsBatchSize {
+			break
+		}
 	}
-	postIds := make([]int64, 0, len(oldPosts))
-	for _, post := range oldPosts {
-		postIds = append(postIds, post.ID)
-	}
-	// Delete from posts cache
-	m.postsCache.DeletePosts(postIds)
 }
 
 func (m *Manager) CreateFollow(follow models.Follow) {
@@ -389,8 +399,8 @@ func (m *Manager) GetOrCreateUser(did string) (id int32, err error) {
 	return id, nil
 }
 
-func (m *Manager) GetOutdatedUserDids() []string {
-	dids, err := m.queries.GetUserDidsToRefreshStatistics(context.Background())
+func (m *Manager) GetOutdatedUserDids(limit int32) []string {
+	dids, err := m.queries.GetUserDidsToRefreshStatistics(context.Background(), limit)
 	if err != nil {
 		log.Errorf("Error getting user dids for update: %v", err)
 	}

@@ -23,6 +23,12 @@ const AccountDeactivatedError = "AccountDeactivated"
 const InvalidRequestError = "InvalidRequest" // Seen when profile is not found
 const ExpiredToken = "ExpiredToken"
 
+// userDidsBatchSize bounds memory in the StatisticsUpdater loop. The
+// WHERE clause in GetUserDidsToRefreshStatistics filters out DIDs whose
+// last_update is recent, so each tick naturally processes a new batch
+// without needing a cursor or state.
+const userDidsBatchSize = 1000
+
 type StatisticsUpdater struct {
 	client          *xrpc.Client
 	storageManager  *storage.Manager
@@ -78,8 +84,10 @@ func NewStatisticsUpdater(storageManager *storage.Manager) (*StatisticsUpdater, 
 
 func (u *StatisticsUpdater) Run() {
 	for {
-		// Update user statistics
-		dids := u.storageManager.GetOutdatedUserDids()
+		// Update user statistics (one batch per tick; the WHERE clause
+		// itself filters out DIDs updated on previous ticks, so forward
+		// progress is automatic).
+		dids := u.storageManager.GetOutdatedUserDids(userDidsBatchSize)
 		for _, did := range dids {
 			u.updateUserStatistics(did)
 		}

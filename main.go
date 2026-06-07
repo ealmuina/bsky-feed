@@ -4,6 +4,7 @@ import (
 	"bsky/backfill"
 	"bsky/firehose"
 	"bsky/monitoring"
+	"bsky/monitoring/heapwatch"
 	"bsky/server"
 	"bsky/storage"
 	"bsky/tasks"
@@ -75,6 +76,12 @@ func main() {
 }
 
 func runBackgroundTasks(storageManager *storage.Manager) {
+	// Heap-dump safety net: if HeapAlloc exceeds HEAPWATCH_THRESHOLD_BYTES
+	// (default 4 GiB), write a pprof heap dump to ./heapdumps/ and log it.
+	// Not wrapped in Recoverer: no panic surface, and Recoverer would
+	// re-spawn a duplicate watcher on any future bug.
+	go heapwatch.Run()
+
 	runBackfill := os.Getenv("RUN_BACKFILL") == "true"
 
 	// DB cleanup

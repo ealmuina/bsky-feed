@@ -50,7 +50,8 @@ LIMIT 1;
 SELECT users.did
 FROM users
 WHERE last_update IS NULL
-   OR last_update < current_timestamp - (COALESCE(refresh_frequency, 30) || ' days')::interval;
+   OR last_update < current_timestamp - (COALESCE(refresh_frequency, 30) || ' days')::interval
+LIMIT $1;
 
 -- name: SetUserMetadata :exec
 UPDATE users

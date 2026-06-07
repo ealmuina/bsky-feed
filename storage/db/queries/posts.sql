@@ -44,7 +44,8 @@ RETURNING id, author_id, uri_key, reply_root_id;
 -- name: GetOldPosts :many
 SELECT id, author_id, reply_root_id
 FROM posts
-WHERE posts.created_at < current_timestamp - interval '7 days';
+WHERE posts.created_at < current_timestamp - interval '7 days'
+LIMIT $1;
 
 -- name: GetUserPosts :many
 SELECT id, uri_key, author_id
