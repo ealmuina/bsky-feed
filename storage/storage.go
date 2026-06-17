@@ -183,6 +183,7 @@ func (m *Manager) CreatePost(post models.Post) {
 
 	// Add post to corresponding timelines
 	authorStatistics := m.usersCache.GetUserStatistics(post.AuthorId)
+	authorStatistics = m.primeUserStatisticsFromDb(ctx, post.AuthorId, authorStatistics)
 
 	// Acquire a worker from the pool
 	select {
@@ -481,13 +482,85 @@ func (m *Manager) UpdateCursor(service string, cursor string) {
 	}
 }
 
+const userStatisticsReprimeWindow = 5 * time.Minute
+
+func (m *Manager) primeUserStatisticsFromDb(
+	ctx context.Context,
+	userId int32,
+	stats cache.UserStatistics,
+) cache.UserStatistics {
+	// posts_count and interactions_count are firehose-delta counters with no
+	// periodic refresh source. When Redis evicts their hashes (allkeys-lru) or
+	// they're lost on restart, they read back as 0 — which makes the engagement
+	// factor -1 (posts == 0) or 0 (interactions == 0) and wrongly rejects every
+	// top-feed post from that author. Re-prime them from the DB, which holds
+	// trigger-maintained authoritative values.
+	//
+	// Followers/follows are refreshed by StatisticsUpdater on a schedule, so a
+	// missing follower count self-heals on the next refresh tick and is NOT a
+	// re-prime trigger: most low-follower accounts legitimately read 0, and
+	// re-priming every one of them would be wasted DB load on the hot post path.
+	//
+	// Re-prime whenever either engagement counter is missing (reads 0). The
+	// throttle below bounds the cost for accounts that genuinely have 0
+	// interactions in the 7-day window.
+	if stats.PostsCount != 0 && stats.InteractionsCount != 0 {
+		return stats
+	}
+
+	// Only re-prime users we already know about (id<->did mapping exists).
+	// A brand-new user with zero counters has not been refreshed yet and
+	// should not trigger a DB round-trip on every post.
+	if _, ok := m.usersCache.UserIdToDid(userId); !ok {
+		return stats
+	}
+
+	// Throttle re-prime attempts so a user with genuinely-zero counters
+	// (no interactions in the 7-day window) only costs one DB hit per window.
+	if m.usersCache.IsUserStatisticsReprimedRecently(userId, userStatisticsReprimeWindow) {
+		return stats
+	}
+
+	dbUser, err := m.queries.GetUser(ctx, userId)
+	if err != nil {
+		log.Warnf("Could not re-prime user statistics from DB for user %d: %v", userId, err)
+		return stats
+	}
+
+	if dbUser.FollowersCount.Valid {
+		stats.FollowersCount = int64(dbUser.FollowersCount.Int32)
+	}
+	if dbUser.FollowsCount.Valid {
+		stats.FollowsCount = int64(dbUser.FollowsCount.Int32)
+	}
+	if stats.FollowersCount != 0 || stats.FollowsCount != 0 {
+		m.usersCache.SetUserFollows(userId, stats.FollowersCount, stats.FollowsCount)
+	}
+	if dbUser.PostsCount.Valid {
+		stats.PostsCount = int64(dbUser.PostsCount.Int32)
+		m.usersCache.SetUserPostsCount(userId, stats.PostsCount)
+	}
+	if dbUser.InteractionsCount.Valid {
+		stats.InteractionsCount = int64(dbUser.InteractionsCount.Int32)
+		m.usersCache.SetUserInteractionsCount(userId, stats.InteractionsCount)
+	}
+	if dbUser.CreatedAt.Valid {
+		stats.CreatedAt = dbUser.CreatedAt.Time
+		m.usersCache.SetUserCreatedAt(userId, stats.CreatedAt)
+	}
+
+	m.usersCache.MarkUserStatisticsReprimed(userId)
+	return stats
+}
+
 func (m *Manager) UpdateUser(updatedUser models.User) {
 	// Update on cache
 	m.usersCache.SetUserFollows(updatedUser.ID, updatedUser.FollowersCount, updatedUser.FollowsCount)
 	m.usersCache.SetUserCreatedAt(updatedUser.ID, updatedUser.CreatedAt)
 
-	// Update on DB
-	err := m.queries.UpdateUser(
+	// Update on DB. posts_count and interactions_count are maintained by DB
+	// triggers and are the source of truth for the engagement factor.
+	row, err := m.queries.UpdateUser(
 		context.Background(),
 		db.UpdateUserParams{
 			Did:            updatedUser.Did,
@@ -495,12 +568,21 @@ func (m *Manager) UpdateUser(updatedUser models.User) {
 			CreatedAt:      pgtype.Timestamp{Time: updatedUser.CreatedAt, Valid: true},
 			FollowersCount: pgtype.Int4{Int32: int32(updatedUser.FollowersCount), Valid: true},
 			FollowsCount:   pgtype.Int4{Int32: int32(updatedUser.FollowsCount), Valid: true},
-			PostsCount:     pgtype.Int4{Int32: int32(updatedUser.PostsCount), Valid: true},
 			LastUpdate:     pgtype.Timestamp{Time: time.Now(), Valid: true},
 		},
 	)
 	if err != nil {
 		log.Errorf("Error updating user: %v", err)
+		return
+	}
+
+	// Re-prime firehose-derived delta counters from the DB so they survive
+	// Redis LRU eviction or restarts.
+	if row.PostsCount.Valid {
+		m.usersCache.SetUserPostsCount(row.ID, int64(row.PostsCount.Int32))
+	}
+	if row.InteractionsCount.Valid {
+		m.usersCache.SetUserInteractionsCount(row.ID, int64(row.InteractionsCount.Int32))
 	}
 }
 

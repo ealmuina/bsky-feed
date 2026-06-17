@@ -93,7 +93,7 @@ func (q *Queries) DeleteUserByDid(ctx context.Context, did string) error {
 }
 
 const getUser = `-- name: GetUser :one
-SELECT id, did, handle, followers_count, follows_count, posts_count, created_at, last_update, refresh_frequency
+SELECT id, did, handle, followers_count, follows_count, posts_count, created_at, last_update, refresh_frequency, interactions_count
 FROM users
 WHERE id = $1
 LIMIT 1
@@ -112,6 +112,7 @@ func (q *Queries) GetUser(ctx context.Context, id int32) (User, error) {
 		&i.CreatedAt,
 		&i.LastUpdate,
 		&i.RefreshFrequency,
+		&i.InteractionsCount,
 	)
 	return i, err
 }
@@ -176,16 +177,16 @@ func (q *Queries) SetUserMetadata(ctx context.Context, arg SetUserMetadataParams
 	return err
 }
 
-const updateUser = `-- name: UpdateUser :exec
+const updateUser = `-- name: UpdateUser :one
 UPDATE users
 SET handle            = $2,
     created_at        = $3,
     followers_count   = $4,
     follows_count     = $5,
-    posts_count       = $6,
-    last_update       = $7,
+    last_update       = $6,
     refresh_frequency = greatest(1, 30 - (5 * log($4 + 1)))
 WHERE did = $1
+RETURNING id, posts_count, interactions_count
 `
 
 type UpdateUserParams struct {
@@ -194,19 +195,25 @@ type UpdateUserParams struct {
 	CreatedAt      pgtype.Timestamp
 	FollowersCount pgtype.Int4
 	FollowsCount   pgtype.Int4
-	PostsCount     pgtype.Int4
 	LastUpdate     pgtype.Timestamp
 }
 
-func (q *Queries) UpdateUser(ctx context.Context, arg UpdateUserParams) error {
-	_, err := q.db.Exec(ctx, updateUser,
+type UpdateUserRow struct {
+	ID                int32
+	PostsCount        pgtype.Int4
+	InteractionsCount pgtype.Int4
+}
+
+func (q *Queries) UpdateUser(ctx context.Context, arg UpdateUserParams) (UpdateUserRow, error) {
+	row := q.db.QueryRow(ctx, updateUser,
 		arg.Did,
 		arg.Handle,
 		arg.CreatedAt,
 		arg.FollowersCount,
 		arg.FollowsCount,
-		arg.PostsCount,
 		arg.LastUpdate,
 	)
-	return err
+	var i UpdateUserRow
+	err := row.Scan(&i.ID, &i.PostsCount, &i.InteractionsCount)
+	return i, err
 }

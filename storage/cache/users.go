@@ -15,6 +15,7 @@ const UsersFollowsCountRedisKey = "users_follows_count"
 const UsersPostsCountRedisKey = "users_posts_count"
 const UsersInteractionsCountRedisKey = "users_interactions_count"
 const UsersCreatedAtRedisKey = "users_created_at"
+const UsersStatsReprimedAtRedisKey = "users_stats_reprimed_at"
 const UserIdToDidRedisKey = "users_id_to_did"
 const UserDidToIdRedisKey = "users_did_to_id"
 
@@ -106,6 +107,20 @@ func (c *UsersCache) SetUserCreatedAt(id int32, createdAt time.Time) {
 	c.hSetWithExpiration(UsersCreatedAtRedisKey, idStr, strconv.FormatInt(createdAt.Unix(), 10))
 }
 
+func (c *UsersCache) IsUserStatisticsReprimedRecently(id int32, window time.Duration) bool {
+	idStr := fmt.Sprintf("%d", id)
+	ts, err := c.redisClient.HGet(context.Background(), UsersStatsReprimedAtRedisKey, idStr).Int64()
+	if err != nil {
+		return false
+	}
+	return time.Since(time.Unix(ts, 0)) < window
+}
+
+func (c *UsersCache) MarkUserStatisticsReprimed(id int32) {
+	idStr := fmt.Sprintf("%d", id)
+	c.hSetWithExpiration(UsersStatsReprimedAtRedisKey, idStr, strconv.FormatInt(time.Now().Unix(), 10))
+}
+
 func (c *UsersCache) RequiresReload() bool {
 	return c.redisClient.Exists(context.Background(), UsersFollowersCountRedisKey).Val() > 0
 }
@@ -114,6 +129,20 @@ func (c *UsersCache) SetUserFollows(id int32, followersCount int64, followsCount
 	idStr := fmt.Sprintf("%d", id)
 	c.hSetWithExpiration(UsersFollowersCountRedisKey, idStr, strconv.Itoa(int(followersCount)))
 	c.hSetWithExpiration(UsersFollowsCountRedisKey, idStr, strconv.Itoa(int(followsCount)))
+}
+
+func (c *UsersCache) SetUserPostsCount(id int32, postsCount int64) {
+	idStr := fmt.Sprintf("%d", id)
+	c.redisClient.HSet(context.Background(), UsersPostsCountRedisKey, idStr, strconv.FormatInt(postsCount, 10))
+	// posts_count is a firehose-delta counter with no periodic refresh source;
+	// let LRU handle eviction rather than actively expiring it.
+}
+
+func (c *UsersCache) SetUserInteractionsCount(id int32, interactionsCount int64) {
+	idStr := fmt.Sprintf("%d", id)
+	c.redisClient.HSet(context.Background(), UsersInteractionsCountRedisKey, idStr, strconv.FormatInt(interactionsCount, 10))
+	// interactions_count is a firehose-delta counter with no periodic refresh source;
+	// let LRU handle eviction rather than actively expiring it.
 }
 
 func (c *UsersCache) UpdateUserStatistics(

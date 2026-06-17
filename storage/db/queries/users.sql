@@ -3,16 +3,16 @@ INSERT INTO users (did, handle, followers_count, follows_count, posts_count, las
 VALUES ($1, $2, $3, $4, $5, $6)
 ON CONFLICT DO NOTHING;
 
--- name: UpdateUser :exec
+-- name: UpdateUser :one
 UPDATE users
 SET handle            = $2,
     created_at        = $3,
     followers_count   = $4,
     follows_count     = $5,
-    posts_count       = $6,
-    last_update       = $7,
+    last_update       = $6,
     refresh_frequency = greatest(1, 30 - (5 * log($4 + 1)))
-WHERE did = $1;
+WHERE did = $1
+RETURNING id, posts_count, interactions_count;
 
 -- name: DeleteUser :exec
 DELETE
