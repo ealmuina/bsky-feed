@@ -60,4 +60,4 @@ FROM interactions
 WHERE id IN (SELECT id
              FROM interactions
              WHERE created_at < current_timestamp - interval '7 days'
-             LIMIT 10000);
+             LIMIT $1);

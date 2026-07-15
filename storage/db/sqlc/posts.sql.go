@@ -73,6 +73,24 @@ func (q *Queries) CreateTempPostsTable(ctx context.Context) error {
 	return err
 }
 
+const deleteOldPostsBatch = `-- name: DeleteOldPostsBatch :execrows
+DELETE
+FROM posts
+WHERE id IN (SELECT id
+             FROM posts
+             WHERE created_at IS NOT NULL
+               AND created_at < current_timestamp - interval '7 days'
+             LIMIT $1)
+`
+
+func (q *Queries) DeleteOldPostsBatch(ctx context.Context, limit int32) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteOldPostsBatch, limit)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const deletePost = `-- name: DeletePost :one
 DELETE
 FROM posts

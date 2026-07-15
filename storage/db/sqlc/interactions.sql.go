@@ -142,11 +142,11 @@ FROM interactions
 WHERE id IN (SELECT id
              FROM interactions
              WHERE created_at < current_timestamp - interval '7 days'
-             LIMIT 10000)
+             LIMIT $1)
 `
 
-func (q *Queries) DeleteOldInteractionsBatch(ctx context.Context) (int64, error) {
-	result, err := q.db.Exec(ctx, deleteOldInteractionsBatch)
+func (q *Queries) DeleteOldInteractionsBatch(ctx context.Context, limit int32) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteOldInteractionsBatch, limit)
 	if err != nil {
 		return 0, err
 	}

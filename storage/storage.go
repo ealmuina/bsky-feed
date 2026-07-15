@@ -36,7 +36,26 @@ type Manager struct {
 	// Worker pool for limiting concurrent goroutines
 	workerPool chan struct{}
 	wg         sync.WaitGroup
+
+	// Cleaner tunables, populated in NewManager from env vars. Sizes are
+	// int32 to match the sqlc-generated :execrows batch-limit parameter.
+	interactionsDeleteBatch int32
+	postsDeleteBatch        int32
 }
+
+// Cleaner batch sizes. The interactions batch is large because
+// ingest is ~22M rows/day; the posts batch is smaller because every
+// deleted post fires the user_post_counter trigger UPDATE and cascades
+// to its interactions (transitively firing user_interaction_counter).
+// cleanerVacuumEveryN controls how often the cleaner runs a non-FULL
+// VACUUM (ANALYZE) to return dead tuples to the FSM so future DELETEs
+// can reuse pages. A non-FULL vacuum is online — it does not shrink
+// the file, but it stops the table from bloating indefinitely.
+const (
+	defaultInteractionsDeleteBatch = 200000
+	defaultPostsDeleteBatch        = 20000
+	cleanerVacuumEveryN            = 6
+)
 
 func NewManager(dbConnection *pgxpool.Pool, redisConnection *redis.Client, persistFollows bool) *Manager {
 	usersCacheExpiration := utils.IntFromString(
@@ -65,6 +84,15 @@ func NewManager(dbConnection *pgxpool.Pool, redisConnection *redis.Client, persi
 		timelines:  make(map[string]cache.Timeline),
 		algorithms: make(map[string]algorithms.Algorithm),
 		workerPool: make(chan struct{}, workerPoolSize),
+
+		// Cleaner tunables. The defaults assume ~22M interactions/day of
+		// ingest (interactions batch 200k = 4.8B rows/day of delete
+		// capacity, a 200x headroom). The posts batch is smaller
+		// because every delete fires the user_post_counter trigger.
+		interactionsDeleteBatch: int32(utils.IntFromString(
+			os.Getenv("CLEANER_INTERACTIONS_BATCH_SIZE"), defaultInteractionsDeleteBatch)),
+		postsDeleteBatch: int32(utils.IntFromString(
+			os.Getenv("CLEANER_POSTS_BATCH_SIZE"), defaultPostsDeleteBatch)),
 	}
 	storageManager.initializeTimelines()
 	storageManager.initializeAlgorithms()
@@ -82,22 +110,82 @@ func (m *Manager) AddPostToTimeline(timelineName string, timelineEntry models.Ti
 	}
 }
 
+// CleanOldData orchestrates the periodic cleanup. When the DB is not
+// being used for backfill (the production setting) it runs a one-shot
+// backfill pass at startup to chew down rows the previous cleaner let
+// accumulate, then delegates to CleanTimelinesAndCaches for the cheap
+// Redis-only pass. The CLEANER_FORCE_BACKFILL env var lets operators
+// skip the startup backfill (e.g. once steady state is reached).
 func (m *Manager) CleanOldData(persistentDb bool) {
-	// Clean DB
 	ctx := context.Background()
 	if !persistentDb {
-		const batchSize = 10000
-		for {
-			n, err := m.queries.DeleteOldInteractionsBatch(ctx)
-			if err != nil {
-				log.Errorf("Error cleaning old interactions: %v", err)
-				break
-			}
-			if n < batchSize {
-				break
+		if os.Getenv("CLEANER_FORCE_BACKFILL") != "false" {
+			log.Info("Running one-shot backfill cleaner pass")
+			m.cleanOldInteractions(ctx)
+			m.cleanOldPosts(ctx)
+		}
+	}
+	m.CleanTimelinesAndCaches()
+}
+
+// cleanOldInteractions deletes interactions older than 7 days in
+// fixed-size batches. The loop exits when the last batch returned
+// fewer rows than the batch size — the standard "all matching rows
+// consumed" sentinel for this sqlc :execrows pattern. Every
+// cleanerVacuumEveryN cycles we issue a non-FULL VACUUM (ANALYZE) so
+// dead tuples become available for reuse (and the planner gets fresh
+// stats). Non-FULL is online and does not rewrite the file.
+func (m *Manager) cleanOldInteractions(ctx context.Context) {
+	batchSize := m.interactionsDeleteBatch
+	for cycle := 0; ; cycle++ {
+		n, err := m.queries.DeleteOldInteractionsBatch(ctx, batchSize)
+		if err != nil {
+			log.Errorf("Error cleaning old interactions: %v", err)
+			return
+		}
+		if n < int64(batchSize) {
+			break
+		}
+		if cycle%cleanerVacuumEveryN == cleanerVacuumEveryN-1 {
+			if _, err := m.dbConnection.Exec(ctx, "VACUUM (ANALYZE) interactions"); err != nil {
+				log.Warnf("Non-fatal: vacuum interactions failed: %v", err)
 			}
 		}
 	}
+}
+
+// cleanOldPosts deletes posts older than 7 days in fixed-size batches.
+// Deleting a post cascades to its interactions (FK ON DELETE CASCADE),
+// so this loop also reduces the interactions row count as a side
+// effect. The user_interaction_counter trigger is a no-op on cascade
+// (the parent post is already gone, so the SELECT inside the trigger
+// returns no row). The user_post_counter trigger fires once per
+// post, which is the main reason the posts batch is smaller than the
+// interactions batch.
+func (m *Manager) cleanOldPosts(ctx context.Context) {
+	batchSize := m.postsDeleteBatch
+	for cycle := 0; ; cycle++ {
+		n, err := m.queries.DeleteOldPostsBatch(ctx, batchSize)
+		if err != nil {
+			log.Errorf("Error cleaning old posts: %v", err)
+			return
+		}
+		if n < int64(batchSize) {
+			break
+		}
+		if cycle%cleanerVacuumEveryN == cleanerVacuumEveryN-1 {
+			if _, err := m.dbConnection.Exec(ctx, "VACUUM (ANALYZE) posts"); err != nil {
+				log.Warnf("Non-fatal: vacuum posts failed: %v", err)
+			}
+		}
+	}
+}
+
+// CleanTimelinesAndCaches performs the cheap (Redis-only) parts of the
+// cleaner: timeline expiry and post cache eviction. Safe to run on a
+// short interval because it does not touch Postgres.
+func (m *Manager) CleanTimelinesAndCaches() {
+	ctx := context.Background()
 
 	// Clean timelines
 	for _, timeline := range m.timelines {

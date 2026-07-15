@@ -47,6 +47,15 @@ FROM posts
 WHERE posts.created_at < current_timestamp - interval '7 days'
 LIMIT $1;
 
+-- name: DeleteOldPostsBatch :execrows
+DELETE
+FROM posts
+WHERE id IN (SELECT id
+             FROM posts
+             WHERE created_at IS NOT NULL
+               AND created_at < current_timestamp - interval '7 days'
+             LIMIT $1);
+
 -- name: GetUserPosts :many
 SELECT id, uri_key, author_id
 FROM posts
