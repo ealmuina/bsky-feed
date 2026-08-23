@@ -55,6 +55,17 @@ const (
 	defaultInteractionsDeleteBatch = 200000
 	defaultPostsDeleteBatch        = 20000
 	cleanerVacuumEveryN            = 6
+
+	// Per-pass batch caps. ~22M interactions and ~3M posts cross the 7-day
+	// retention boundary every day, so a "drain until short batch" loop can
+	// never terminate when delete throughput is below the boundary-crossing
+	// rate — that wedge stalled every cleaner tick (timeline trim included)
+	// for the entire process lifetime in Aug 2026. Bounding per-pass work
+	// guarantees each tick returns; caps comfortably exceed the per-pass
+	// crossing rate, so backlogs still drain progressively across passes.
+	interactionsMaxBatchesPerPass  = 200 // up to 40M rows per pass
+	postsMaxBatchesPerPass         = 250 // up to 5M rows per pass
+	oldPostsCacheMaxBatchesPerPass = 100 // up to 1M Redis ids per pass
 )
 
 func NewManager(dbConnection *pgxpool.Pool, redisConnection *redis.Client, persistFollows bool) *Manager {
@@ -125,7 +136,9 @@ func (m *Manager) CleanOldData(persistentDb bool) {
 			m.cleanOldPosts(ctx)
 		}
 	}
-	m.CleanTimelinesAndCaches()
+	// Timeline/post-cache cleaning is owned by the short-interval cleaner
+	// goroutine (tasks.CleanOldData); keeping it out of the hourly DB pass
+	// means a stalled Redis-side pass can no longer block the DB prune.
 }
 
 // cleanOldInteractions deletes interactions older than 7 days in
@@ -137,14 +150,14 @@ func (m *Manager) CleanOldData(persistentDb bool) {
 // stats). Non-FULL is online and does not rewrite the file.
 func (m *Manager) cleanOldInteractions(ctx context.Context) {
 	batchSize := m.interactionsDeleteBatch
-	for cycle := 0; ; cycle++ {
+	for cycle := 0; cycle < interactionsMaxBatchesPerPass; cycle++ {
 		n, err := m.queries.DeleteOldInteractionsBatch(ctx, batchSize)
 		if err != nil {
 			log.Errorf("Error cleaning old interactions: %v", err)
 			return
 		}
 		if n < int64(batchSize) {
-			break
+			return
 		}
 		if cycle%cleanerVacuumEveryN == cleanerVacuumEveryN-1 {
 			if _, err := m.dbConnection.Exec(ctx, "VACUUM (ANALYZE) interactions"); err != nil {
@@ -152,6 +165,7 @@ func (m *Manager) cleanOldInteractions(ctx context.Context) {
 			}
 		}
 	}
+	log.Warnf("cleanOldInteractions hit per-pass cap (%d batches); backlog continues next pass", interactionsMaxBatchesPerPass)
 }
 
 // cleanOldPosts deletes posts older than 7 days in fixed-size batches.
@@ -164,14 +178,14 @@ func (m *Manager) cleanOldInteractions(ctx context.Context) {
 // interactions batch.
 func (m *Manager) cleanOldPosts(ctx context.Context) {
 	batchSize := m.postsDeleteBatch
-	for cycle := 0; ; cycle++ {
+	for cycle := 0; cycle < postsMaxBatchesPerPass; cycle++ {
 		n, err := m.queries.DeleteOldPostsBatch(ctx, batchSize)
 		if err != nil {
 			log.Errorf("Error cleaning old posts: %v", err)
 			return
 		}
 		if n < int64(batchSize) {
-			break
+			return
 		}
 		if cycle%cleanerVacuumEveryN == cleanerVacuumEveryN-1 {
 			if _, err := m.dbConnection.Exec(ctx, "VACUUM (ANALYZE) posts"); err != nil {
@@ -179,6 +193,7 @@ func (m *Manager) cleanOldPosts(ctx context.Context) {
 			}
 		}
 	}
+	log.Warnf("cleanOldPosts hit per-pass cap (%d batches); backlog continues next pass", postsMaxBatchesPerPass)
 }
 
 // CleanTimelinesAndCaches performs the cheap (Redis-only) parts of the
@@ -192,10 +207,19 @@ func (m *Manager) CleanTimelinesAndCaches() {
 		timeline.DeleteExpiredPosts(time.Now().Add(-3 * 24 * time.Hour)) // Timelines lifespan of 3 days
 	}
 
-	// Clean caches (process in batches so memory stays bounded)
+	// Clean caches (process in batches so memory stays bounded). The cutoff is
+	// frozen before the loop and the batch count is capped: ~3M posts/day
+	// continuously cross the 7-day boundary, so with a live `now()-7d`
+	// predicate the loop never saw a short batch and this function never
+	// returned — stalling every cleaner tick, timeline trim included, for the
+	// whole process lifetime (Aug 2026 outage diagnosis).
 	const oldPostsBatchSize = 10000
-	for {
-		oldPosts, err := m.queries.GetOldPosts(ctx, oldPostsBatchSize)
+	cutoff := time.Now().Add(-7 * 24 * time.Hour)
+	for batch := 0; batch < oldPostsCacheMaxBatchesPerPass; batch++ {
+		oldPosts, err := m.queries.GetOldPosts(ctx, db.GetOldPostsParams{
+			Cutoff:    pgtype.Timestamp{Time: cutoff, Valid: true},
+			BatchSize: oldPostsBatchSize,
+		})
 		if err != nil {
 			log.Errorf("Error retrieving old posts: %v", err)
 			break
@@ -584,15 +608,19 @@ func (m *Manager) primeUserStatisticsFromDb(
 	// top-feed post from that author. Re-prime them from the DB, which holds
 	// trigger-maintained authoritative values.
 	//
-	// Followers/follows are refreshed by StatisticsUpdater on a schedule, so a
-	// missing follower count self-heals on the next refresh tick and is NOT a
-	// re-prime trigger: most low-follower accounts legitimately read 0, and
-	// re-priming every one of them would be wasted DB load on the hot post path.
+	// Followers/follows are refreshed by StatisticsUpdater on a schedule, but
+	// their cache fields carry a TTL: if users stats expire (or Redis evicts
+	// them) while the engagement counters stay warm (they're TTL-less firehose
+	// delta counters), gating the re-prime only on the engagement counters
+	// leaves FollowersCount reading 0 and starves the top feeds — this exact
+	// failure starved them in Aug 2026 after a 5-minute users-cache TTL was
+	// left configured. So a missing follower count is also a re-prime trigger.
+	// The downside (small accounts legitimately read 0 and cause a throttled DB
+	// hit per window) is bounded by the throttle below.
 	//
-	// Re-prime whenever either engagement counter is missing (reads 0). The
-	// throttle below bounds the cost for accounts that genuinely have 0
-	// interactions in the 7-day window.
-	if stats.PostsCount != 0 && stats.InteractionsCount != 0 {
+	// Re-prime whenever either engagement counter or the followers count is
+	// missing (reads 0).
+	if stats.PostsCount != 0 && stats.InteractionsCount != 0 && stats.FollowersCount != 0 {
 		return stats
 	}
 

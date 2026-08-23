@@ -42,10 +42,12 @@ WHERE author_id = $1
 RETURNING id, author_id, uri_key, reply_root_id;
 
 -- name: GetOldPosts :many
+-- The cutoff is passed in (frozen by the caller per pass) so posts that
+-- cross the 7-day boundary mid-pass don't keep the drain loop alive forever.
 SELECT id, author_id, reply_root_id
 FROM posts
-WHERE posts.created_at < current_timestamp - interval '7 days'
-LIMIT $1;
+WHERE posts.created_at < sqlc.arg(cutoff)::timestamp
+LIMIT sqlc.arg(batch_size);
 
 -- name: DeleteOldPostsBatch :execrows
 DELETE

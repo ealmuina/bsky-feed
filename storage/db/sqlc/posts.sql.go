@@ -126,9 +126,14 @@ func (q *Queries) DeletePost(ctx context.Context, arg DeletePostParams) (DeleteP
 const getOldPosts = `-- name: GetOldPosts :many
 SELECT id, author_id, reply_root_id
 FROM posts
-WHERE posts.created_at < current_timestamp - interval '7 days'
-LIMIT $1
+WHERE posts.created_at < $1::timestamp
+LIMIT $2
 `
+
+type GetOldPostsParams struct {
+	Cutoff    pgtype.Timestamp
+	BatchSize int32
+}
 
 type GetOldPostsRow struct {
 	ID          int64
@@ -136,8 +141,10 @@ type GetOldPostsRow struct {
 	ReplyRootID pgtype.Int8
 }
 
-func (q *Queries) GetOldPosts(ctx context.Context, limit int32) ([]GetOldPostsRow, error) {
-	rows, err := q.db.Query(ctx, getOldPosts, limit)
+// The cutoff is passed in (frozen by the caller per pass) so posts that
+// cross the 7-day boundary mid-pass don't keep the drain loop alive forever.
+func (q *Queries) GetOldPosts(ctx context.Context, arg GetOldPostsParams) ([]GetOldPostsRow, error) {
+	rows, err := q.db.Query(ctx, getOldPosts, arg.Cutoff, arg.BatchSize)
 	if err != nil {
 		return nil, err
 	}
