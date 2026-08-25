@@ -486,7 +486,9 @@ func (m *Manager) GetCursor(service string) string {
 }
 
 func (m *Manager) GetOrCreateUser(did string) (id int32, err error) {
-	if id, ok := m.usersCache.UserDidToId(did); ok {
+	// A cached id of 0 is poison from a past DB failure (see below) — treat it as a miss so the
+	// mapping self-heals on the next event instead of shadowing the real user for the TTL lifetime.
+	if id, ok := m.usersCache.UserDidToId(did); ok && id != 0 {
 		return id, nil
 	}
 
@@ -507,6 +509,12 @@ func (m *Manager) GetOrCreateUser(did string) (id int32, err error) {
 			}
 		},
 	)
+	if err != nil || id == 0 {
+		// Never cache or hand out a zero id: mapping a did to 0 poisons
+		// users_id_to_did/users_did_to_id for the cache TTL, and every caller then
+		// attaches posts/interactions to author 0 (FK violations, garbage stats).
+		return 0, err
+	}
 	m.usersCache.AddUser(id, did)
 
 	return id, nil
@@ -601,6 +609,10 @@ func (m *Manager) primeUserStatisticsFromDb(
 	userId int32,
 	stats cache.UserStatistics,
 ) cache.UserStatistics {
+	if userId == 0 {
+		// 0 is the failure-path sentinel from GetOrCreateUser — no such row exists.
+		return stats
+	}
 	// posts_count and interactions_count are firehose-delta counters with no
 	// periodic refresh source. When Redis evicts their hashes (allkeys-lru) or
 	// they're lost on restart, they read back as 0 — which makes the engagement
