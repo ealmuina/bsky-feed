@@ -78,6 +78,9 @@ services:
     command:
       - '--config.file=/etc/prometheus/prometheus.yml'
       - '--storage.tsdb.path=/prometheus'
+      # Host disk is tight (~200GB); Postgres alone holds ~160GB. 15d of
+      # TSDB costs ~9GB — 3d is plenty for ops dashboards on this host.
+      - '--storage.tsdb.retention.time=3d'
       - '--web.console.libraries=/usr/share/prometheus/console_libraries'
       - '--web.console.templates=/usr/share/prometheus/consoles'
     ports:
