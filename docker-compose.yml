@@ -1,3 +1,9 @@
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "50m"
+    max-file: "3"
+
 services:
   api:
     build:
@@ -14,6 +20,7 @@ services:
         limits:
           memory: 6G
     restart: unless-stopped
+    logging: *default-logging
     depends_on:
       db:
         condition: service_healthy
@@ -39,6 +46,7 @@ services:
       - postgres_data:/var/lib/postgresql/data
       - ./storage/db/db_init:/docker-entrypoint-initdb.d
     restart: unless-stopped
+    logging: *default-logging
 
   db-exporter:
     image: prometheuscommunity/postgres-exporter
@@ -53,6 +61,7 @@ services:
       db:
         condition: service_healthy
     restart: unless-stopped
+    logging: *default-logging
 
   redis:
     image: redis:latest
@@ -62,6 +71,7 @@ services:
       - redis_data:/data
     command: redis-server --maxmemory 4gb --maxmemory-policy allkeys-lru
     restart: unless-stopped
+    logging: *default-logging
 
   prometheus:
     image: prom/prometheus:latest
@@ -76,6 +86,7 @@ services:
       - ./prometheus.yml:/etc/prometheus/prometheus.yml
       - prometheus_data:/prometheus
     restart: unless-stopped
+    logging: *default-logging
 
   grafana:
     image: grafana/grafana:latest
@@ -86,6 +97,7 @@ services:
       - grafana_data:/var/lib/grafana
       - ./grafana.ini:/etc/grafana/grafana.ini
     restart: unless-stopped
+    logging: *default-logging
 
 volumes:
   postgres_data:
